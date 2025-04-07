@@ -57,7 +57,6 @@
 #include "parseAPI/h/CFG.h"
 #include "ast.h"
 #include "debug.h"
-#include "MemoryEmulator/memEmulator.h"
 #include <boost/tuple/tuple.hpp>
 
 #include "PatchMgr.h"
@@ -250,55 +249,6 @@ BPatch_process::BPatch_process(const char* path, const char* argv[],
     startup_cerr << "BPatch_process::BPatch_process, completed." << endl;
 }
 
-#if defined(os_linux)
-/* Particular linux kernels running dyninst in particular patterns
-   (namely, with a single process having spawned the mutator and the
-   mutatee) are susceptible to a kernel bug that will cause a panic
-   if the mutator exits before the mutatee. See the comment above
-   class ForkNewProcessCallback : public DBICallbackBase in
-   debuggerinterface.h for details.
-*/
-bool
-LinuxConsideredHarmful(pid_t pid)  // PUSH
-{
-    int   major, minor, sub, subsub;  // version numbers
-    pid_t my_ppid, my_pid, mutatee_ppid = 0;
-    FILE* fd;
-    char  buf[1024];
-    char  filename[64];
-
-    get_linux_version(major, minor, sub, subsub);
-
-    if(major == 2 && minor == 6 && (sub < 11 || (sub == 11 && subsub <= 11)))
-    {
-        my_ppid = getppid();
-        my_pid  = getpid();
-        // If anybody knows a better way to get the parent pid, be my
-        // guest to change this.
-        snprintf(filename, 64, "/proc/%d/status", pid);
-        fd = fopen(filename, "r");
-        if(!fd)
-        {
-            startup_printf("Failed to open %s, assuming no linux kernel bug\n", filename);
-            return false;
-        }
-        while(fgets(buf, 1024, fd))
-        {
-            if(strncmp(buf, "PPid", 4) == 0)
-            {
-                sscanf(buf, "%*s %d", &mutatee_ppid);
-                break;
-            }
-        }
-        fclose(fd);
-
-        if(my_ppid == mutatee_ppid || my_pid == mutatee_ppid)
-            return true;
-    }
-
-    return false;
-}
-#endif
 /*
  * BPatch_process::BPatch_process
  *
@@ -325,23 +275,7 @@ BPatch_process::BPatch_process(const char* path, int pid, BPatch_hybridMode mode
     image             = NULL;
     pendingInsertions = NULL;
 
-#if defined(os_linux)
-    /* We need to test whether we are in kernel 2.6.9 - 2.6.11.11 (inclusive).
-       If so, and if the mutatee's parent and our parent are one and the same,
-       we are exposing the user to a potential kernel panic.
-    */
-    startup_printf("Checking for potential Linux kernel bug...\n");
-    if(LinuxConsideredHarmful(pid))
-    {
-        fprintf(stderr, "\nWARNING: You are running a Linux kernel between 2.6.9 and \n"
-                        "2.6.11.11 (inclusive). Executing Dyninst under this kernel \n"
-                        "may exercise a bug in the Linux kernel and lead to a panic \n"
-                        "under some conditions. We STRONGLY suggest that you upgrade \n"
-                        "your kernel to 2.6.11.12 or higher.\n\n");
-    }
-#endif
-
-    assert(BPatch::bpatch != NULL);
+   assert(BPatch::bpatch != NULL);
 
     startup_printf("%s[%d]:  creating new BPatch_image...\n", FILE__, __LINE__);
     image = new BPatch_image(this);
@@ -1580,12 +1514,6 @@ BPatch_process::makeShadowPage(Dyninst::Address pageAddr)
     pageAddr          = (pageAddr / pagesize) * pagesize;
 
     Address shadowAddr = pageAddr;
-    if(llproc->isMemoryEmulated())
-    {
-        bool valid                    = false;
-        boost::tie(valid, shadowAddr) = llproc->getMemEm()->translate(pageAddr);
-        assert(valid);
-    }
 
     unsigned char* buf = (unsigned char*) ::malloc(pagesize);
     llproc->readDataSpace((void*) shadowAddr, pagesize, buf, true);
@@ -1639,12 +1567,10 @@ BPatch_process::overwriteAnalysisUpdate(
 
     /*2. remove dead code from the analysis */
 
-    // identify the dead code (see getDeadCode for its parameter definitions)
-    std::set<block_instance*>                      delBlocks;
-    std::map<func_instance*, set<block_instance*>> elimMap;
-    std::list<func_instance*>                      deadFuncs;
-    std::map<func_instance*, block_instance*>      newFuncEntries;
-    llproc->getDeadCode(owBBIs, delBlocks, elimMap, deadFuncs, newFuncEntries);
+    std::set<block_instance*> delBlocks; 
+    std::map<func_instance*,set<block_instance*> > elimMap; 
+    std::list<func_instance*> deadFuncs; 
+    std::map<func_instance*,block_instance*> newFuncEntries; 
 
     // remove instrumentation from affected funcs
     beginInsertionSet();

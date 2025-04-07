@@ -29,9 +29,10 @@
  */
 
 #include "IAPI_to_AST.h"
+
+#include "Register.h"
 #include "BinaryFunction.h"
 #include "Immediate.h"
-#include "Register.h"
 #include "Dereference.h"
 #if defined(arch_x86) || defined(arch_x86_64)
 #    include "RegisterConversion.h"
@@ -65,21 +66,14 @@ ASTFactory::visit(Dereference*)
 {
     AstNodePtr effaddr = m_stack.back();
     m_stack.pop_back();
-    // We need to translate the addr to handle emulation shadow pages
-    // before we dereference
-    std::vector<AstNodePtr> args;
-    args.push_back(effaddr);
-    args.push_back(AstNode::operandNode(AstNode::Constant, (void*) 0xdeadbeef));
-    args.push_back(AstNode::operandNode(AstNode::Constant, (void*) 0xcafebabe));
-    AstNodePtr funcCall = AstNode::funcCallNode("RTtranslateMemory", args);
-    m_stack.push_back(AstNode::operandNode(AstNode::DataIndir, funcCall));
+	m_stack.push_back(AstNode::operandNode(AstNode::operandType::DataIndir, effaddr));
 }
 
 void
 ASTFactory::visit(Immediate* i)
 {
-    m_stack.push_back(
-        AstNode::operandNode(AstNode::Constant, (void*) (i->eval().convert<long>())));
+    m_stack.push_back(AstNode::operandNode(AstNode::operandType::Constant,
+                    (void*)(i->eval().convert<long>())));
 }
 
 void
@@ -87,8 +81,8 @@ ASTFactory::visit(RegisterAST* r)
 {
 #if defined(arch_x86) || defined(arch_x86_64)
     bool unused;
-    m_stack.push_back(AstNode::operandNode(AstNode::origRegister,
-                                           (void*) (intptr_t)(convertRegID(r, unused))));
+    m_stack.push_back(AstNode::operandNode(AstNode::operandType::origRegister,
+                      (void*)(intptr_t)(convertRegID(r, unused))));
 #else
     MachRegister reg = r->getID();
     reg              = reg.getBaseRegister();

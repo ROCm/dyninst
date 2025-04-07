@@ -31,28 +31,29 @@
 #ifndef _STACKACCESS_H_
 #define _STACKACCESS_H_
 
-#include "dyn_regs.h"
+#include <map>
+#include <set>
+#include <string>
+#include "registers/MachRegister.h"
 #include "Instruction.h"
 #include "stackanalysis.h"
 
 using namespace Dyninst;
 
-class StackAccess
-{
-public:
-    enum StackAccessType
-    {
-        DEBUGINFO_LOCAL,
-        DEBUGINFO_PARAM,
-        SAVED,
-        WRITE,
-        UNKNOWN,
-        READ,
-        READWRITE,
-        REGHEIGHT,
-        DEFINITION,
-        MISUNDERSTOOD
-    };
+class StackAccess {
+    public:
+        enum class StackAccessType {
+            DEBUGINFO_LOCAL,
+            DEBUGINFO_PARAM,
+            SAVED,
+            WRITE,
+            UNKNOWN,
+            READ,
+            READWRITE,
+            REGHEIGHT,
+            DEFINITION,
+            MISUNDERSTOOD
+        };
 
     static std::string printStackAccessType(StackAccessType t);
 

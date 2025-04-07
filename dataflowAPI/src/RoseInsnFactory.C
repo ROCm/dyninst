@@ -37,7 +37,7 @@
 
 #include "../rose/SgAsmInstruction.h"
 #include "../rose/SgAsmPowerpcInstruction.h"
-#include "../rose/SgAsmAmdgpuVegaInstruction.h"
+#include "../rose/SgAsmAMDGPUInstruction.h"
 
 #include "../rose/SgAsmArmv8Instruction.h"
 #include "../rose/SgAsmx86Instruction.h"
@@ -144,19 +144,125 @@ RoseInsnX86Factory::setOpcode(SgAsmInstruction* insn, entryID opcode,
     tmp->set_kind(convertKind(opcode, prefix));
 }
 
-void
-RoseInsnX86Factory::setSizes(SgAsmInstruction* insn)
-{
-    SgAsmx86Instruction* tmp = static_cast<SgAsmx86Instruction*>(insn);
-    if(a == Arch_x86_64)
-    {
-        tmp->set_operandSize(x86_insnsize_64);
-        tmp->set_addressSize(x86_insnsize_64);
-    }
-    else
-    {
-        tmp->set_operandSize(x86_insnsize_32);
-        tmp->set_addressSize(x86_insnsize_32);
+void RoseInsnX86Factory::setSizes(SgAsmInstruction *insn) {
+  SgAsmx86Instruction *tmp = static_cast<SgAsmx86Instruction *>(insn);
+  if (a == Arch_x86_64) {
+      tmp->set_operandSize(x86_insnsize_64);
+      tmp->set_addressSize(x86_insnsize_64);
+  } else {
+      tmp->set_operandSize(x86_insnsize_32);
+      tmp->set_addressSize(x86_insnsize_32);
+  }
+}
+
+bool RoseInsnX86Factory::handleSpecialCases(entryID, SgAsmInstruction *, SgAsmOperandList *) {
+  // Does nothing?
+
+  return false;
+}
+
+void RoseInsnX86Factory::massageOperands(const Instruction &insn,
+                                         std::vector<InstructionAPI::Operand> &operands) {
+  switch (insn.getOperation().getID()) {
+  case e_lea: {
+    // ROSE expects there to be a "memory reference" statement wrapping the
+    // address calculation. It then unwraps it. 
+    Dereference::Ptr tmp = Dereference::Ptr(new Dereference(operands[1].getValue(), u32));
+    operands[1] = Operand(tmp, operands[1].isRead(), operands[1].isWritten());
+    operands.resize(2);
+    break;  
+  }
+  case e_call:
+  case e_push:
+  case e_pop:
+    // ROSE does not need implicit registers
+    operands.resize(1);
+    break;
+  case e_cmpxchg:
+    operands.resize(2);
+    break;
+  case e_movsb:
+  case e_movsd:
+  case e_movsw:
+    // No operands
+    operands.clear();
+    break;
+  case e_cmpsb:
+  case e_cmpsw:
+  case e_cmpsd:
+    // No operands
+    operands.clear();
+    break;
+  case e_scasb:
+  case e_scasd:
+  case e_scasw:
+    // Same here
+    operands.clear();
+    break;
+  case e_stosb:
+  case e_stosd:
+  case e_stosw:
+    // Also, no operands
+    operands.clear();
+    break;
+  case e_jcxz_jec:
+    operands.resize(1);
+    break;
+  case e_cbw:
+  case e_cwde:
+  case e_cdq:
+    // Nada
+    operands.clear();
+    break;
+  case e_popaw:
+  case e_pushf:
+    operands.clear();
+    break;
+  case e_lodsd:
+  case e_lodsb:
+  case e_lodsw:
+      operands.clear();
+      break;
+  case e_pushal:
+      operands.clear();
+      break;
+  case e_loop:
+  case e_loope:
+  case e_loopne:
+      operands.resize(1);
+      break;
+  case e_ret_far:
+  case e_ret_near:
+	  if (operands.size() == 2) {
+		  operands[0]=operands[1];
+	  }
+	  operands.resize(1);
+	  break;
+  case e_aaa:
+  case e_aas: 
+	  // ROSE does not expect implicit operand rax/eax to be treated as an operand
+	  operands.clear();
+	  break;
+  case e_aad:
+  case e_aam: {
+	  // ROSE does not expect implicit operand rax/eax to be treated as an operand
+	  std::set<RegisterAST::Ptr> regs;
+	  operands[0].getReadSet(regs);
+	  operands[0].getWriteSet(regs);	 	  
+	  if (!regs.empty()) {	      
+		      operands[0] = operands[1];
+	  }
+	  operands.resize(1);
+	  break;
+  }
+  case e_div:
+  case e_idiv:
+  case e_imul:
+  case e_mul:
+    // remove implicit operands.
+    if (operands.size() == 3) {
+      operands[0] = operands[2];
+      operands.resize(1);
     }
 }
 
@@ -438,11 +544,15 @@ RoseInsnPPCFactory::massageOperands(const Instruction&                    insn,
         operands.pop_back();
     }
 
-    // Convert to ROSE so we can use numeric greater than/less than
-
-    if(kind >= powerpc_lbz && kind <= powerpc_lwzx)
-    {
-        operands.resize(2);
+    // It looks like the ROSE semantics code will infer the target from 
+    // the bo field. So, what is passed in as the third operands does not matter
+    if(power_op_b == iapi_opcode || power_op_bc == iapi_opcode) {
+      rose_operands->append_operand(new SgAsmDoubleWordValueExpression(branch_target));
+    } else if(power_op_bcctr == iapi_opcode) {
+      rose_operands->append_operand(new SgAsmPowerpcRegisterReferenceExpression(powerpc_regclass_spr, powerpc_spr_ctr));
+    } else {
+      assert(power_op_bclr == iapi_opcode);
+      rose_operands->append_operand(new SgAsmPowerpcRegisterReferenceExpression(powerpc_regclass_spr, powerpc_spr_lr));
     }
     if(kind >= powerpc_stb && kind <= powerpc_stwx)
     {
@@ -476,10 +586,7 @@ RoseInsnArmv8Factory::handleSpecialCases(entryID, SgAsmInstruction*, SgAsmOperan
     return false;
 }
 
-void
-RoseInsnArmv8Factory::massageOperands(const Instruction&                    insn,
-                                      std::vector<InstructionAPI::Operand>& operands)
-{}
+void RoseInsnArmv8Factory::setSizes(SgAsmInstruction * /*insn*/) {
 
 void
 RoseInsnAmdgpuVegaFactory::setSizes(SgAsmInstruction* /*insn*/)
@@ -498,84 +605,64 @@ RoseInsnAmdgpuVegaFactory::setOpcode(SgAsmInstruction* insn, entryID opcode,
     SgAsmAmdgpuVegaInstruction* tmp = static_cast<SgAsmAmdgpuVegaInstruction*>(insn);
     tmp->set_kind(convertKind(opcode));
 }
-bool
-RoseInsnAmdgpuVegaFactory::handleSpecialCases(entryID, SgAsmInstruction*,
-                                              SgAsmOperandList*)
-{
+
+void RoseInsnArmv8Factory::setOpcode(SgAsmInstruction *insn, entryID opcode, prefixEntryID, std::string) {
+  SgAsmArmv8Instruction *tmp = static_cast<SgAsmArmv8Instruction *>(insn);
+  tmp->set_kind(convertKind(opcode));
+}
+
+bool RoseInsnArmv8Factory::handleSpecialCases(entryID, SgAsmInstruction *, SgAsmOperandList *) {
+  return false;
+}
+
+void RoseInsnArmv8Factory::massageOperands(const Instruction &/*insn*/,
+        std::vector<InstructionAPI::Operand> &/*operands*/) {
+
+}
+ 
+void RoseInsnAMDGPUFactory::setSizes(SgAsmInstruction * /*insn*/) {
+
+}
+
+SgAsmInstruction *RoseInsnAMDGPUFactory::createInsn() {
+    return new SgAsmAMDGPUInstruction;
+}
+
+void RoseInsnAMDGPUFactory::setOpcode(SgAsmInstruction *insn, entryID opcode, prefixEntryID, std::string) {
+    SgAsmAMDGPUInstruction *tmp = static_cast<SgAsmAMDGPUInstruction *>(insn);
+    tmp->set_kind(convertKind(opcode));
+}
+bool RoseInsnAMDGPUFactory::handleSpecialCases(entryID, SgAsmInstruction *, SgAsmOperandList *) {
     return false;
 }
 
-// This helper function expand a single sgpr pair operand into two constructing components
-static std::pair<InstructionAPI::Operand, InstructionAPI::Operand>
-expandSgprPair(InstructionAPI::Operand orig)
-{
-    RegisterAST::Ptr sgpr_pair =
-        boost::dynamic_pointer_cast<RegisterAST>(orig.getValue());
-    unsigned int offset = sgpr_pair->getID() - amdgpu_vega::sgpr_vec2_0;
-
-    MachRegister    m_low   = MachRegister(amdgpu_vega::sgpr0 + offset);
-    MachRegister    m_high  = MachRegister(amdgpu_vega::sgpr0 + offset + 1);
-    Expression::Ptr e_oper0 = make_shared(
-        singleton_object_pool<RegisterAST>::construct(m_low, 0, m_low.size() * 8));
-    Expression::Ptr e_oper1 = make_shared(
-        singleton_object_pool<RegisterAST>::construct(m_high, 0, m_high.size() * 8));
-
-    auto oper0 = Operand(e_oper0, orig.isRead(), orig.isWritten());
-    auto oper1 = Operand(e_oper1, orig.isRead(), orig.isWritten());
-
-    return std::make_pair(oper0, oper1);
-}
-
 // TODO: Turn sgpr_pair operands into individual registers
-void
-RoseInsnAmdgpuVegaFactory::massageOperands(const Instruction&                    insn,
-                                           std::vector<InstructionAPI::Operand>& operands)
-{
-    switch(insn.getOperation().getID())
-    {
-        case amdgpu_op_s_swappc_b64: {
-            // swap pc has two operands
-            // first one is the source of new pc
-            // second one is dst for storing the pc, so we turn it into 4 registers
-            // TODO : Make this a function call
-            assert(operands.size() == 2);
-            InstructionAPI::Operand oper0, oper1, oper2, oper3;
-            std::tie(oper0, oper1) = expandSgprPair(operands[0]);
-            std::tie(oper2, oper3) = expandSgprPair(operands[1]);
-            operands.resize(4);
-            operands[0] = oper0;
-            operands[1] = oper1;
-            operands[2] = oper2;
-            operands[3] = oper3;
-            break;
-        }
+void RoseInsnAMDGPUFactory::massageOperands(const Instruction &insn,
+        std::vector<InstructionAPI::Operand> &operands) {
+    switch (insn.getOperation().getID()) {
 
-        case amdgpu_op_s_setpc_b64: {
-            assert(operands.size() == 1);
-
-            InstructionAPI::Operand oper0, oper1;
-            std::tie(oper0, oper1) = expandSgprPair(operands[0]);
-            operands.resize(2);
-            operands[0] = oper0;
-            operands[1] = oper1;
-
-            break;
-        }
-        case amdgpu_op_s_getpc_b64: {
-            assert(operands.size() == 1);
-
-            InstructionAPI::Operand oper0, oper1;
-            std::tie(oper0, oper1) = expandSgprPair(operands[0]);
-            operands.resize(3);
-            operands[0] = oper0;
-            operands[1] = oper1;
-            operands[2] =
-                Operand(InstructionAPI::Immediate::makeImmediate(Result(u64, _addr + 4)),
-                        false, false);
-
-            break;
-        }
-        default:
-            break;
+    case amdgpu_gfx908_op_S_SWAPPC_B64:
+    case amdgpu_gfx90a_op_S_SWAPPC_B64: 
+    case amdgpu_gfx940_op_S_SWAPPC_B64: {
+        assert(operands.size() == 6);
+        break;
     }
+    case amdgpu_gfx908_op_S_SETPC_B64:
+    case amdgpu_gfx90a_op_S_SETPC_B64: 
+    case amdgpu_gfx940_op_S_SETPC_B64: {
+        assert(operands.size() == 3);
+        break;
+
+    }
+    case amdgpu_gfx908_op_S_GETPC_B64:
+    case amdgpu_gfx90a_op_S_GETPC_B64: 
+    case amdgpu_gfx940_op_S_GETPC_B64: {
+        assert(operands.size() == 3);
+        operands[2] = Operand(InstructionAPI::Immediate::makeImmediate(Result(u64,_addr+4)),false,false);
+        break;
+    }
+    default:
+        break;
+    }
+
 }

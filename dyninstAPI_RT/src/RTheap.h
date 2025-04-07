@@ -34,6 +34,7 @@
 #define _RT_HEAP_H
 
 #include "dyninstAPI_RT/h/dyninstAPI_RT.h" /* RT_Boolean, Address */
+#include "dyntypes.h"
 
 #if defined(os_linux) || defined(os_freebsd)
 
@@ -68,14 +69,10 @@ extern int     DYNINSTheap_mmapFlags;
  * platform-specific functions
  */
 
-RT_Boolean
-DYNINSTheap_useMalloc(void* lo, void* hi);
-int
-DYNINSTheap_mmapFdOpen();
-void
-DYNINSTheap_mmapFdClose(int fd);
-int
-DYNINSTheap_getMemoryMap(unsigned*, dyninstmm_t** mmap);
+RT_Boolean DYNINSTheap_useMalloc(void *lo, void *hi);
+int        DYNINSTheap_mmapFdOpen(void);
+void       DYNINSTheap_mmapFdClose(int fd);
+int        DYNINSTheap_getMemoryMap(unsigned *, dyninstmm_t **mmap);
 
 int
 DYNINSTgetMemoryMap(unsigned* nump, dyninstmm_t** mapp);

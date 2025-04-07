@@ -203,18 +203,6 @@
 #    include <string>
 #    include "dyntypes.h"
 
-#    if defined(_MSC_VER)
-#        pragma warning(disable : 4251 4275 4396 4996)
-#    endif
-
-namespace Dyninst
-{
-COMMON_EXPORT unsigned
-addrHashCommon(const Address& addr);
-COMMON_EXPORT unsigned
-ptrHash(const void* addr);
-COMMON_EXPORT unsigned
-ptrHash(void* addr);
 
 COMMON_EXPORT unsigned
 addrHash(const Address& addr);

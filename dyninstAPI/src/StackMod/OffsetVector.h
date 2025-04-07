@@ -31,7 +31,10 @@
 #ifndef _OFFSETVECTOR_H_
 #define _OFFSETVECTOR_H_
 
-#include "dyn_regs.h"
+#include <map>
+#include <set>
+#include <utility>
+#include "registers/MachRegister.h"
 #include "common/src/IntervalTree.h"
 #include "stackanalysis.h"
 

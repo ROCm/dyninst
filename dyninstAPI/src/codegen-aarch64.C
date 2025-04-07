@@ -127,9 +127,7 @@ insnCodeGen::generateBranch(codeGen& gen, long disp, bool link)
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateBranch(codeGen& gen, Address from, Address to, bool link)
-{
+void insnCodeGen::generateBranch(codeGen &gen, Dyninst::Address from, Dyninst::Address to, bool link) {
     long disp = (to - from);
 
     if(labs(disp) > MAX_BRANCH_OFFSET)
@@ -140,16 +138,17 @@ insnCodeGen::generateBranch(codeGen& gen, Address from, Address to, bool link)
         generateBranch(gen, disp, link);
 }
 
-void
-insnCodeGen::generateCall(codeGen& gen, Address from, Address to)
-{
+void insnCodeGen::generateCall(codeGen &gen, Dyninst::Address from, Dyninst::Address to) {
     generateBranch(gen, from, to, true);
 }
 
-void
-insnCodeGen::generateLongBranch(codeGen& gen, Address from, Address to, bool isCall)
+void insnCodeGen::generateLongBranch(codeGen &gen,
+                                     Dyninst::Address from,
+                                     Dyninst::Address to,
+                                     bool isCall) 
 {
-    auto generateBReg = [&isCall, &gen](Register s) -> void {
+    auto generateBReg = [&isCall, &gen](Dyninst::Register s) -> void
+    {
         instruction branchInsn;
         branchInsn.clear();
 
@@ -169,15 +168,15 @@ insnCodeGen::generateLongBranch(codeGen& gen, Address from, Address to, bool isC
         insnCodeGen::generate(gen, branchInsn);
     };
 
-    Register scratch = REG_NULL;
+    Dyninst::Register scratch = Null_Register;
 
     if(isCall)
     {
-        // use Link Register as scratch since it will be overwritten at return
+        // use Link Dyninst::Register as scratch since it will be overwritten at return
         scratch = 30;
-        // load disp to r30
-        loadImmIntoReg<Address>(gen, scratch, to);
-        // generate call
+        //load disp to r30
+        loadImmIntoReg(gen, scratch, to);
+        //generate call
         generateBReg(scratch);
         return;
     }
@@ -191,7 +190,7 @@ insnCodeGen::generateLongBranch(codeGen& gen, Address from, Address to, bool isC
         scratch = rs->getScratchRegister(gen, true);
     }
 
-    if(scratch == REG_NULL)
+    if (scratch == Null_Register)
     {
         // fprintf(stderr, " %s[%d] No registers. Calling generateBranchViaTrap...\n",
         // FILE__, __LINE__);
@@ -199,13 +198,11 @@ insnCodeGen::generateLongBranch(codeGen& gen, Address from, Address to, bool isC
         return;
     }
 
-    loadImmIntoReg<Address>(gen, scratch, to);
+    loadImmIntoReg(gen, scratch, to);
     generateBReg(scratch);
 }
 
-void
-insnCodeGen::generateBranchViaTrap(codeGen& gen, Address from, Address to, bool isCall)
-{
+void insnCodeGen::generateBranchViaTrap(codeGen &gen, Dyninst::Address from, Dyninst::Address to, bool isCall) {
     long disp = to - from;
     if(labs(disp) <= MAX_BRANCH_OFFSET)
     {
@@ -234,8 +231,7 @@ insnCodeGen::generateBranchViaTrap(codeGen& gen, Address from, Address to, bool 
     }
 }
 
-void
-insnCodeGen::generateConditionalBranch(codeGen& gen, Address to, unsigned opcode, bool s)
+void insnCodeGen::generateConditionalBranch(codeGen& gen, Dyninst::Address to, unsigned opcode, bool s)
 {
     instruction insn;
     insn.clear();
@@ -285,10 +281,10 @@ insnCodeGen::generateConditionalBranch(codeGen& gen, Address to, unsigned opcode
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateAddSubShifted(codeGen& gen, insnCodeGen::ArithOp op, int shift,
-                                   int imm6, Register rm, Register rn, Register rd,
-                                   bool is64bit)
+
+void insnCodeGen::generateAddSubShifted(
+        codeGen &gen, insnCodeGen::ArithOp op, int shift, int imm6, Dyninst::Register rm,
+        Dyninst::Register rn, Dyninst::Register rd, bool is64bit)
 {
     instruction insn;
     insn.clear();
@@ -315,9 +311,8 @@ insnCodeGen::generateAddSubShifted(codeGen& gen, insnCodeGen::ArithOp op, int sh
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateAddSubImmediate(codeGen& gen, insnCodeGen::ArithOp op, int shift,
-                                     int imm12, Register rn, Register rd, bool is64bit)
+void insnCodeGen::generateAddSubImmediate(
+        codeGen &gen, insnCodeGen::ArithOp op, int shift, int imm12, Dyninst::Register rn, Dyninst::Register rd, bool is64bit)
 {
     instruction insn;
     insn.clear();
@@ -342,10 +337,7 @@ insnCodeGen::generateAddSubImmediate(codeGen& gen, insnCodeGen::ArithOp op, int 
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateMul(codeGen& gen, Register rm, Register rn, Register rd,
-                         bool is64bit)
-{
+void insnCodeGen::generateMul(codeGen &gen, Dyninst::Register rm, Dyninst::Register rn, Dyninst::Register rd, bool is64bit) {
     instruction insn;
     insn.clear();
 
@@ -367,9 +359,8 @@ insnCodeGen::generateMul(codeGen& gen, Register rm, Register rn, Register rd,
 }
 
 //#sasha is rm or rn the denominator?
-void
-insnCodeGen::generateDiv(codeGen& gen, Register rm, Register rn, Register rd,
-                         bool is64bit, bool s)
+void insnCodeGen::generateDiv(
+        codeGen &gen, Dyninst::Register rm, Dyninst::Register rn, Dyninst::Register rd, bool is64bit, bool s)
 {
     instruction insn;
     insn.clear();
@@ -399,10 +390,9 @@ insnCodeGen::generateDiv(codeGen& gen, Register rm, Register rn, Register rd,
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateBitwiseOpShifted(codeGen& gen, insnCodeGen::BitwiseOp op, int shift,
-                                      Register rm, int imm6, Register rn, Register rd,
-                                      bool is64bit)
+void insnCodeGen::generateBitwiseOpShifted(
+        codeGen &gen, insnCodeGen::BitwiseOp op, int shift, Dyninst::Register rm, int imm6,
+        Dyninst::Register rn, Dyninst::Register rd, bool is64bit)
 {
     instruction insn;
     insn.clear();
@@ -445,36 +435,35 @@ insnCodeGen::generateBitwiseOpShifted(codeGen& gen, insnCodeGen::BitwiseOp op, i
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateLoadReg(codeGen&, Register, Register, Register)
+void insnCodeGen::generateLoadReg(codeGen &, Dyninst::Register,
+                                  Dyninst::Register, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateStoreReg(codeGen&, Register, Register, Register)
+void insnCodeGen::generateStoreReg(codeGen &, Dyninst::Register,
+                                   Dyninst::Register, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateLoadReg64(codeGen&, Register, Register, Register)
+void insnCodeGen::generateLoadReg64(codeGen &, Dyninst::Register,
+                                    Dyninst::Register, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateStoreReg64(codeGen&, Register, Register, Register)
+void insnCodeGen::generateStoreReg64(codeGen &, Dyninst::Register,
+                                     Dyninst::Register, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateMove(codeGen& gen, int imm16, int shift, Register rd, MoveOp movOp)
+void insnCodeGen::generateMove(codeGen &gen, int imm16, int shift, Dyninst::Register rd, MoveOp movOp)
 {
     instruction insn;
     insn.clear();
@@ -497,16 +486,14 @@ insnCodeGen::generateMove(codeGen& gen, int imm16, int shift, Register rd, MoveO
     insnCodeGen::generate(gen, insn);
 }
 
-void
-insnCodeGen::generateMove(codeGen& gen, Register rd, Register rm, bool is64bit)
+void insnCodeGen::generateMove(
+        codeGen &gen, Dyninst::Register rd, Dyninst::Register rm, bool is64bit)
 {
     insnCodeGen::generateBitwiseOpShifted(gen, insnCodeGen::Or, 0, rm, 0, 0x1f, rd,
                                           is64bit);
 }
 
-void
-insnCodeGen::generateMoveSP(codeGen& gen, Register rn, Register rd, bool is64bit)
-{
+void insnCodeGen::generateMoveSP(codeGen &gen, Dyninst::Register rn, Dyninst::Register rd, bool is64bit) {
     instruction insn;
     insn.clear();
 
@@ -523,41 +510,22 @@ insnCodeGen::generateMoveSP(codeGen& gen, Register rn, Register rd, bool is64bit
     insnCodeGen::generate(gen, insn);
 }
 
-Register
-insnCodeGen::moveValueToReg(codeGen& gen, long int val, std::vector<Register>* exclude)
-{
-    Register scratchReg;
+
+Dyninst::Register insnCodeGen::moveValueToReg(codeGen &gen, long int val, std::vector<Dyninst::Register> *exclude) {
+    Dyninst::Register scratchReg;
     if(exclude)
         scratchReg = gen.rs()->getScratchRegister(gen, *exclude, true);
     else
         scratchReg = gen.rs()->getScratchRegister(gen, true);
 
-    if(scratchReg == REG_NULL)
-    {
-        fprintf(stderr,
-                " %s[%d] No scratch register available to generate add instruction!",
-                FILE__, __LINE__);
+    if (scratchReg == Null_Register) {
+        fprintf(stderr, " %s[%d] No scratch register available to generate add instruction!", FILE__, __LINE__);
         assert(0);
     }
 
-    loadImmIntoReg<long int>(gen, scratchReg, val);
+    loadImmIntoReg(gen, scratchReg, static_cast<Dyninst::Address>(val));
 
     return scratchReg;
-}
-
-template <typename T>
-void
-insnCodeGen::loadImmIntoReg(codeGen& gen, Register rt, T value)
-{
-    assert(value >= 0);
-
-    insnCodeGen::generateMove(gen, (value & 0xFFFF), 0, rt, MovOp_MOVZ);
-    if(value > 0xFFFF)
-        insnCodeGen::generateMove(gen, ((value >> 16) & 0xFFFF), 0x1, rt, MovOp_MOVK);
-    if(value > 0xFFFFFFFF)
-        insnCodeGen::generateMove(gen, ((value >> 32) & 0xFFFF), 0x2, rt, MovOp_MOVK);
-    if(value > 0xFFFFFFFFFFFF)
-        insnCodeGen::generateMove(gen, ((value >> 48) & 0xFFFF), 0x3, rt, MovOp_MOVK);
 }
 
 // Generate memory access through Load or Store
@@ -567,9 +535,8 @@ insnCodeGen::loadImmIntoReg(codeGen& gen, Register rt, T value)
 //     LDRH/STRH  (immediate) for 16-bit
 //
 // Encoding classes allowed: Post-index, Pre-index and Unsigned Offset
-void
-insnCodeGen::generateMemAccess(codeGen& gen, LoadStore accType, Register r1, Register r2,
-                               int immd, unsigned size, IndexMode im)
+void insnCodeGen::generateMemAccess(codeGen &gen, LoadStore accType,
+        Dyninst::Register r1, Dyninst::Register r2, int immd, unsigned size, IndexMode im)
 {
     instruction insn;
     insn.clear();
@@ -604,12 +571,9 @@ insnCodeGen::generateMemAccess(codeGen& gen, LoadStore accType, Register r1, Reg
     insnCodeGen::generate(gen, insn);
 }
 
-// This is for generating STR/LDR (SIMD&FP) (immediate) for indexing modes of Post, Pre
-// and Offset
-void
-insnCodeGen::generateMemAccessFP(codeGen& gen, LoadStore accType, Register rt,
-                                 Register rn, int immd, int size, bool is128bit,
-                                 IndexMode im)
+// This is for generating STR/LDR (SIMD&FP) (immediate) for indexing modes of Post, Pre and Offset
+void insnCodeGen::generateMemAccessFP(codeGen &gen, LoadStore accType,
+        Dyninst::Register rt, Dyninst::Register rn, int immd, int size, bool is128bit, IndexMode im)
 {
     instruction insn;
     insn.clear();
@@ -656,32 +620,28 @@ insnCodeGen::generateMemAccessFP(codeGen& gen, LoadStore accType, Register rt,
 }
 
 // rlwinm ra,rs,n,0,31-n
-void
-insnCodeGen::generateLShift(codeGen&, Register, int, Register)
+void insnCodeGen::generateLShift(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
 // rlwinm ra,rs,32-n,n,31
-void
-insnCodeGen::generateRShift(codeGen&, Register, int, Register)
+void insnCodeGen::generateRShift(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
 // sld ra, rs, rb
-void
-insnCodeGen::generateLShift64(codeGen&, Register, int, Register)
+void insnCodeGen::generateLShift64(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
 // srd ra, rs, rb
-void
-insnCodeGen::generateRShift64(codeGen&, Register, int, Register)
+void insnCodeGen::generateRShift64(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
     assert(0);
     // not implemented
@@ -703,28 +663,21 @@ insnCodeGen::generateNOOP(codeGen& gen, unsigned size)
     }
 }
 
-void
-insnCodeGen::generateSimple(codeGen&, int, Register, Register, Register)
+void insnCodeGen::generateRelOp(codeGen &, int, int, Dyninst::Register,
+                                Dyninst::Register, Dyninst::Register)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateRelOp(codeGen&, int, int, Register, Register, Register)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
-}
 
-void
-insnCodeGen::saveRegister(codeGen& gen, Register r, int sp_offset, IndexMode im)
+void insnCodeGen::saveRegister(codeGen &gen, Dyninst::Register r, int sp_offset, IndexMode im)
 {
     generateMemAccess(gen, Store, r, REG_SP, sp_offset, 8, im);
 }
 
-void
-insnCodeGen::restoreRegister(codeGen& gen, Register r, int sp_offset, IndexMode im)
+
+void insnCodeGen::restoreRegister(codeGen &gen, Dyninst::Register r, int sp_offset, IndexMode im)
 {
     generateMemAccess(gen, Load, r, REG_SP, sp_offset, 8, im);
 }
@@ -732,20 +685,16 @@ insnCodeGen::restoreRegister(codeGen& gen, Register r, int sp_offset, IndexMode 
 // Helper method.  Fills register with partial value to be completed
 // by an operation with a 16-bit signed immediate.  Such as loads and
 // stores.
-void
-insnCodeGen::loadPartialImmIntoReg(codeGen&, Register, long)
+void insnCodeGen::loadPartialImmIntoReg(codeGen &, Dyninst::Register, long)
 {
     assert(0);
     //#warning "This function is not implemented yet!"
 }
 
-int
-insnCodeGen::createStackFrame(codeGen&, int, std::vector<Register>& freeReg,
-                              std::vector<Register>&)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
-    return freeReg.size();
+int insnCodeGen::createStackFrame(codeGen &, int, std::vector<Dyninst::Register>& freeReg, std::vector<Dyninst::Register>&){
+assert(0);
+//#warning "This function is not implemented yet!"
+		return freeReg.size();
 }
 
 void
@@ -755,37 +704,33 @@ insnCodeGen::removeStackFrame(codeGen&)
     //#warning "This function is not implemented yet!"
 }
 
-bool
-insnCodeGen::generateMem(codeGen&, instruction&, Address, Address, Register, Register)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
-    return false;
+bool insnCodeGen::generateMem(codeGen &,
+                              instruction&,
+                              Dyninst::Address,
+                              Dyninst::Address,
+                              Dyninst::Register,
+                  Dyninst::Register) {
+assert(0);
+//#warning "This function is not implemented yet!"
+return false; }
+
+void insnCodeGen::generateMoveFromLR(codeGen &, Dyninst::Register) {
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateMoveFromLR(codeGen&, Register)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
+void insnCodeGen::generateMoveToLR(codeGen &, Dyninst::Register) {
+assert(0);
+//#warning "This function is not implemented yet!"
+}
+void insnCodeGen::generateMoveToCR(codeGen &, Dyninst::Register) {
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
-void
-insnCodeGen::generateMoveToLR(codeGen&, Register)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
-}
-void
-insnCodeGen::generateMoveToCR(codeGen&, Register)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
-}
-
-bool
-insnCodeGen::modifyJump(Address target, NS_aarch64::instruction& insn, codeGen& gen)
-{
+bool insnCodeGen::modifyJump(Dyninst::Address target,
+                             NS_aarch64::instruction &insn,
+                             codeGen &gen) {
     long disp = target - gen.currAddr();
 
     if(INSN_GET_ISCALL(insn))
@@ -811,16 +756,16 @@ insnCodeGen::modifyJump(Address target, NS_aarch64::instruction& insn, codeGen& 
  * independent) codegen.C file. Appropriate architecture-specific,
  * bit-twiddling functions can then be defined if necessary in the codegen-* files
  * and called as necessary by the common, refactored logic.
- */
-bool
-insnCodeGen::modifyJcc(Address target, NS_aarch64::instruction& insn, codeGen& gen)
-{
+*/
+bool insnCodeGen::modifyJcc(Dyninst::Address target,
+			    NS_aarch64::instruction &insn,
+			    codeGen &gen) {
     long disp = target - gen.currAddr();
     auto isTB = insn.isInsnType(COND_BR_t::TB_MASK, COND_BR_t::TB);
 
     if(labs(disp) > MAX_CBRANCH_OFFSET || (isTB && labs(disp) > MAX_TBRANCH_OFFSET))
     {
-        Address origFrom = gen.currAddr();
+        Dyninst::Address origFrom = gen.currAddr();
 
         /*
          * A conditional branch of the form:
@@ -861,10 +806,10 @@ insnCodeGen::modifyJcc(Address target, NS_aarch64::instruction& insn, codeGen& g
 
         /* Generate the final --b A-- instruction.
          * The 'from' address to be passed in to generateBranch is now several
-         * bytes (8 actually, but I'm not hardcoding this) ahead of the original 'from'
-         * address. So adjust it accordingly.*/
-        codeBufIndex_t curIdx  = gen.getIndex();
-        Address        newFrom = origFrom + (unsigned) (curIdx - startIdx);
+         * bytes (8 actually, but I'm not hardcoding this) ahead of the original 'from' address.
+         * So adjust it accordingly.*/
+        codeBufIndex_t curIdx = gen.getIndex();
+        Dyninst::Address newFrom = origFrom + (unsigned)(curIdx - startIdx);
         insnCodeGen::generateBranch(gen, newFrom, target);
     }
     else
@@ -883,17 +828,18 @@ insnCodeGen::modifyJcc(Address target, NS_aarch64::instruction& insn, codeGen& g
     return true;
 }
 
-bool
-insnCodeGen::modifyCall(Address target, NS_aarch64::instruction& insn, codeGen& gen)
-{
-    if(insn.isUncondBranch())
+bool insnCodeGen::modifyCall(Dyninst::Address target,
+                             NS_aarch64::instruction &insn,
+                             codeGen &gen) {
+    if (insn.isUncondBranch())
         return modifyJump(target, insn, gen);
     else
         return modifyJcc(target, insn, gen);
 }
 
-bool
-insnCodeGen::modifyData(Address target, NS_aarch64::instruction& insn, codeGen& gen)
+bool insnCodeGen::modifyData(Dyninst::Address target,
+        NS_aarch64::instruction &insn,
+        codeGen &gen) 
 {
     int  raw   = insn.asInt();
     bool isneg = false;
@@ -901,15 +847,16 @@ insnCodeGen::modifyData(Address target, NS_aarch64::instruction& insn, codeGen& 
     if(target < gen.currAddr())
         isneg = true;
 
-    if(((raw >> 24) & 0x1F) == 0x10)
-    {
-        Address offset;
-        if((static_cast<uint32_t>(raw) >> 31) & 0x1)
-        {
+    if (((raw >> 24) & 0x1F) == 0x10) {
+        Dyninst::Address offset;
+        if((static_cast<uint32_t>(raw) >> 31) & 0x1) {
             target &= 0xFFFFF000;
-            Address cur = gen.currAddr() & 0xFFFFF000;
-            offset      = isneg ? (cur - target) : (target - cur);
+            Dyninst::Address cur = gen.currAddr() & 0xFFFFF000;
+            offset = isneg ? (cur - target) : (target - cur);
             offset >>= 12;
+        } else {
+            Dyninst::Address cur = gen.currAddr();
+            offset = isneg ? (cur - target) : (target - cur);
         }
         else
         {
@@ -927,11 +874,10 @@ insnCodeGen::modifyData(Address target, NS_aarch64::instruction& insn, codeGen& 
             INSN_SET(newInsn, 29, 30, (imm & 0x3));
             generate(gen, newInsn);
         }
-        // Else, generate move instructions to move the value to the same register
-        else
-        {
-            // Register rd = raw & 0x1F;
-            // loadImmIntoReg<Address>(gen, rd, target);
+        //Else, generate move instructions to move the value to the same register
+        else {
+            //Dyninst::Register rd = raw & 0x1F;
+            //loadImmIntoReg(gen, rd, target);
             instruction newInsn;
             instruction newInsn2;
             newInsn.clear();
@@ -951,14 +897,10 @@ insnCodeGen::modifyData(Address target, NS_aarch64::instruction& insn, codeGen& 
             INSN_SET(newInsn2, 22, 31, 0x244);
             generate(gen, newInsn2);
         }
-    }
-    else if(((raw >> 24) & 0x3F) == 0x18 || ((raw >> 24) & 0x3F) == 0x1C)
-    {
-        Address offset = !isneg ? (target - gen.currAddr()) : (gen.currAddr() - target);
-        // If offset is within +/- 1 MB, modify the instruction (LDR/LDRSW) with the new
-        // offset
-        if(offset <= (1 << 20))
-        {
+    } else if (((raw >> 24) & 0x3F) == 0x18 || ((raw >> 24) & 0x3F) == 0x1C) {
+        Dyninst::Address offset = !isneg ? (target - gen.currAddr()) : (gen.currAddr() - target);
+        //If offset is within +/- 1 MB, modify the instruction (LDR/LDRSW) with the new offset
+        if (offset <= (1 << 20)) {
             instruction newInsn(insn);
 
             isneg ? (offset += 4) : (offset -= 4);
@@ -971,16 +913,16 @@ insnCodeGen::modifyData(Address target, NS_aarch64::instruction& insn, codeGen& 
         else
         {
             // Get scratch register
-            Register scratch = gen.rs()->getScratchRegister(gen, true);
-            if(scratch == REG_NULL)
+            Dyninst::Register scratch = gen.rs()->getScratchRegister(gen, true);
+            if(scratch == Null_Register)
                 assert(!"No scratch register available to load the target \
                         address into for a PC-relative data access using LDR/LDRSW!");
 
             // Load the target address into scratch register
-            loadImmIntoReg<Address>(gen, scratch, target);
+            loadImmIntoReg(gen, scratch, target);
 
             // Generate LDR(immediate) to load into r the the content of [scratch]
-            Register r = raw & 0x1F;
+            Dyninst::Register r = raw & 0x1F;
             generateMemAccess(gen, Load, r, scratch, 0, 8, Offset);
         }
     }

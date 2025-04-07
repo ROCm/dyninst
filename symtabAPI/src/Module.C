@@ -46,11 +46,14 @@
 #include "common/src/pathName.h"
 #include "Object.h"
 #include <boost/foreach.hpp>
+#include <algorithm>
 
 #if defined(cap_dwarf)
 #    include "dwarfWalker.h"
 #    include "dwarf.h"
 #endif
+
+#include <vector>
 
 using namespace Dyninst;
 using namespace Dyninst::SymtabAPI;
@@ -58,77 +61,17 @@ using namespace std;
 
 static SymtabError serr;
 
-StringTablePtr
-Statement::getStrings_() const
-{
-    return strings_;
-}
-
-void
-Statement::setStrings_(StringTablePtr strings)
-{
-    Statement::strings_ = strings;
-}
-const std::string&
-Statement::getFile() const
-{
-    if(strings_)
-    {
-        if(file_index_ < strings_->size())
-        {
-            // can't be ->[] on shared pointer to multi_index container or compiler gets
-            // confused
-            return (*strings_)[file_index_].str;
-        }
-    }
-    // This string will be pointed to, so it has to persist.
-    static std::string emptyStr;
-    return emptyStr;
-}
-
-string
-Module::getCompDir(Module::DebugInfoT& cu)
-{
-    if(!compDir_.empty())
-        return compDir_;
-
-#if defined(cap_dwarf)
-    if(!dwarf_hasattr(&cu, DW_AT_comp_dir))
-    {
-        return "";
-    }
-
-    Dwarf_Attribute attr;
-    auto            comp_dir = dwarf_formstring(dwarf_attr(&cu, DW_AT_comp_dir, &attr));
-    compDir_                 = std::string(comp_dir ? comp_dir : "");
-    return compDir_;
-
-#else
-    // TODO Implement this for non-dwarf format
-    return compDir_;
-#endif
-}
-
-string
-Module::getCompDir()
-{
-    if(!compDir_.empty())
-        return compDir_;
-
-    return "";
-}
-
-bool
-Module::findSymbol(std::vector<Symbol*>& found, const std::string& name,
-                   Symbol::SymbolType sType, NameType nameType, bool isRegex,
-                   bool checkCase, bool includeUndefined)
-{
-    unsigned             orig_size = found.size();
-    std::vector<Symbol*> obj_syms;
-
-    if(exec()->findSymbol(obj_syms, name, sType, nameType, isRegex, checkCase,
-                          includeUndefined))
-    {
+bool Module::findSymbol(std::vector<Symbol *> &found,
+                        const std::string& name,
+                        Symbol::SymbolType sType, 
+                        NameType nameType,
+                        bool isRegex,
+                        bool checkCase,
+                        bool includeUndefined) {
+    unsigned orig_size = found.size();
+    std::vector<Symbol *> obj_syms;
+    
+    if (exec()->findSymbol(obj_syms, name, sType, nameType, isRegex, checkCase, includeUndefined)) {
         return false;
     }
 
@@ -176,7 +119,7 @@ Module::fileName() const
 const std::string&
 Module::fullName() const
 {
-    return fullName_;
+   return fileName();
 }
 
 Symtab*
@@ -240,42 +183,22 @@ Module::getSourceLines(std::vector<LineNoTuple>& lines, Offset addressInRange)
     return false;
 }
 
-LineInformation*
-Module::parseLineInformation()
-{
-    bool               popped = false;
-    Module::DebugInfoT cu;
-    if(exec()->getArchitecture() != Arch_cuda &&
-       (exec()->getObject()->hasDebugInfo() || (popped = info_.try_pop(cu))))
-    {
-        // Allocate if none
-        if(!lineInfo_)
-        {
-            lineInfo_ = new LineInformation;
-            // share our string table
-            lineInfo_->setStrings(strings_);
-        }
+LineInformation *Module::parseLineInformation() {
+    if(lineInfo_) return lineInfo_;
 
-        // Parse any CUs that have been added to our list
-        if(popped || info_.try_pop(cu))
-        {
-            Module::DebugInfoT cu2 = cu;
-            do
-            {
-                exec()->getObject()->parseLineInfoForCU(cu2, lineInfo_);
-            } while(info_.try_pop(cu2));
+    const bool is_cuda = exec()->getArchitecture() == Arch_cuda;
+    const bool debug_info = exec()->getObject()->hasDebugInfo();
 
-            // Make sure to call getCompDir so its stored and ready.
-            getCompDir(cu);
-        }
-
-        // Work queue has now been emptied.
+    if (!debug_info || is_cuda) {
+	objectLevelLineInfo = true;
+	lineInfo_ = exec()->getObject()->parseLineInfoForObject(strings_);
+	return lineInfo_;
     }
-    else if(!lineInfo_)
-    {
-        objectLevelLineInfo = true;
-        lineInfo_           = exec()->getObject()->parseLineInfoForObject(strings_);
-    }
+
+    lineInfo_ = new LineInformation;
+    lineInfo_->setStrings(strings_);
+
+    exec()->getObject()->parseLineInfoForCU(addr(), lineInfo_);
     return lineInfo_;
 }
 
@@ -389,49 +312,41 @@ Module::findLocalVariable(std::vector<localVar*>& vars, std::string name)
     return false;
 }
 
-Module::Module(supportedLanguages lang, Offset adr, std::string fullNm, Symtab* img)
-: objectLevelLineInfo(false)
-, lineInfo_(NULL)
-, typeInfo_(NULL)
-, fullName_(fullNm)
-, compDir_("")
-, language_(lang)
-, addr_(adr)
-, exec_(img)
-, strings_(new StringTable)
-, ranges_finalized(false)
-{
-    fileName_ = extract_pathname_tail(fullNm);
-}
-
-Module::Module()
-: objectLevelLineInfo(false)
-, lineInfo_(NULL)
-, typeInfo_(NULL)
-, fileName_("")
-, fullName_("")
-, compDir_("")
-, language_(lang_Unknown)
-, addr_(0)
-, exec_(NULL)
-, strings_(new StringTable)
-, ranges_finalized(false)
+Module::Module(supportedLanguages lang, Offset adr,
+      std::string fullNm, Symtab *img) :
+   objectLevelLineInfo(false),
+   lineInfo_(NULL),
+   typeInfo_(NULL),
+   fileName_(fullNm),
+   compDir_(""),
+   language_(lang),
+   addr_(adr),
+   exec_(img),
+   strings_(new StringTable)
 {}
 
-Module::Module(const Module& mod)
-: LookupInterface()
-, objectLevelLineInfo(mod.objectLevelLineInfo)
-, lineInfo_(mod.lineInfo_)
-, typeInfo_(mod.typeInfo_)
-, info_(mod.info_)
-, fileName_(mod.fileName_)
-, fullName_(mod.fullName_)
-, compDir_(mod.compDir_)
-, language_(mod.language_)
-, addr_(mod.addr_)
-, exec_(mod.exec_)
-, strings_(mod.strings_)
-, ranges_finalized(mod.ranges_finalized)
+Module::Module() :
+   objectLevelLineInfo(false),
+   lineInfo_(NULL),
+   typeInfo_(NULL),
+   fileName_(""),
+   language_(lang_Unknown),
+   addr_(0),
+   exec_(NULL),
+   strings_(new StringTable)
+{
+}
+
+Module::Module(const Module &mod) :
+   LookupInterface(),
+   objectLevelLineInfo(mod.objectLevelLineInfo),
+   lineInfo_(mod.lineInfo_),
+   typeInfo_(mod.typeInfo_),
+   fileName_(mod.fileName_),
+   language_(mod.language_),
+   addr_(mod.addr_),
+   exec_(mod.exec_),
+   strings_(mod.strings_)
 
 {}
 
@@ -472,10 +387,16 @@ Module::getAllSymbolsByType(std::vector<Symbol*>& found, Symbol::SymbolType sTyp
     return false;
 }
 
-bool
-Module::getAllFunctions(std::vector<Function*>& ret)
+std::vector<Function*> Module::getAllFunctions() const
 {
-    return exec()->getAllFunctions(ret);
+    auto const& all_funcs = exec()->getAllFunctionsRef();
+    std::vector<Function*> funcs;
+    std::copy_if(all_funcs.begin(), all_funcs.end(), std::back_inserter(funcs),
+	[this] (Function *f) {
+	  return f->getModule() == this;
+        }
+    );
+    return funcs;
 }
 
 bool
@@ -493,21 +414,15 @@ Module::operator==(Module& mod)
             return false;
     }
 
-    return ((language_ == mod.language_) && (addr_ == mod.addr_) &&
-            (fullName_ == mod.fullName_) && (fileName_ == mod.fileName_) &&
-            (lineInfo_ == mod.lineInfo_));
+   return (
+         (language_==mod.language_)
+         && (addr_==mod.addr_)
+         && (fileName_==mod.fileName_)
+	 && (lineInfo_ == mod.lineInfo_)
+         );
 }
 
-bool
-Module::setName(std::string newName)
-{
-    fullName_ = newName;
-    fileName_ = extract_pathname_tail(fullName_);
-    return true;
-}
-
-void
-Module::setLanguage(supportedLanguages lang)
+void Module::setLanguage(supportedLanguages lang)
 {
     language_ = lang;
 }
@@ -593,45 +508,30 @@ Module::addRange(Dyninst::Address low, Dyninst::Address high)
     //    exec_->mod_lookup()->insert(new ModRange(low, high, this));
 }
 
-void
-Module::finalizeRanges()
+std::vector<ModRange*> Module::finalizeRanges()
 {
-    if(ranges.empty())
-    {
-        return;
+    if(ranges.empty()) {
+        return {};
     }
-    auto    bit   = ranges.begin();
+
+    std::vector<ModRange*> mod_ranges;
+    mod_ranges.reserve(ranges.size());
+
+    auto bit = ranges.begin();
     Address ext_s = bit->first;
     Address ext_e = ext_s;
 
-    for(; bit != ranges.end(); ++bit)
-    {
-        if(bit->first > ext_e)
-        {
-            finalizeOneRange(ext_s, ext_e);
+    for( ; bit != ranges.end(); ++bit) {
+        if(bit->first > ext_e) {
+            mod_ranges.push_back(new ModRange(ext_s, ext_e, this));
             ext_s = bit->first;
         }
         ext_e = bit->second;
     }
-    finalizeOneRange(ext_s, ext_e);
-    ranges_finalized = true;
+    mod_ranges.push_back(new ModRange(ext_s, ext_e, this));
     ranges.clear();
-}
 
-void
-Module::finalizeOneRange(Address ext_s, Address ext_e) const
-{
-    ModRange*       r      = new ModRange(ext_s, ext_e, const_cast<Module*>(this));
-    ModRangeLookup* lookup = exec_->mod_lookup();
-    //    cout << "Inserting range " << std::hex << (*r) << std::dec << endl;
-    lookup->insert(r);
-}
-
-void
-Module::addDebugInfo(Module::DebugInfoT info)
-{
-    //    cout << "Adding CU DIE to " << fileName() << endl;
-    info_.push(info);
+    return mod_ranges;
 }
 
 StringTablePtr&

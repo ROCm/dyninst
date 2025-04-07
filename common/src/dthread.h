@@ -109,26 +109,33 @@ class PC_EXPORT CondVar
     mutex_t*                      mutex;
     bool                          created_mutex;
 
-public:
-    CondVar(mutex_t* m = NULL)
-    : cond()
-    , created_mutex(false)
-    {
-        if(m)
-        {
-            mutex = m;
-        }
-        else
-        {
-            mutex         = new mutex_t;
-            created_mutex = true;
-        }
-    }
-    ~CondVar()
-    {
-        if(created_mutex)
-            delete mutex;
-    }
+template <typename mutex_t = Mutex<false> >
+class PC_EXPORT CondVar {
+   boost::condition_variable_any cond;
+   mutex_t *mutex;
+   bool created_mutex;
+ public:
+   CondVar(mutex_t * m = NULL) : cond(), created_mutex(false) { 
+		if(m) {
+			mutex = m;
+		} else {
+			mutex = new mutex_t;
+			created_mutex = true;
+		}
+   }
+   ~CondVar() { if(created_mutex) delete mutex; }
+
+   CondVar(CondVar const&) = delete;
+   CondVar& operator=(CondVar const&) = delete;
+   CondVar(CondVar &&) = delete;
+   CondVar& operator=(CondVar &&rhs) = delete;
+
+   void unlock() { mutex->unlock(); }
+   bool trylock() { return mutex->try_lock(); }
+   void lock() { mutex->lock(); }
+   void signal() { cond.notify_one(); }
+   void broadcast() { cond.notify_all(); }
+   void wait() { cond.wait(*mutex); }
 
     void unlock() { mutex->unlock(); }
     bool trylock() { return mutex->try_lock(); }

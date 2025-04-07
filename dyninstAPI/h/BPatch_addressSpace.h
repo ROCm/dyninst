@@ -37,12 +37,15 @@
 #include "BPatch_enums.h"
 #include "BPatch_instruction.h"  // for register type
 #include "BPatch_callbacks.h"
-
+#include "dyntypes.h"
+#include <string>
+#include <utility>
 #include <vector>
-
+#include <set>
 #include <stdio.h>
 #include <signal.h>
 #include <boost/iterator/transform_iterator.hpp>
+#include "dyntypes.h"
 // PatchAPI stuffs
 //#include "Command.h"
 

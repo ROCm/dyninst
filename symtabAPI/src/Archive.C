@@ -102,8 +102,7 @@ Archive::openArchive(Archive*& img, std::string filename)
     {
         assert(*ar_it != NULL);
 
-        if((*ar_it)->mf->pathname() == filename)
-        {
+        if( (*ar_it)->mf->filename() == filename ) {
             img = *ar_it;
             return true;
         }

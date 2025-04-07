@@ -28,7 +28,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "common/h/dyn_regs.h"
+#include "Architecture.h"
 #include "common/h/dyntypes.h"
 #include "PCErrors.h"
 #include "Generator.h"
@@ -866,9 +866,8 @@ freebsd_process::freebsd_process(Dyninst::PID pid_, int_process* p)
 
 freebsd_process::~freebsd_process()
 {
-    int eventQueue = getEventQueue();
-    if(-1 != eventQueue)
-    {
+    int eventQueue = freebsd_process::getEventQueue();
+    if( -1 != eventQueue ) {
         // Remove the event for this process
         struct kevent event;
         EV_SET(&event, pid, EVFILT_PROC, EV_DELETE, NOTE_EXEC, 0, NULL);

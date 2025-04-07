@@ -29,7 +29,19 @@
  */
 
 #if !defined(_Variable_h_)
-#    define _Variable_h_
+#define _Variable_h_
+
+#include <ostream>
+#include <string>
+#include <vector>
+#include "Annotatable.h"
+#include "Symtab.h"
+#include "Aggregate.h"
+#include "VariableLocation.h"
+#include "Type.h"
+
+namespace Dyninst {
+namespace SymtabAPI {
 
 #    include "Annotatable.h"
 #    include "Symtab.h"

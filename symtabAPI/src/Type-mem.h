@@ -31,9 +31,12 @@
 #if !defined(TYPE_MEM_H_)
 #    define TYPE_MEM_H_
 
-#    include "symtabAPI/h/Type.h"
-#    include "boost/static_assert.hpp"
-#    include <utility>
+#include "symtabAPI/h/Type.h"
+#include "boost/static_assert.hpp"
+#include <assert.h>
+#include <string>
+#include <string.h>
+#include <utility>
 
 using namespace Dyninst;
 using namespace SymtabAPI;

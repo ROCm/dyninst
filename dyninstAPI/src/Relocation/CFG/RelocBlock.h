@@ -31,13 +31,16 @@
 #if !defined(PATCHAPI_TRACE_H_)
 #    define PATCHAPI_TRACE_H_
 
-#    include "common/src/Types.h"        // Address
-#    include "dyninstAPI/src/codegen.h"  // codeGen
-#    include "dyninstAPI/src/function.h"
-#    include "instructionAPI/h/Instruction.h"  // Instruction::Ptr
-#    include "CFG.h"
-#    include "dyninstAPI/src/Relocation/CodeMover.h"
-#    include "RelocEdge.h"
+#include <list>
+#include <string>
+#include <utility>
+#include "dyntypes.h"
+#include "dyninstAPI/src/codegen.h" // codeGen
+#include "dyninstAPI/src/function.h"
+#include "instructionAPI/h/Instruction.h" // Instruction::Ptr
+#include "CFG.h"
+#include "dyninstAPI/src/Relocation/CodeMover.h"
+#include "RelocEdge.h"
 
 class baseTramp;
 class block_instance;

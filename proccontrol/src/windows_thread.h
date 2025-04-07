@@ -28,7 +28,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #if !defined(WINDOWS_THREAD_H)
-#    define WINDOWS_THREAD_H
+#define WINDOWS_THREAD_H
+
+#include <string>
+#include <vector>
+#include "int_process.h"
+
+#if !defined(TF_BIT)
+#define TF_BIT 0x100
+#endif
 
 #    include "int_process.h"
 

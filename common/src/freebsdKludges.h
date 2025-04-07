@@ -31,12 +31,13 @@
 #if !defined(_freebsd_kludges_h)
 #    define _freebsd_kludges_h
 
-#    include <sys/types.h>
-#    include <sys/ptrace.h>
-#    include <errno.h>
-
-#    include <vector>
-#    include <map>
+#include <sys/types.h>
+#include <sys/ptrace.h>
+#include <errno.h>
+#include "dyntypes.h"
+#include "common/src/vm_maps.h"
+#include <vector>
+#include <map>
 
 int
 sysctl_computeAddrWidth(pid_t pid);

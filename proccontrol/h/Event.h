@@ -30,13 +30,15 @@
 #if !defined(EVENT_H_)
 #    define EVENT_H_
 
-#    include <string>
-#    include <set>
-#    include "dyntypes.h"
-#    include "MachSyscall.h"
-#    include "EventType.h"
-#    include "PCProcess.h"
-#    include "util.h"
+#include <string>
+#include <set>
+#include <stddef.h>
+#include <vector>
+#include "dyntypes.h"
+#include "MachSyscall.h"
+#include "EventType.h"
+#include "PCProcess.h"
+#include "util.h"
 
 class HandlerPool;
 class HandleCallbacks;

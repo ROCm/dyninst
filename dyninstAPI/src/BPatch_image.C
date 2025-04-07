@@ -306,14 +306,13 @@ BPatch_image::setFuncModulesCallback(BPatch_function* bpf, void* data)
         bpf->mod = img->findModule(bpf->func->mod()->fileName().c_str());
     }
 
-    if(bpf->getModule() == NULL)
-    {
-        char name[256];
-        fprintf(stderr, "Warning: bpf '%s' unclaimed, setting to DEFAULT_MODULE\n",
-                bpf->getName(name, 255));
-        bpf->setModule(img->defaultModule);
-    }
-    return true;
+   if ( bpf->getModule() == NULL ) {
+      char name[256];
+      fprintf(stderr, "Warning: bpf '%s' unclaimed, setting to default module\n",
+            bpf->getName( name, 255 ) );
+      bpf->setModule( img->defaultModule );
+   }   
+   return true;
 }
 
 bool

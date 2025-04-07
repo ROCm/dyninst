@@ -18,6 +18,8 @@
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
 #endif
+#include <stddef.h>
+#include <utility>
 #include <inttypes.h>
 
 #include <cassert>
@@ -581,7 +583,7 @@ public:
      *  copying and then deleting other_value.
      *
      *  Returns true if merging occurred, false otherwise. */
-    bool merge(const Range &my_range, const Range &other_range, const RangeMapVoid &other_value) {
+    bool merge(const Range &my_range, const Range &other_range, const RangeMapVoid &/*other_value*/) {
         assert(!my_range.empty() && !other_range.empty());
         return true;
     }
@@ -595,7 +597,7 @@ public:
         return RangeMapVoid();
     }
 
-    void print(std::ostream &o) const {}
+    void print(std::ostream &/*o*/) const {}
     friend std::ostream& operator<<(std::ostream &o, const RangeMapVoid &x) {
         x.print(o);
         return o;

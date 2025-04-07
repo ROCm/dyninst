@@ -34,6 +34,7 @@
 #include "emitElfStatic.h"
 #include "common/src/pathName.h"
 #include "dyninstAPI_RT/h/dyninstAPI_RT.h"
+#include "unaligned_memory_access.h"
 
 #if defined(os_freebsd)
 #    include "common/src/freebsdKludges.h"
@@ -430,13 +431,10 @@ emitElf<ElfTypes>::createElfSymbol(Symbol* symbol, unsigned strIndex,
                 if(vers)
                 {
                     // There should only be one version string by this time
-                    // If the verison name already exists then add the same version number
-                    // to the version symbol table Else give a new number and add it to
-                    // the mapping.
-                    if(versionNames.find((*vers)[0]) == versionNames.end())
-                    {
-                        mpos +=
-                            sprintf(mpos, "  new version name: %s\n", (*vers)[0].c_str());
+                    //If the version name already exists then add the same version number to the version symbol table
+                    //Else give a new number and add it to the mapping.
+                    if (versionNames.find((*vers)[0]) == versionNames.end()) {
+                        mpos += sprintf(mpos, "  new version name: %s\n", (*vers)[0].c_str());
                         versionNames[(*vers)[0]] = 0;
                     }
 
@@ -471,9 +469,6 @@ emitElf<ElfTypes>::createElfSymbol(Symbol* symbol, unsigned strIndex,
                 }
             }
         }
-#ifdef BINEDIT_DEBUG
-        printf("%s", msg);
-#endif
     }
 
     return true;
@@ -833,9 +828,8 @@ emitElf<ElfTypes>::driver(std::string fName)
             }
         }
         // Change offsets of sections based on the newly added sections
-        if(movePHdrsFirst)
-        {
-            /* This special case is specific to FreeBSD but there is no hurt in
+        if (movePHdrsFirst) {
+            /* This special case is specific to FreeBSD but there is no harm in
              * handling it on other platforms.
              *
              * This is necessary because the INTERP header must be located within in
@@ -1294,8 +1288,8 @@ emitElf<ElfTypes>::fixPhdrs(unsigned& extraAlignSize)
     if(!phdrs_scn)
         return;
 
-    // We made a new section to contain the program headers--keeps
-    // libelf from overwriting the program headers data when outputing
+    //We made a new section to contain the program headers--keeps
+    // libelf from overwriting the program headers data when outputting
     // sections.  Fill in the new section's data with what we just wrote.
     Elf_Data* data       = elf_newdata(phdrs_scn);
     size_t    total_size = (size_t) newEhdr->e_phnum * (size_t) newEhdr->e_phentsize;
@@ -1321,15 +1315,11 @@ emitElf<ElfTypes>::fixPhdrs(unsigned& extraAlignSize)
 #    define DT_TLSDESC_GOT 0x6ffffef7
 #endif
 
-// This method updates the .dynamic section to reflect the changes to the relocation
-// section
-template <class ElfTypes>
-void
-emitElf<ElfTypes>::updateDynamic(unsigned tag, Elf_Addr val)
-{
-    if(isStaticBinary)
-        return;
-    // This is for REL/RELA if it doesnt already exist in the original binary;
+//This method updates the .dynamic section to reflect the changes to the relocation section
+template<class ElfTypes>
+void emitElf<ElfTypes>::updateDynamic(unsigned tag, Elf_Addr val) {
+    if (isStaticBinary) return;
+    // This is for REL/RELA if it doesn't already exist in the original binary;
     if(dynamicSecData.find(tag) != dynamicSecData.end())
         dynamicSecData[tag][0]->d_tag = tag;
     else
@@ -1494,10 +1484,8 @@ emitElf<ElfTypes>::createLoadableSections(
         else if(!firstNewLoadSec || !newSecs[i]->getDiskOffset())
         {
             newshdr->sh_offset = shdr->sh_offset + shdr->sh_size;
-        }
-        else
-        {
-            // The offset can be computed by determing the difference from
+        } else {
+            // The offset can be computed by determining the difference from
             // the first new loadable section
             newshdr->sh_offset = firstNewLoadSec->sh_offset + library_adjust +
                                  (newSecs[i]->getDiskOffset() - firstNewLoadSec->sh_addr);
@@ -1890,7 +1878,7 @@ emitElf<ElfTypes>::createNonLoadableSections(Elf_Shdr*& shdr)
 
 /* Regenerates the .symtab, .strtab sections from the symbols
  * Add new .dynsym, .dynstr sections for the newly added dynamic symbols
- * Method - For every symbol call createElfSymbol to get a Elf_Sym corresposnding
+ * Method - For every symbol call createElfSymbol to get a Elf_Sym corresponding
  *          to a Symbol object. Accumulate all and their names to form the sections
  *          and add them to the list of new sections
  */
@@ -2029,7 +2017,7 @@ emitElf<ElfTypes>::createSymbolTables(set<Symbol*>& allSymbols)
         }
     }
 
-    // sort allSymbols in a way that every symmbol with index -1 are in order of offset
+    // sort allSymbols in a way that every symbol with index -1 are in order of offset
     std::sort(allDynSymbols.begin(), allDynSymbols.end(), sortByOffsetNewIndices());
 
     int max_index = -1;
@@ -2315,6 +2303,32 @@ emitElf<ElfTypes>::createSymbolTables(set<Symbol*>& allSymbols)
 
     if(!obj->getAllNewRegions(newSecs))
         log_elferror(err_func_, "No new sections to add");
+
+    unsigned int prev_size = 0;
+    unsigned long sec_addr = 0;
+    for (unsigned long nsi = 0; nsi < newSecs.size(); nsi++) {
+	// Update the _DYNAMIC symbol; described in the elf standard as:
+	//  The program header table will have an element of type PT_DYNAMIC.
+	//  This "segment" contains the .dynamic section. A special symbol,
+	//  _DYNAMIC, labels the section
+	if (newSecs[nsi]->getDiskOffset())
+	  sec_addr = newSecs[nsi]->getDiskOffset() + library_adjust;
+	else
+	  sec_addr += prev_size;
+	prev_size = newSecs[nsi]->getDiskSize();
+	if (".dynamic" == newSecs[nsi]->getRegionName()) {
+	    // Found the .dynamic section
+	    for (unsigned long symi = 0; symi < symbolStrs.size(); symi++)
+	      if ("_DYNAMIC" == symbolStrs[symi]) {
+		  // Found the _DYNAMIC symbol
+		  rewrite_printf("update _DYNAMIC symbol from %#lx to %#lx\n",
+				 (unsigned long) syms[symi].st_value, (unsigned long) sec_addr);
+		  syms[symi].st_value = sec_addr;
+		  break;
+	      }
+	    break;
+	}
+    }
 
     return true;
 }
@@ -2669,10 +2683,9 @@ emitElf<ElfTypes>::createHashSection(Elf_Word*& hashsecData, unsigned& hashsecSi
     std::vector<unsigned> originalHashEntries;
     Offset                dynsymSize = obj->getObject()->getDynsymSize();
 
-    Elf_Scn*  scn  = NULL;
-    Elf_Shdr* shdr = NULL;
-    for(unsigned scncount = 0; (scn = elf_nextscn(oldElf, scn)); scncount++)
-    {
+    Elf_Scn *scn = NULL;
+    Elf_Shdr *shdr = NULL;
+    while ((scn = elf_nextscn(oldElf, scn))) {
         shdr = ElfTypes::elf_getshdr(scn);
         if(obj->getObject()->getElfHashAddr() != 0 &&
            obj->getObject()->getElfHashAddr() == shdr->sh_addr)
@@ -2774,10 +2787,9 @@ emitElf<ElfTypes>::createDynamicSection(void* dynData_, unsigned size,
         dynamicSecData[DT_NEEDED].push_back(dynsecData + curpos);
         curpos++;
     }
-    for(unsigned i = 0; i < new_dynamic_entries.size(); i++)
-    {
-        long name                = new_dynamic_entries[i].first;
-        long value               = new_dynamic_entries[i].second;
+    for (auto const& entry: new_dynamic_entries){
+        long name = entry.first;
+        long value = entry.second;
         dynsecData[curpos].d_tag = name;
         long adjust              = 0;
         switch(name)
@@ -2794,27 +2806,18 @@ emitElf<ElfTypes>::createDynamicSection(void* dynData_, unsigned size,
         dynamicSecData[name].push_back(dynsecData + curpos);
         curpos++;
 
-        if(name == DT_DYNINST)
-        {
-            // If we find the .dyninstInst section and DT_DYNINST dynamic entry,
-            // it means we are doing binary rewriting with trap springboards.
-            // If library_adjust is non-zero, then we also need to adjust springboard
-            // traps
-            Region* dyninstReg = NULL;
-            if(obj->findRegion(dyninstReg, ".dyninstInst") && library_adjust)
-            {
-                // The trap mapping header's in-memory offset is specified by the dynamic
-                // entry We now need to get raw section data, and the raw sectiond data
-                // offset of the header
-                struct trap_mapping_header* header =
-                    (struct trap_mapping_header*) ((char*) dyninstReg->getPtrToRawData() +
-                                                   value - dyninstReg->getMemOffset());
-                for(i = 0; i < header->num_entries; i++)
-                {
-                    header->traps[i].source =
-                        (void*) ((char*) header->traps[i].source + library_adjust);
-                    header->traps[i].target =
-                        (void*) ((char*) header->traps[i].target + library_adjust);
+        if (name == DT_DYNINST) {
+            // If we find the .dyninstInst section and DT_DYNINST dynamic entry, 
+            // it means we are doing binary rewriting with trap springboards. 
+            // If library_adjust is non-zero, then we also need to adjust springboard traps
+            Region *dyninstReg = NULL;
+            if (obj->findRegion(dyninstReg, ".dyninstInst") && library_adjust) {
+                // The trap mapping header's in-memory offset is specified by the dynamic entry
+                // We now need to get raw section data, and the raw sectiond data offset of the header
+                auto header = alignas_cast<trap_mapping_header>(((char*)dyninstReg->getPtrToRawData() + value - dyninstReg->getMemOffset()));
+                for (unsigned i = 0; i < header->num_entries; i++) {
+                    header->traps[i].source = (void*) ((char*)header->traps[i].source + library_adjust);
+                    header->traps[i].target = (void*) ((char*)header->traps[i].target + library_adjust);
                 }
             }
         }

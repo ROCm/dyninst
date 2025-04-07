@@ -31,7 +31,10 @@
 #if !defined(MMAPALLOC_H_)
 #    define MMAPALLOC_H_
 
-#    include "int_process.h"
+#include <map>
+#include <string>
+#include <vector>
+#include "int_process.h"
 
 /**
  * A process that can use mmap to allocate memory.

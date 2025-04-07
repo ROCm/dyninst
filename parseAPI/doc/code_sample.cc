@@ -66,7 +66,7 @@ int main(int argc, char **argv){
 	fbl--;
 	Block *b = *fbl;
 	Address lastAddr = b->last();
-	//if current function has zero instructions, don’t output it
+	//if current function has zero instructions, don't output it
 	if(crtAddr == lastAddr)
 	    continue;
 	cout << "\n\n\"" << f->name() << "\" :";

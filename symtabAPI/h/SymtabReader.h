@@ -31,11 +31,11 @@
 #if !defined SYMTAB_READER_H_
 #    define SYMTAB_READER_H_
 
-#    include "SymReader.h"
-#    include <string>
-#    include <vector>
-// Some components (StackwalkerAPI, ProcControlAPI) use a SymReader (defined in
-// dyn_util/h)
+#include "SymReader.h"
+#include <string>
+#include <vector>
+#include <map>
+//Some components (StackwalkerAPI, ProcControlAPI) use a SymReader (defined in dyn_util/h)
 // to read symbols rather than a straight dependency on SymtabAPI.  A component can
 // either define its own SymReader (as ProcControlAPI does) or it can use SymtabAPI as
 // its symbol reader.  These SymtabReader and SymtabReaderFactory implement the SymReader

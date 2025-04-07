@@ -53,10 +53,16 @@ CodeBuffer::BufferElement::BufferElement()
 , labelID_(Label::INVALID)
 {}
 
-CodeBuffer::BufferElement::~BufferElement()
-{
-    if(patch_)
-        delete patch_;
+CodeBuffer::BufferElement::BufferElement() = default;
+
+CodeBuffer::BufferElement::BufferElement(CodeBuffer::BufferElement&& other)  {
+   *this = other;
+   other.patch_ = nullptr;
+}
+
+
+CodeBuffer::BufferElement::~BufferElement() {
+   if (patch_) delete patch_;
 }
 
 void
@@ -130,26 +136,22 @@ CodeBuffer::BufferElement::generate(CodeBuffer* buf, codeGen& gen, int& shift,
     // Get the easy bits out of the way
     gen.copy(buffer_);
 
-    if(patch_)
-    {
-        // Now things get interesting
-        if(!patch_->apply(gen, buf))
-        {
-            relocation_cerr << "Patch failed application, ret false" << endl;
-            return false;
-        }
-    }
-    unsigned newSize = gen.getDisplacement(start, gen.getIndex());
-    if(newSize > size_)
-    {
-        shift += newSize - size_;
-        size_      = newSize;
-        regenerate = true;
-    }
-    else
-    {
-        gen.fill(size_ - newSize, codeGen::cgNOP);
-    }
+   if (patch_) {
+      // Now things get interesting
+      if (!patch_->apply(gen, buf)) {
+	relocation_cerr << "Patch failed application, ret false" << std::endl;
+         return false;
+      }
+   }
+   unsigned newSize = gen.getDisplacement(start, gen.getIndex());
+   if (newSize > size_) {
+      shift += newSize - size_;
+      size_ = newSize;
+      regenerate = true;
+   }
+   else {
+      gen.fill(size_ - newSize, codeGen::cgNOP);
+   }
 #if 0
    else if (newSize < size_) {
       shift -= size_ - newSize;
@@ -321,32 +323,12 @@ CodeBuffer::generate(Address baseAddr)
     gen_.setAddr(baseAddr);
     bool doOver = false;
 
-    do
-    {
-        doOver = false;
-        curIteration_++;
-        shift_ = 0;
-        gen_.invalidate();
-        gen_.allocate(size_);
-        totalPadding = 0;
-
-        for(Buffers::iterator iter = buffers_.begin(); iter != buffers_.end(); ++iter)
-        {
-            bool regenerate = false;
-            if(!iter->generate(this, gen_, shift_, regenerate))
-            {
-                return false;
-            }
-            doOver |= regenerate;
-        }
-
-    } while(doOver);
-
-    shift_ = 0;
-    size_  = gen_.used();
-
-    generated_ = true;
-    return true;
+   Instruction cur = decoder.decode();
+   while (cur.isValid()) {
+      cerr << "\t" << std::hex << addr << std::dec << ": " << cur.format() << std::endl;
+      addr += cur.size();
+      cur = decoder.decode();
+   }
 }
 
 void
@@ -357,13 +339,25 @@ CodeBuffer::disassemble() const
                                                gen_.getArch());
     Address                            addr = gen_.startAddr();
 
-    Instruction cur = decoder.decode();
-    while(cur.isValid())
-    {
-        cerr << "\t" << std::hex << addr << std::dec << ": " << cur.format() << endl;
-        addr += cur.size();
-        cur = decoder.decode();
-    }
+
+   if (id >= labels_.size()) {
+      cerr << "ERROR: id of " << id << " but only " << labels_.size() << " labels!" << std::endl;
+   }
+   assert(id < labels_.size());
+   assert(id > 0);
+   Label &l = labels_[id];
+   if (!l.valid()) return;
+
+   //relocation_cerr << "\t Updating label " << id 
+//                   << " -> " << std::hex << offset << std::dec << endl;
+   if (l.addr != offset) {
+      //relocation_cerr << "\t\t Old value " << std::hex << labels_[id].addr
+//                      << ", regenerating!" << std::dec << endl;
+      regenerate = true;
+   }
+   l.addr = offset;
+   l.iteration++;
+   l.type = Label::Estimate;
 }
 
 void
@@ -396,39 +390,24 @@ CodeBuffer::updateLabel(unsigned id, Address offset, bool& regenerate)
     l.type = Label::Estimate;
 }
 
-Address
-CodeBuffer::getLabelAddr(unsigned id)
-{
-    assert(generated_);
-    shift_ = 0;
-    return predictedAddr(id);
-}
-
-Address
-CodeBuffer::predictedAddr(unsigned id)
-{
-    if(id >= labels_.size())
-    {
-        cerr << "ERROR: id of " << id << " but only " << labels_.size() << " labels!"
-             << endl;
-    }
-    assert(id < labels_.size());
-    assert(id > 0);
-    Label& label = labels_[id];
-    switch(label.type)
-    {
-        case Label::Absolute:
-            // relocation_cerr << "\t\t Requested predicted addr for " << id
-            //                         << ", label is absolute, ret " << std::hex <<
-            //                         label.addr << std::dec << endl;
-            return label.addr;
-        case Label::Relative:
-            assert(gen_.startAddr());
-            assert(gen_.startAddr() != (Address) -1);
-            // relocation_cerr << "\t\t Requested predicted addr for " << id
-            //                         << ", label is relative, ret " << std::hex <<
-            //                         label.addr + gen_.startAddr()
-            //                         << " = " << label.addr << " + " << gen_.startAddr()
+Address CodeBuffer::predictedAddr(unsigned id) {
+   if (id >= labels_.size()) {
+      cerr << "ERROR: id of " << id << " but only " << labels_.size() << " labels!" << std::endl;
+   }
+   assert(id < labels_.size());
+   assert(id > 0);
+   Label &label = labels_[id];
+   switch(label.type) {
+      case Label::Absolute:
+         //relocation_cerr << "\t\t Requested predicted addr for " << id
+//                         << ", label is absolute, ret " << std::hex << label.addr << std::dec << endl;
+         return label.addr;
+      case Label::Relative:
+         assert(gen_.startAddr());
+         assert(gen_.startAddr() != (Address) -1);
+         //relocation_cerr << "\t\t Requested predicted addr for " << id
+//                         << ", label is relative, ret " << std::hex << label.addr + gen_.startAddr()
+//                         << " = " << label.addr << " + " << gen_.startAddr()
             //             << std::dec << endl;
             return label.addr + gen_.startAddr();
         case Label::Estimate: {

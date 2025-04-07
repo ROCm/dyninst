@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1996-2021 Barton P. Miller
- *
+ * See the dyninst/COPYRIGHT file for copyright information.
+ * 
  * We provide the Paradyn Parallel Performance Tools (below
  * described as "Paradyn") on an AS IS basis, and do not warrant its
  * validity or performance.  We reserve the right to update, modify,
@@ -148,10 +148,9 @@ SymReaderCodeRegion::getArch() const
 bool
 SymReaderCodeRegion::isCode(const Address addr) const
 {
-    if(!contains(addr))
-        return false;
-    return true;
-
+    if(!contains(addr)) return false;
+    return _region->perms & PF_X;
+    
     /*
     // XXX this is the predicate from SymReader::isCode(a) +
     //     the condition by which SymReader::codeRegions_ is filled
@@ -164,9 +163,9 @@ SymReaderCodeRegion::isCode(const Address addr) const
 bool
 SymReaderCodeRegion::isData(const Address addr) const
 {
-    if(!contains(addr))
-        return false;
-    return true;
+    if(!contains(addr)) return false;
+    return !(_region->perms & PF_X);
+    
 
     /*
     // XXX SymReader::isData(a) tests both RT_DATA (Region::isData(a))
@@ -174,6 +173,16 @@ SymReaderCodeRegion::isData(const Address addr) const
     return _region->isData() ||
            _region->type==SymSegment::RT_TEXTDATA;
     */
+}
+
+bool
+SymReaderCodeRegion::isReadOnly(const Address addr) const
+{
+    if (!contains(addr))  {
+        return false;
+    }
+
+    return !(_region->perms & PF_W);
 }
 
 Address
@@ -425,12 +434,10 @@ SymReaderCodeSource::lookup_region(const Address addr) const
 inline void
 SymReaderCodeSource::overlapping_warn(const char* file, unsigned line) const
 {
-    if(regionsOverlap())
-    {
-        fprintf(stderr,
-                "Invocation of routine at %s:%d is ambiguous for "
-                "binaries with overlapping code regions\n",
-                file, line);
+    if(regionsOverlap()) {
+        fprintf(stderr,"Invocation of routine at %s:%u is ambiguous for "
+                       "binaries with overlapping code regions\n",
+            file,line);
     }
 }
 
@@ -506,6 +513,18 @@ SymReaderCodeSource::isData(const Address addr) const
     CodeRegion* cr = lookup_region(addr);
     if(cr)
         return cr->isData(addr);
+    else
+        return false;
+}
+
+bool
+SymReaderCodeSource::isReadOnly(const Address addr) const
+{
+    overlapping_warn(FILE__,__LINE__);
+
+    CodeRegion * cr = lookup_region(addr);
+    if(cr)
+        return cr->isReadOnly(addr);
     else
         return false;
 }

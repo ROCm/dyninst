@@ -31,13 +31,14 @@
 #if !defined(_R_T_MODIFICATION_H_)
 #    define _R_T_MODIFICATION_H_
 
-#    include "Transformer.h"
-#    include "../Widgets/Widget.h"
-#    include "dyninstAPI/src/addressSpace.h"
-#    include <list>
-#    include <set>
-#    include <map>
-#    include "../DynInstrumenter.h"
+#include "Transformer.h"
+#include "../Widgets/Widget.h"
+#include "dyninstAPI/src/addressSpace.h"
+#include <string>
+#include <list>
+#include <set>
+#include <map>
+#include "../DynInstrumenter.h"
 
 class block_instance;
 class instPoint;

@@ -31,7 +31,9 @@
 #if !defined(_R_E_CONTROL_FLOW_H_)
 #    define _R_E_CONTROL_FLOW_H_
 
-#    include "Widget.h"
+#include <map>
+#include <string>
+#include "Widget.h"
 
 class block_instance;
 class func_instance;
@@ -167,23 +169,22 @@ private:
     bool generateBranch(CodeBuffer& gens, TargetInt* to, InstructionAPI::Instruction insn,
                         const RelocBlock* trace, bool fallthrough);
 
-    bool generateCall(CodeBuffer& gens, TargetInt* to, const RelocBlock* trace,
-                      InstructionAPI::Instruction insn);
-
-    bool generateConditionalBranch(CodeBuffer& gens, TargetInt* to,
-                                   const RelocBlock*           trace,
-                                   InstructionAPI::Instruction insn);
-    // The Register holds the translated destination (if any)
-    // TODO replace with the register IDs that Bill's building
-    typedef unsigned Register;
-    bool generateIndirect(CodeBuffer& gens, Register reg, const RelocBlock* trace,
-                          InstructionAPI::Instruction insn);
-    bool generateIndirectCall(CodeBuffer& gens, Register reg,
-                              InstructionAPI::Instruction insn, const RelocBlock* trace,
-                              Address origAddr);
-
-    bool generateAddressTranslator(CodeBuffer& buffer, const codeGen& templ,
-                                   Register& reg, const RelocBlock* trace);
+  bool generateConditionalBranch(CodeBuffer &gens,
+								 TargetInt *to,
+								 const RelocBlock *trace,
+								 InstructionAPI::Instruction insn);
+  // The Register holds the translated destination (if any)
+  // TODO replace with the register IDs that Bill's building
+  typedef unsigned Register;
+  bool generateIndirect(CodeBuffer &gens,
+						Register reg,
+						const RelocBlock *trace,
+						InstructionAPI::Instruction insn);
+  bool generateIndirectCall(CodeBuffer &gens,
+							Register reg,
+							InstructionAPI::Instruction insn,
+							const RelocBlock *trace,
+							Address origAddr);
 };
 
 struct CFPatch : public Patch

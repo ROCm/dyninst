@@ -38,15 +38,7 @@
 #include "dyninstAPI/src/inst-x86.h"
 #include "dyninstAPI/src/debug.h"
 
-#if defined(cap_mem_emulation)
-#    include "dyninstAPI/src/MemoryEmulator/memEmulatorWidget.h"
-#    include "dyninstAPI/src/BPatch_memoryAccessAdapter.h"
-#    include "dyninstAPI/h/BPatch_memoryAccess_NP.h"
-#    include "dyninstAPI/src/MemoryEmulator/memEmulatorWidget.h"
-#    include "dyninstAPI/src/registerSpace.h"
-#endif
-
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 
 #include "../CodeTracker.h"
 #include "../CodeBuffer.h"
@@ -139,8 +131,10 @@ CFWidget::CFWidget(InstructionAPI::Instruction insn, Address addr)
     }
 }
 
-bool
-CFWidget::generate(const codeGen& templ, const RelocBlock* trace, CodeBuffer& buffer)
+
+bool CFWidget::generate(const codeGen &,
+                      const RelocBlock *trace,
+                      CodeBuffer &buffer)
 {
     // We need to create jumps to wherever our successors are
     // We can assume the addresses returned by our Targets
@@ -210,16 +204,32 @@ CFWidget::generate(const codeGen& templ, const RelocBlock* trace, CodeBuffer& bu
                 iter        = destMap_.find(Fallthrough);
                 fallthrough = true;
             }
-            if(iter == destMap_.end())
-            {
-                cerr << "Error in CFWidget from trace " << trace->id()
-                     << ", could not find target for single control transfer" << endl;
-                cerr << "\t DestMap dump:" << endl;
-                for(DestinationMap::iterator d = destMap_.begin(); d != destMap_.end();
-                    ++d)
-                {
-                    cerr << "\t\t " << d->first << " : " << d->second->format() << endl;
-                }
+         }
+         break;
+      }
+      case Indirect: {
+         Register reg = Null_Register; /* = originalRegister... */
+
+	 // If this is an indirect tail call, we still treat it
+	 // as an indirect call
+         if (isCall_ || trace->block()->llb()->isIndirectTailCallBlock()) {
+            if (!generateIndirectCall(buffer, 
+                                      reg, 
+                                      insn_, 
+                                      trace,
+                                      addr_)) 
+               return false;
+            // We may be putting another block in between this
+            // one and its fallthrough due to edge instrumentation
+            // So if there's the possibility for a return put in
+            // a fallthrough branch
+            if (destMap_.find(Fallthrough) != destMap_.end()) {
+               if (!generateBranch(buffer,
+                                   destMap_[Fallthrough],
+                                   Instruction(),
+                                   trace,
+                                   true)) 
+                  return false;
             }
 
             assert(iter != destMap_.end());

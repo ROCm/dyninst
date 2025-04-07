@@ -8,6 +8,12 @@
 #ifndef Sawyer_PoolAllocator_H
 #define Sawyer_PoolAllocator_H
 
+#include <assert.h>
+#include <ostream>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <utility>
 #include <boost/version.hpp>
 #include <boost/foreach.hpp>
 #include <boost/static_assert.hpp>
@@ -108,7 +114,7 @@ private:
         const Chunk *chunk;
         size_t nUsed;
         ChunkInfo(): chunk(NULL), nUsed(0) {}
-        ChunkInfo(const Chunk *chunk, size_t nUsed): chunk(chunk), nUsed(nUsed) {}
+        ChunkInfo(const Chunk *chunk_, size_t nUsed_): chunk(chunk_), nUsed(nUsed_) {}
         bool operator==(const ChunkInfo &other) const {
             return chunk==other.chunk && nUsed==other.nUsed;
         }
@@ -163,7 +169,7 @@ private:
         Pool(const Pool&);                              // nonsense
 
     public:
-        Pool(): cellSize_(0) {}
+        Pool(): cellSize_(0), freeLists_{} {}
 
         void init(size_t cellSize) {
             assert(cellSize_ == 0);
@@ -180,6 +186,8 @@ private:
                 delete *ci;
         }
 
+DYNINST_DIAGNOSTIC_BEGIN_SUPPRESS_UNUSED_VARIABLE
+
         bool isEmpty() const {
             SAWYER_THREAD_TRAITS::LockGuard lock(chunkMutex_);
             return chunks_.empty();
@@ -192,7 +200,7 @@ private:
             if (!freeLists_[freeListIdx]) {
                 Chunk *chunk = new Chunk;
                 freeLists_[freeListIdx] = chunk->fill(cellSize_);
-                SAWYER_THREAD_TRAITS::LockGuard lock(chunkMutex_);
+                SAWYER_THREAD_TRAITS::LockGuard chunkLock(chunkMutex_);
                 chunks_.push_back(chunk);
             }
             ASSERT_not_null(freeLists_[freeListIdx]);
@@ -211,6 +219,8 @@ private:
             freedCell->next = freeLists_[freeListIdx];
             freeLists_[freeListIdx] = freedCell;
         }
+
+DYNINST_DIAGNOSTIC_END_SUPPRESS_UNUSED_VARIABLE
 
         // Information about each chunk.
         ChunkInfoMap chunkInfoNS() const {

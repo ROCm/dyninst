@@ -43,7 +43,7 @@
 #include "Collections.h"
 #include "Function.h"
 #include "Variable.h"
-
+#include "symtab_impl.hpp"
 #include "symtabAPI/src/Object.h"
 
 #include "boost/tuple/tuple.hpp"
@@ -118,8 +118,9 @@ Symtab::deleteFunction(Function* func)
                 everyFunction.erase(iter);
             }
         }
-    */
-    funcsByOffset.erase(func->getOffset());
+    }
+*/
+    impl->funcsByOffset.erase(func->getOffset());
 
     // Now handle the Aggregate stuff
     return deleteAggregate(func);
@@ -134,15 +135,13 @@ Symtab::deleteVariable(Variable* var)
 
     // remove variable from varsByOffset
     {
-        VarsByOffsetMap::accessor a;
-        bool                      found = !varsByOffset.find(a, var->getOffset());
-        if(found)
-        {
-            VarsByOffsetMap::mapped_type& vars = a->second;
+        decltype(impl->varsByOffset)::accessor a;
+        bool found = !impl->varsByOffset.find(a, var->getOffset());
+        if (found)  {
+            decltype(impl->varsByOffset)::mapped_type &vars = a->second;
             vars.erase(std::remove(vars.begin(), vars.end(), var), vars.end());
-            if(vars.empty())
-            {
-                varsByOffset.erase(a);
+            if (vars.empty())  {
+                impl->varsByOffset.erase(a);
             }
         }
     }
@@ -165,12 +164,10 @@ Symtab::deleteAggregate(Aggregate* agg)
     return ret;
 }
 
-bool
-Symtab::deleteSymbolFromIndices(Symbol* sym)
-{
-    everyDefinedSymbol.erase(sym);
-    undefDynSyms.erase(sym);
-    return true;
+bool Symtab::deleteSymbolFromIndices(Symbol *sym) {
+  impl->everyDefinedSymbol.erase(sym);
+  impl->undefDynSyms.erase(sym);
+  return true;
 }
 
 bool
@@ -185,67 +182,24 @@ Symtab::deleteSymbol(Symbol* sym)
     return result;
 }
 
-bool
-Symtab::changeSymbolOffset(Symbol* sym, Offset newOffset)
-{
-    // If we aren't part of an aggregate, change the symbol offset
-    // and update symsByOffset.
-    // If we are part of an aggregate and the only symbol element,
-    // do that and update funcsByOffset or varsByOffset.
-    // If we are and not the only symbol, do 1), remove from
-    // the aggregate, and make a new aggregate.
-    {
-        indexed_symbols::master_t::accessor a;
-        if(!everyDefinedSymbol.master.find(a, sym))
-        {
-            assert(!"everyDefinedSymbol.master.find(a, sym)");
-        }
+bool Symtab::changeAggregateOffset(Aggregate *agg, Offset oldOffset, Offset newOffset) {
+    Function *func = dynamic_cast<Function *>(agg);
+    Variable *var = dynamic_cast<Variable *>(agg);
 
-        indexed_symbols::by_offset_t::accessor oa;
-        if(!everyDefinedSymbol.by_offset.find(oa, sym->offset_))
-        {
-            assert(!"everyDefinedSymbol.by_offset.find(oa, sym->offset_)");
-        }
-        auto& syms = oa->second;
-        syms.erase(std::remove(syms.begin(), syms.end(), sym), syms.end());
-        everyDefinedSymbol.by_offset.insert(oa, newOffset);
-        oa->second.push_back(sym);
-
-        a->second    = newOffset;
-        sym->offset_ = newOffset;
-    }
-
-    if(sym->aggregate_ == NULL)
-        return true;
-    else
-        return sym->aggregate_->changeSymbolOffset(sym);
-}
-
-bool
-Symtab::changeAggregateOffset(Aggregate* agg, Offset oldOffset, Offset newOffset)
-{
-    Function* func = dynamic_cast<Function*>(agg);
-    Variable* var  = dynamic_cast<Variable*>(agg);
-
-    if(func)
-    {
-        funcsByOffset.erase(oldOffset);
-        if(!funcsByOffset.insert({ newOffset, func }))
-        {
+    if (func) {
+        impl->funcsByOffset.erase(oldOffset);
+        if (!impl->funcsByOffset.insert({newOffset, func})) {
             // Already someone there... odd, so don't do anything.
         }
     }
-    if(var)
-    {
-        VarsByOffsetMap::accessor     a;
-        bool                          found = !varsByOffset.find(a, oldOffset);
-        VarsByOffsetMap::mapped_type& vars  = a->second;
-        if(found)
-        {
+    if (var) {
+        decltype(impl->varsByOffset)::accessor a;
+        bool found = !impl->varsByOffset.find(a, oldOffset);
+        decltype(impl->varsByOffset)::mapped_type &vars = a->second;
+        if (found)  {
             vars.erase(std::remove(vars.begin(), vars.end(), var), vars.end());
-            if(vars.empty())
-            {
-                varsByOffset.erase(a);
+            if (vars.empty())  {
+                impl->varsByOffset.erase(a);
             }
         }
         else
@@ -253,9 +207,8 @@ Symtab::changeAggregateOffset(Aggregate* agg, Offset oldOffset, Offset newOffset
             assert(0);
         }
 
-        found = !varsByOffset.insert(a, newOffset);
-        if(found)
-        {
+        found = !impl->varsByOffset.insert(a, newOffset);
+        if (found)  {
             found = false;
             for(auto v : vars)
             {
@@ -290,16 +243,16 @@ Symtab::addSymbol(Symbol* newSym, Symbol* referringSymbol)
 
         newSym->setReferringSymbol(referringSymbol);
 
-        string         filename = referringSymbol->getModule()->exec()->name();
-        vector<string>*vers, *newSymVers = new vector<string>;
+        string filename = referringSymbol->getModule()->exec()->name();
+        vector<string> *vers{};
         newSym->setVersionFileName(filename);
         std::string rstr;
 
         newSym->getVersionFileName(rstr);
         if(referringSymbol->getVersions(vers) && vers != NULL && vers->size() > 0)
         {
-            newSymVers->push_back((*vers)[0]);
-            newSym->setVersions(*newSymVers);
+            auto newSymVers = std::vector<std::string>{(*vers)[0]};
+            newSym->setVersions(newSymVers);
         }
     }
     else
@@ -360,25 +313,29 @@ Symtab::createFunction(std::string name, Offset offset, size_t sz, Module* mod)
         mod = getDefaultModule();
     }
 
-    // Check to see if we contain this module...
-    if(indexed_modules.get<1>().find(mod) == indexed_modules.get<1>().end())
-        return NULL;
-    //
-    //    bool found = false;
-    //    for (unsigned i = 0; i < indexed_modules.size(); i++) {
-    //        if (indexed_modules[i] == mod) {
-    //            found = true;
-    //            break;
-    //        }
-    //    }
-    //    if (!found) {
-    //        return NULL;
-    //    }
-
-    Symbol* statSym = new Symbol(name, Symbol::ST_FUNCTION, Symbol::SL_GLOBAL,
-                                 Symbol::SV_DEFAULT, offset, mod, reg, sz, false, false);
-    if(!addSymbol(statSym))
-    {
+//
+//    bool found = false;
+//    for (unsigned i = 0; i < indexed_modules.size(); i++) {
+//        if (indexed_modules[i] == mod) {
+//            found = true;
+//            break;
+//        }
+//    }
+//    if (!found) {
+//        return NULL;
+//    }
+    
+    Symbol *statSym = new Symbol(name, 
+                                 Symbol::ST_FUNCTION, 
+                                 Symbol::SL_GLOBAL,
+                                 Symbol::SV_DEFAULT, 
+                                 offset, 
+                                 mod,
+                                 reg, 
+                                 sz,
+                                 false,
+                                 false);
+    if (!addSymbol(statSym)) {
         return NULL;
     }
 
@@ -400,26 +357,40 @@ Symtab::createVariable(std::string name, Offset offset, size_t sz, Module* mod)
     {
         mod = getDefaultModule();
     }
-    // Check to see if we contain this module...
-    if(indexed_modules.get<1>().find(mod) == indexed_modules.get<1>().end())
-        return NULL;
-    //
-    //    bool found = false;
-    //    for (unsigned i = 0; i < indexed_modules.size(); i++) {
-    //        if (indexed_modules[i] == mod) {
-    //            found = true;
-    //            break;
-    //        }
-    //    }
-    //    if (!found) {
-    //        return NULL;
-    //    }
 
-    Symbol* statSym = new Symbol(name, Symbol::ST_OBJECT, Symbol::SL_GLOBAL,
-                                 Symbol::SV_DEFAULT, offset, mod, reg, sz, false, false);
-    Symbol* dynSym  = new Symbol(name, Symbol::ST_OBJECT, Symbol::SL_GLOBAL,
-                                Symbol::SV_DEFAULT, offset, mod, reg, sz, true, false);
-
+//
+//    bool found = false;
+//    for (unsigned i = 0; i < indexed_modules.size(); i++) {
+//        if (indexed_modules[i] == mod) {
+//            found = true;
+//            break;
+//        }
+//    }
+//    if (!found) {
+//        return NULL;
+//    }
+    
+    Symbol *statSym = new Symbol(name, 
+                                 Symbol::ST_OBJECT, 
+                                 Symbol::SL_GLOBAL,
+                                 Symbol::SV_DEFAULT, 
+                                 offset, 
+                                 mod,
+                                 reg, 
+                                 sz,
+                                 false,
+                                 false);
+    Symbol *dynSym = new Symbol(name,
+                                Symbol::ST_OBJECT,
+                                Symbol::SL_GLOBAL,
+                                Symbol::SV_DEFAULT,
+                                offset,
+                                mod,
+                                reg,
+                                sz,
+                                true,
+                                false);
+    
     statSym->setModule(mod);
     dynSym->setModule(mod);
 

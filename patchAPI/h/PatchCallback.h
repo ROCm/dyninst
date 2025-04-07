@@ -36,8 +36,12 @@
 #if !defined(_PATCH_CALLBACK_H_)
 #    define _PATCH_CALLBACK_H_
 
-#    include <vector>
-#    include "util.h"
+#include <utility>
+#include <vector>
+#include "util.h"
+
+namespace Dyninst {
+namespace PatchAPI {
 
 namespace Dyninst
 {

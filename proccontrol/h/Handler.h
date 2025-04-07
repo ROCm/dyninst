@@ -33,8 +33,9 @@
 #    include "Event.h"
 #    include "util.h"
 
-#    include <set>
-#    include <vector>
+#include <string>
+#include <set>
+#include <vector>
 
 namespace Dyninst
 {

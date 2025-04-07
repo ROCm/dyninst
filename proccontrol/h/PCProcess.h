@@ -31,11 +31,27 @@
 #if !defined(PROCESSPC_H_)
 #    define PROCESSPC_H_
 
-#    include <string>
-#    include <vector>
-#    include <map>
-#    include <set>
-#    include <iterator>
+#include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <iterator>
+#include <stddef.h>
+#include <utility>
+
+#include "dyntypes.h"
+#include "Architecture.h"
+#include "registers/MachRegister.h"
+#include "EventType.h"
+#include "util.h"
+#include "PCErrors.h"
+#include "boost/checked_delete.hpp"
+#include "boost/shared_ptr.hpp"
+#include "boost/weak_ptr.hpp"
+#include "boost/enable_shared_from_this.hpp"
+#include "boost/version.hpp"
+
+#define CHECKED_DELETE_NOEXCEPT BOOST_NOEXCEPT
 
 #    include "dyntypes.h"
 #    include "dyn_regs.h"
@@ -179,10 +195,17 @@ private:
     LibraryPool();
     ~LibraryPool();
 
-public:
-    class PC_EXPORT iterator
-    {
-        friend class Dyninst::ProcControlAPI::LibraryPool;
+   class PC_EXPORT const_iterator  {
+     friend class Dyninst::ProcControlAPI::LibraryPool;
+  private:
+     std::set<int_library *>::iterator int_iter;
+  public:
+     const_iterator();
+     Library::const_ptr operator*() const;
+     bool operator==(const const_iterator &i) const;
+     bool operator!=(const const_iterator &i) const;
+     LibraryPool::const_iterator operator++();
+     LibraryPool::const_iterator operator++(int);
 
     private:
         std::set<int_library*>::iterator int_iter;
@@ -713,20 +736,51 @@ public:
 
 class PC_EXPORT ThreadPool
 {
-private:
-    friend class ::int_threadPool;
-    friend class Dyninst::ProcControlAPI::Process;
-    int_threadPool* threadpool;
-    ThreadPool();
-    ~ThreadPool();
+ private:
+   friend class ::int_threadPool;
+   friend class Dyninst::ProcControlAPI::Process;
+   int_threadPool *threadpool;
+   ThreadPool();
+   ~ThreadPool();
+ public:
+   /**
+    * Iterators
+    **/
+   class PC_EXPORT iterator {
+      friend class Dyninst::ProcControlAPI::ThreadPool;
+   private:
+      static const int uninitialized_val = -1;
+      static const int end_val = -2;
+      int_threadPool *curp;
+      Thread::ptr curh;
+      int curi;
+   public:
+      iterator();
+      Thread::ptr operator*() const;
+      bool operator==(const iterator &i) const;
+      bool operator!=(const iterator &i) const;
+      ThreadPool::iterator operator++();
+      ThreadPool::iterator operator++(int);
+   };
+   iterator begin();
+   iterator end();
+   iterator find(Dyninst::LWP lwp);
 
-public:
-    /**
-     * Iterators
-     **/
-    class PC_EXPORT iterator
-    {
-        friend class Dyninst::ProcControlAPI::ThreadPool;
+   class PC_EXPORT const_iterator {
+      friend class Dyninst::ProcControlAPI::ThreadPool;
+   private:
+      static const int uninitialized_val = -1;
+      static const int end_val = -2;
+      int_threadPool *curp;
+      Thread::ptr curh;
+      int curi;
+   public:
+      const_iterator();
+      Thread::const_ptr operator*() const;
+      bool operator==(const const_iterator &i) const;
+      bool operator!=(const const_iterator &i) const;
+      ThreadPool::const_iterator operator++();
+      ThreadPool::const_iterator operator++(int);
 
     private:
         static const int uninitialized_val = -1;
@@ -784,12 +838,51 @@ public:
 };
 
 class PC_EXPORT RegisterPool
-{
-    friend class Dyninst::ProcControlAPI::Thread;
-    friend class Dyninst::ProcControlAPI::ThreadSet;
+{ 
+   friend class Dyninst::ProcControlAPI::Thread;
+   friend class Dyninst::ProcControlAPI::ThreadSet;
+ private:
+   int_registerPool *llregpool;
+ public:
+   RegisterPool();
+   RegisterPool(const RegisterPool &rp);
+   ~RegisterPool();
+   
+   class PC_EXPORT iterator {
+      friend class Dyninst::ProcControlAPI::RegisterPool;
+   private:
+      typedef std::map<Dyninst::MachRegister, Dyninst::MachRegisterVal>::iterator int_iter; 
+      int_iter i;
+      iterator(int_iter i_);
+   public:
+      iterator();
+      std::pair<Dyninst::MachRegister, Dyninst::MachRegisterVal> operator*();
+      bool operator==(const iterator &i) const;
+      bool operator!=(const iterator &i) const;
+      RegisterPool::iterator operator++();
+      RegisterPool::iterator operator++(int);
+   };
+   iterator begin();
+   iterator end();
+   iterator find(Dyninst::MachRegister r);
 
-private:
-    int_registerPool* llregpool;
+   class PC_EXPORT const_iterator {
+      friend class Dyninst::ProcControlAPI::RegisterPool;
+   private:
+      typedef std::map<Dyninst::MachRegister, Dyninst::MachRegisterVal>::const_iterator int_iter; 
+      int_iter i;
+      const_iterator(int_iter i_);
+   public:
+      const_iterator();
+      std::pair<Dyninst::MachRegister, Dyninst::MachRegisterVal> operator*() const;
+      bool operator==(const const_iterator &i) const;
+      bool operator!=(const const_iterator &i) const;
+      RegisterPool::const_iterator operator++();
+      RegisterPool::const_iterator operator++(int);
+   };
+   const_iterator begin() const;
+   const_iterator end() const;
+   const_iterator find(Dyninst::MachRegister r) const;
 
 public:
     RegisterPool();

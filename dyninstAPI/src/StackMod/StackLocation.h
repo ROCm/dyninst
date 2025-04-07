@@ -31,12 +31,13 @@
 #ifndef _STACKLOCATION_H_
 #define _STACKLOCATION_H_
 
+#include <string>
 #include <functional>
 
-#include "dyn_regs.h"
+#include "registers/MachRegister.h"
 #include "common/src/IntervalTree.h"
 #include "stackanalysis.h"
-
+#include "dyntypes.h"
 #include "StackAccess.h"
 
 using namespace Dyninst;
@@ -71,21 +72,24 @@ public:
     , _valid(v)
     {}
 
-    StackLocation(MachRegister r, int s)
-    : _type(StackAccess::UNKNOWN)
-    , _size(s)
-    , _isStackMemory(false)
-    , _isRegister(true)
-    , _reg(r)
-    , _isNull(false)
-    , _valid(NULL)
+        StackLocation(MachRegister r, int s) :
+            _type(StackAccess::StackAccessType::UNKNOWN),
+            _size(s),
+            _isStackMemory(false),
+            _isRegister(true),
+            _reg(r),
+            _isNull(false),
+            _valid(NULL)
     {}
 
-    StackLocation()
-    : _isStackMemory(false)
-    , _isRegister(false)
-    , _isNull(true)
-    , _valid(NULL)
+        StackLocation() :
+            _type(StackAccess::StackAccessType::UNKNOWN),
+            _size{},
+            _isStackMemory(false),
+            _isRegister(false),
+			_reg{},
+            _isNull(true),
+            _valid(NULL)
     {}
 
     StackAccess::StackAccessType type() const { return _type; }
@@ -126,9 +130,9 @@ private:
 
     int _size;
 
-    bool                  _isStackMemory;
-    StackAnalysis::Height _off;
-    bool                  _isRegisterHeight;
+        bool _isStackMemory;
+        StackAnalysis::Height _off;
+        bool _isRegisterHeight{};
 
     bool         _isRegister;
     MachRegister _reg;
@@ -139,18 +143,12 @@ private:
 };
 
 struct less_StackLocation
-: public std::binary_function<StackLocation*, StackLocation*, bool>
 {
-    bool operator()(StackLocation* a, StackLocation* b) const
-    {
-        if(a->isStackMemory() && b->isStackMemory())
-        {
-            if(a->off().height() == b->off().height())
-            {
-                if(a->isRegisterHeight() && b->isRegisterHeight())
-                {
-                    if(a->off().height() == b->off().height())
-                    {
+    bool operator()(StackLocation* a, StackLocation* b) const {
+        if (a->isStackMemory() && b->isStackMemory()) {
+            if (a->off().height() == b->off().height()) {
+                if (a->isRegisterHeight() && b->isRegisterHeight()) {
+                    if (a->off().height() == b->off().height()) {
                         return a->reg() < b->reg();
                     }
                     else
@@ -206,7 +204,7 @@ private:
     ValidPCRange*                _valid;
 };
 
-struct less_tmpObject : public std::binary_function<tmpObject, tmpObject, bool>
+struct less_tmpObject
 {
     bool operator()(tmpObject a, tmpObject b) const
     {

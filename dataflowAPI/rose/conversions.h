@@ -1,6 +1,8 @@
 #if !defined(ROSE_CONVERSIONS_H)
 #define ROSE_CONVERSIONS_H
 
+#include <stdint.h>
+
 class SgNode;
 class SgAsmExpression;
 class SgAsmValueExpression;
@@ -57,7 +59,7 @@ class SgAsmScalarType;
 class SgAsmIntegerType;
 class SgAsmFloatType;
 class SgAsmArmv8Instruction;
-class SgAsmAmdgpuVegaInstruction;
+class SgAsmAMDGPUInstruction;
 class SgAsmx86Instruction;
 class SgAsmPowerpcInstruction;
 
@@ -165,8 +167,8 @@ SgAsmPowerpcInstruction* isSgAsmPowerpcInstruction( SgNode *);
 const SgAsmPowerpcInstruction* isSgAsmPowerpcInstruction( const SgNode * s );
 SgAsmArmv8Instruction* isSgAsmArmv8Instruction( SgNode *);
 const SgAsmArmv8Instruction* isSgAsmArmv8Instruction( const SgNode * s );
-SgAsmAmdgpuVegaInstruction* isSgAsmAmdgpuVegaInstruction( SgNode *);
-const SgAsmAmdgpuVegaInstruction* isSgAsmAmdgpuVegaInstruction( const SgNode * s );
+SgAsmAMDGPUInstruction* isSgAsmAMDGPUInstruction( SgNode *);
+const SgAsmAMDGPUInstruction* isSgAsmAMDGPUInstruction( const SgNode * s );
 SgAsmConstantExpression *isSgAsmConstantExpression( SgNode * );
 const SgAsmConstantExpression *isSgAsmConstantExpression( const SgNode *s );
 SgAsmIntegerValueExpression *isSgAsmIntegerValueExpression( SgNode * );

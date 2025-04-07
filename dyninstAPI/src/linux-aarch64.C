@@ -51,18 +51,13 @@ const char DL_OPEN_FUNC_INTERNAL[]      = "_dl_open";
 const char DL_OPEN_FUNC_NAME[]          = "do_dlopen";
 const char DL_OPEN_LIBC_FUNC_EXPORTED[] = "__libc_dlopen_mode";
 
-Address
-PCProcess::getLibcStartMainParam(PCThread*)
-{
+Dyninst::Address PCProcess::getLibcStartMainParam(PCThread *) {
     assert(!"This function is unimplemented");
     return 0;
 }
 
-Address
-PCProcess::getTOCoffsetInfo(Address dest)
-{
-    if(getAddressWidth() == 4)
-        return 0;
+Dyninst::Address PCProcess::getTOCoffsetInfo(Dyninst::Address dest) {
+    if ( getAddressWidth() == 4 ) return 0;
 
     // We have an address, and want to find the module the addr is
     // contained in. Given the probabilities, we (probably) want
@@ -74,27 +69,22 @@ PCProcess::getTOCoffsetInfo(Address dest)
 
     // Very odd case if this is not defined.
     assert(mobj);
-    Address TOCOffset = mobj->parse_img()->getObject()->getTOCoffset();
+    Dyninst::Address TOCOffset = mobj->parse_img()->getObject()->getTOCoffset();
 
     if(!TOCOffset)
         return 0;
     return TOCOffset + mobj->dataBase();
 }
 
-Address
-PCProcess::getTOCoffsetInfo(func_instance* func)
-{
-    if(getAddressWidth() == 4)
-        return 0;
+Dyninst::Address PCProcess::getTOCoffsetInfo(func_instance *func) {
+    if ( getAddressWidth() == 4 ) return 0;
 
     mapped_object* mobj = func->obj();
 
     return mobj->parse_img()->getObject()->getTOCoffset() + mobj->dataBase();
 }
 
-bool
-PCProcess::getOPDFunctionAddr(Address&)
-{
+bool PCProcess::getOPDFunctionAddr(Dyninst::Address &) {
     return true;
 }
 
@@ -105,15 +95,13 @@ PCProcess::createUnprotectStackAST()
     return AstNode::nullNode();
 }
 
-bool
-Frame::setPC(Address newpc)
-{
-    Address pcAddr = getPClocation();
-    if(!pcAddr)
-    {
-        // fprintf(stderr, "[%s:%u] - Frame::setPC aborted", __FILE__, __LINE__);
-        return false;
-    }
+bool Frame::setPC(Dyninst::Address newpc) {
+   Dyninst::Address pcAddr = getPClocation();
+   if (!pcAddr)
+   {
+       //fprintf(stderr, "[%s:%u] - Frame::setPC aborted", __FILE__, __LINE__);
+      return false;
+   }
 
     // fprintf(stderr, "[%s:%u] - Frame::setPC setting %x to %x",
     //__FILE__, __LINE__, pcAddr_, newpc);
@@ -215,10 +203,8 @@ AddressSpace::getDyninstRTLibName()
 
 // floor of inferior malloc address range within a single branch of x
 // for 32-bit ELF PowerPC mutatees
-Address
-region_lo(const Address x)
-{
-    const Address floor = getpagesize();
+Dyninst::Address region_lo(const Dyninst::Address x) {
+   const Dyninst::Address floor = getpagesize();
 
     assert(x >= floor);
 
@@ -230,10 +216,8 @@ region_lo(const Address x)
 
 // floor of inferior malloc address range within a single branch of x
 // for 64-bit ELF PowerPC mutatees
-Address
-region_lo_64(const Address x)
-{
-    const Address floor = getpagesize();
+Dyninst::Address region_lo_64(const Dyninst::Address x) {
+   const Dyninst::Address floor = getpagesize();
 
     assert(x >= floor);
 
@@ -245,10 +229,8 @@ region_lo_64(const Address x)
 
 // ceiling of inferior malloc address range within a single branch of x
 // for 32-bit ELF PowerPC mutatees
-Address
-region_hi(const Address x)
-{
-    const Address ceiling = ~(Address) 0 & 0xffffffff;
+Dyninst::Address region_hi(const Dyninst::Address x) {
+   const Dyninst::Address ceiling = ~(Dyninst::Address)0 & 0xffffffff;
 
     assert(x < ceiling);
 
@@ -260,10 +242,8 @@ region_hi(const Address x)
 
 // ceiling of inferior malloc address range within a single branch of x
 // for 64-bit ELF PowerPC mutatees
-Address
-region_hi_64(const Address x)
-{
-    const Address ceiling = ~(Address) 0;
+Dyninst::Address region_hi_64(const Dyninst::Address x) {
+   const Dyninst::Address ceiling = ~(Dyninst::Address)0;
 
     assert(x < ceiling);
 

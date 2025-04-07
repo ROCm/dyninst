@@ -46,7 +46,6 @@
 #include "common/src/pathName.h"
 
 #include "PCErrors.h"
-#include "MemoryEmulator/memEmulator.h"
 #include <boost/tuple/tuple.hpp>
 
 #include "symtabAPI/h/SymtabReader.h"
@@ -54,6 +53,24 @@
 #include "patchAPI/h/Point.h"
 
 #include <sstream>
+
+namespace {
+	// maximum number of addresses per outstanding printf!
+	const unsigned int _numaddrstrs=8;
+	char _addrstr[_numaddrstrs][19]; // "0x"+16+'\0'
+
+	// Format an address string according to the size of the Address type.
+	// Note that "%x" outputs incorrect/incomplete addresses, and that "%lx"
+	// or system-dependent "%p" (generally also requiring a typecast to (void*))
+	// must be used instead!
+	char *Address_str (Dyninst::Address addr)
+	{
+		static int i=0;
+		i=(i+1)%_numaddrstrs;
+		snprintf(_addrstr[i],19,"0x%016lX", addr);
+		return (_addrstr[i]);
+	}
+}
 
 using namespace Dyninst::ProcControlAPI;
 using std::map;
@@ -933,23 +950,19 @@ PCProcess::loadRTLib()
                        __LINE__);
     }
 
-    // Install a breakpoint in DYNINSTtrapFunction.
-    // This is used as RT signal.
-    Address addr = getRTTrapFuncAddr();
-    if(addr == 0)
-    {
-        startup_printf("%s[%d]: Cannot find DYNINSTtrapFunction. Needed as RT signal\n",
-                       FILE__, __LINE__);
-        return false;
-    }
-    if(!setBreakpoint(addr))
-    {
-        startup_printf("%s[%d]: Cannot set breakpoint in DYNINSTtrapFunction.\n", FILE__,
-                       __LINE__);
-        return false;
-    }
-    startup_printf("%s[%d]: DYNINSTinit succeeded\n", FILE__, __LINE__);
-    return setRTLibInitParams();
+   // Install a breakpoint in DYNINSTtrapFunction.
+   // This is used as RT signal.
+   Dyninst::Address addr = getRTTrapFuncAddr();
+   if (addr == 0) {
+       startup_printf("%s[%d]: Cannot find DYNINSTtrapFunction. Needed as RT signal\n", FILE__, __LINE__);
+       return false;
+   }
+   if (!setBreakpoint(addr)) {
+       startup_printf("%s[%d]: Cannot set breakpoint in DYNINSTtrapFunction.\n", FILE__, __LINE__);
+       return false;
+   }
+   startup_printf("%s[%d]: DYNINSTinit succeeded\n", FILE__, __LINE__);
+   return setRTLibInitParams();
 }
 
 // Set up the parameters for DYNINSTinit in the RT lib
@@ -1061,7 +1074,7 @@ PCProcess::insertBreakpointAtMain()
                        FILE__, __LINE__);
         return false;
     }
-    Address addr = main_function_->addr();
+    Dyninst::Address addr = main_function_->addr();
 
     // Create the breakpoint
     mainBrkPt_ = Breakpoint::newBreakpoint();
@@ -1088,7 +1101,7 @@ PCProcess::removeBreakpointAtMain()
         return true;
     }
 
-    Address addr = main_function_->addr();
+    Dyninst::Address addr = main_function_->addr();
 
     if(!pcProc_->rmBreakpoint(addr, mainBrkPt_))
     {
@@ -1386,7 +1399,8 @@ PCProcess::writeDataSpace(void* inTracedProcess, u_int amount, const void* inSel
         cerr << "Writing to terminated process!" << endl;
         return false;
     }
-    bool result = pcProc_->writeMemory((Address) inTracedProcess, inSelf, amount);
+    bool result = pcProc_->writeMemory((Dyninst::Address)inTracedProcess, inSelf,
+                                       amount);
 
     if(BPatch_defensiveMode == proc()->getHybridMode() && !result)
     {
@@ -1394,9 +1408,8 @@ PCProcess::writeDataSpace(void* inTracedProcess, u_int amount, const void* inSel
         // from the page, remove them and try again
 
         PCMemPerm origRights, rights(true, true, true);
-        if(!pcProc_->setMemoryAccessRights((Address) inTracedProcess, amount, rights,
-                                           origRights))
-        {
+        if (!pcProc_->setMemoryAccessRights((Dyninst::Address)inTracedProcess,
+                                            amount, rights, origRights)) {
             cerr << "Fail to set memory permissions!" << endl;
             return false;
         }
@@ -1409,9 +1422,9 @@ PCProcess::writeDataSpace(void* inTracedProcess, u_int amount, const void* inSel
         if( oldRights == PAGE_EXECUTE_READ || oldRights == PAGE_READONLY ) {
         */
 
-        if(origRights.isRX() || origRights.isR())
-        {
-            result = pcProc_->writeMemory((Address) inTracedProcess, inSelf, amount);
+        if( origRights.isRX() || origRights.isR() ) {
+            result = pcProc_->writeMemory((Dyninst::Address)inTracedProcess, inSelf,
+                                          amount);
 
             /*
             if( pcProc_->setMemoryAccessRights((Address)inTracedProcess,
@@ -1588,115 +1601,8 @@ PCProcess::removeThread(dynthread_t tid)
 extern Address
 getVarAddr(PCProcess* proc, std::string str);
 
-#if 0
-bool PCProcess::registerThread(PCThread *thread) {
-  
-   Address tid = (Address) thread->getTid();
-   Address index = thread->getIndex();
-   
-   Address tmp = 0;
-   unsigned ptrsize = getAddressWidth();
-
-   if (tid == (Address) -1) return true;
-   if (index == (Address) -1) return true;
-
-   if (!initializeRegisterThread()) {
-      startup_printf("%s[%d]: initializeRegisterThread failed\n",
-                     FILE__, __LINE__);
-	   
-	   return false;
-   }
-   // Must match the "hash" algorithm used in the RT lib
-   int working = (tid % thread_hash_size);
-   while(1) {
-      tmp = 0;
-      if (!readDataWord(( void *)(thread_hash_indices + (working * ptrsize)), ptrsize, &tmp, false)) {
-         startup_printf("%s[%d]: Failed to read index slot, base 0x%lx, active 0x%lx\n", FILE__, __LINE__,
-                        thread_hash_indices, thread_hash_indices + (working * ptrsize));
-         return false;
-      }
-      startup_printf("%s[%d]: value of tid in slot %p is 0x%lx\n",
-                     FILE__, __LINE__, thread_hash_indices + (working * ptrsize), tmp);
-      if (ptrsize == 4 && tmp == 0xffffffff) {
-         int index_int = (int) index;
-         int tid_int = (int) tid;
-         startup_printf("%s[%d]: writing %d to %p and 0x%x to %p\n",
-                        FILE__, __LINE__, index_int, thread_hash_indices + (working * ptrsize),
-                        tid_int, thread_hash_tids + (working * ptrsize));
-         writeDataWord(( void *)(thread_hash_indices + (working * ptrsize)), ptrsize, &index_int);
-         writeDataWord(( void *)(thread_hash_tids + (working * ptrsize)), ptrsize, &tid_int);
-         break;
-      }
-      else if (ptrsize == 8 && tmp == (Address)-1)  {
-         writeDataWord(( void *)(thread_hash_indices + (working * ptrsize)), ptrsize, &index);
-         writeDataWord(( void *)(thread_hash_tids + (working * ptrsize)), ptrsize, &tid);
-         break;
-      }
-      working++;
-      if (working == thread_hash_size) working = 0;
-      if (working == (int) (tid % thread_hash_size)) {
-         startup_printf("%s[%d]: Failed to find empty tid slot\n", FILE__, __LINE__);
-         return false;
-      }
-   }
-   return true;
-}
-bool PCProcess::unregisterThread(PCThread *thread) {	
-   return true;
-   Address tid = (Address) thread->getTid();
-   Address index = thread->getIndex();
-   Address tmp = 0;
-   
-   unsigned ptrsize = getAddressWidth();
-   if (tid == (Address) -1) return true;
-   if (index == (Address) -1) return true;
-
-   initializeRegisterThread();
-
-   // Must match the "hash" algorithm used in the RT lib
-   int working = tid % thread_hash_size;
-   while(1) {
-      tmp = 0;
-      if (!readDataWord((void *)(thread_hash_tids + (working * ptrsize)), ptrsize, &tmp, false)) return false;
-      if (tmp == tid) {
-         // Zero it out
-         tmp = (Address) -1;
-         writeDataWord(( void *)(thread_hash_indices + (working * ptrsize)), ptrsize, &tmp);
-         break;
-      }
-      working++;
-      if (working == thread_hash_size) working = 0;
-      if (working == (int) (tid % thread_hash_size)) return false;
-   }
-   return true;
-}
-
-bool PCProcess::initializeRegisterThread() {
-//   if (thread_hash_tids) return true;
-
-   unsigned ptrsize = getAddressWidth();
-   
-   Address tidPtr = getVarAddr(this, "DYNINST_thread_hash_tids");
-   if (!tidPtr) return false;
-   Address indexPtr = getVarAddr(this, "DYNINST_thread_hash_indices");
-   if (!indexPtr) return false;
-   Address sizePtr = getVarAddr(this, "DYNINST_thread_hash_size");
-   if (!sizePtr) return false;
-   
-   if (!readDataWord((const void *)tidPtr, ptrsize, &thread_hash_tids, false)) return false;
-
-   if (!readDataWord((const void *)indexPtr, ptrsize, &thread_hash_indices, false)) return false;
-
-   if (!readDataWord((const void *)sizePtr, sizeof(int), &thread_hash_size, false)) return false;
-
-   return true;
-}
-#endif
-
-void
-PCProcess::addThread(PCThread* thread)
-{
-    pair<map<dynthread_t, PCThread*>::iterator, bool> result;
+void PCProcess::addThread(PCThread *thread) {
+    pair<map<dynthread_t, PCThread *>::iterator, bool> result;
     result = threadsByTid_.insert(make_pair(thread->getTid(), thread));
 
     assert(result.second && "Thread already in collection of threads");
@@ -2010,9 +1916,9 @@ PCProcess::inferiorMallocDynamic(int size, Address lo, Address hi)
     // build AstNode for "DYNINSTos_malloc" call
     std::string             callee = "DYNINSTos_malloc";
     std::vector<AstNodePtr> args(3);
-    args[0]         = AstNode::operandNode(AstNode::Constant, (void*) (Address) size);
-    args[1]         = AstNode::operandNode(AstNode::Constant, (void*) lo);
-    args[2]         = AstNode::operandNode(AstNode::Constant, (void*) hi);
+    args[0] = AstNode::operandNode(AstNode::operandType::Constant, (void *)(Address)size);
+    args[1] = AstNode::operandNode(AstNode::operandType::Constant, (void *)lo);
+    args[2] = AstNode::operandNode(AstNode::operandType::Constant, (void *)hi);
     AstNodePtr code = AstNode::funcCallNode(callee, args);
 
     // issue RPC and wait for result
@@ -2109,66 +2015,66 @@ PCProcess::installInstrRequests(const std::vector<instMapping*>& requests)
                 continue;  // probably should have a flag telling us whether errors
             }
 
-            inst_printf("%s[%d]: Instrumenting %s at 0x%lx, offset 0x%lx in %s\n", FILE__,
-                        __LINE__, func->symTabName().c_str(), func->addr(),
-                        func->addr() - func->obj()->codeBase(),
-                        func->obj()->fullName().c_str());
-
-            // should be silently handled or not
-            AstNodePtr ast;
-            if((req->where & FUNC_ARG) && req->args.size() > 0)
-            {
-                ast = AstNode::funcCallNode(req->inst, req->args, this);
-            }
-            else
-            {
-                std::vector<AstNodePtr> def_args;
-                def_args.push_back(AstNode::operandNode(AstNode::Constant, (void*) 0));
-                ast = AstNode::funcCallNode(req->inst, def_args);
-            }
-            // We mask to strip off the FUNC_ARG bit...
-            std::vector<Point*> points;
-            switch((req->where & 0x7))
-            {
-                case FUNC_EXIT:
-                    mgr()->findPoints(Dyninst::PatchAPI::Scope(func), Point::FuncExit,
-                                      std::back_inserter(points));
-                    break;
-                case FUNC_ENTRY:
-                    mgr()->findPoints(Dyninst::PatchAPI::Scope(func), Point::FuncEntry,
-                                      std::back_inserter(points));
-                    break;
-                case FUNC_CALL:
-                    mgr()->findPoints(Dyninst::PatchAPI::Scope(func), Point::PreCall,
-                                      std::back_inserter(points));
-                    break;
-                default:
-                    fprintf(stderr, "Unknown where: %d\n", req->where);
-                    break;
-            }  // switch
-            inst_printf("%s[%d]: found %lu points to instrument\n", FILE__, __LINE__,
-                        points.size());
-            for(std::vector<Point*>::iterator iter = points.begin(); iter != points.end();
-                ++iter)
-            {
-                Dyninst::PatchAPI::Instance::Ptr inst = (req->order == orderFirstAtPoint)
-                                                            ? (*iter)->pushFront(ast)
-                                                            : (*iter)->pushBack(ast);
-                if(inst)
-                {
-                    if(!req->useTrampGuard)
-                        inst->disableRecursiveGuard();
-                    req->instances.push_back(inst);
-                }
-                else
-                {
-                    fprintf(stderr, "%s[%d]:  failed to addInst here\n", FILE__,
-                            __LINE__);
-                }
-            }
-        }  // matchingFuncs
-
-    }  // requests
+	   inst_printf("%s[%d]: Instrumenting %s at 0x%lx, offset 0x%lx in %s\n",
+		       FILE__, __LINE__, 
+		       func->symTabName().c_str(),
+		       func->addr(),
+		       func->addr() - func->obj()->codeBase(),
+		       func->obj()->fullName().c_str());
+            
+           // should be silently handled or not
+           AstNodePtr ast;
+           if ((req->where & FUNC_ARG) && req->args.size()>0) {
+              ast = AstNode::funcCallNode(req->inst, 
+                                          req->args,
+                                          this);
+           }
+           else {
+              std::vector<AstNodePtr> def_args;
+              def_args.push_back(AstNode::operandNode(AstNode::operandType::Constant,
+                                                      (void *)0));
+              ast = AstNode::funcCallNode(req->inst,
+                                          def_args);
+           }
+           // We mask to strip off the FUNC_ARG bit...
+           std::vector<Point *> points;
+           switch ( ( req->where & 0x7) ) {
+              case FUNC_EXIT:
+                 mgr()->findPoints(Dyninst::PatchAPI::Scope(func),
+                                   Point::FuncExit,
+                                   std::back_inserter(points));
+                 break;
+              case FUNC_ENTRY:
+                 mgr()->findPoints(Dyninst::PatchAPI::Scope(func),
+                                   Point::FuncEntry,
+                                   std::back_inserter(points));
+                 break;
+              case FUNC_CALL:
+                 mgr()->findPoints(Dyninst::PatchAPI::Scope(func),
+                                   Point::PreCall,
+                                   std::back_inserter(points));
+                 break;
+              default:
+                 fprintf(stderr, "Unknown where: %d\n",
+                         req->where);
+                 break;
+           } // switch
+	   inst_printf("%s[%d]: found %lu points to instrument\n", FILE__, __LINE__, points.size());
+           for (std::vector<Point *>::iterator iter = points.begin();
+                iter != points.end(); ++iter) {
+              Dyninst::PatchAPI::Instance::Ptr inst = (req->order == orderFirstAtPoint) ? 
+                 (*iter)->pushFront(ast) :
+                 (*iter)->pushBack(ast);
+              if (inst) {
+                 if (!req->useTrampGuard) inst->disableRecursiveGuard();
+                 req->instances.push_back(inst);
+              }
+              else {
+                 fprintf(stderr, "%s[%d]:  failed to addInst here\n", FILE__, __LINE__);
+              }
+           }        } // matchingFuncs        
+        
+    } // requests
     relocate();
     return;
 }
@@ -2180,9 +2086,18 @@ PCProcess::postIRPC(void* buffer, int size, void* userData, bool runProcessWhenD
                     PCThread* thread, bool synchronous, void** result, bool userRPC,
                     bool isMemAlloc, Address addr)
 {
-    return postIRPC_internal(buffer, size, size, REG_NULL, addr, userData,
-                             runProcessWhenDone, thread, synchronous, userRPC, isMemAlloc,
-                             result);
+   return postIRPC_internal(buffer,
+                            size,
+                            size,
+                            Null_Register,
+                            addr,
+                            userData,
+                            runProcessWhenDone,
+                            thread,
+                            synchronous,
+                            userRPC,
+                            isMemAlloc,
+                            result);    
 }
 
 bool
@@ -2213,23 +2128,21 @@ PCProcess::postIRPC(AstNodePtr action, void* userData, bool runProcessWhenDone,
     irpcBuf.fill(proc()->getAddressWidth(), codeGen::cgNOP);
 #endif
 
-    irpcTramp_->setIRPCAST(action);
-
-    // Create a stack frame for the RPC
-    if(!irpcTramp_->generateSaves(irpcBuf, irpcBuf.rs()))
-    {
-        proccontrol_printf("%s[%d]: failed to generate saves via baseTramp\n", FILE__,
-                           __LINE__);
-        return false;
-    }
-
-    Register resultReg = REG_NULL;
-    if(!action->generateCode(irpcBuf, false, resultReg))
-    {
-        proccontrol_printf("%s[%d]: failed to generate code from AST\n", FILE__,
-                           __LINE__);
-        return false;
-    }
+   irpcTramp_->setIRPCAST(action);
+   
+   // Create a stack frame for the RPC
+   if( !irpcTramp_->generateSaves(irpcBuf, irpcBuf.rs()) ) {
+      proccontrol_printf("%s[%d]: failed to generate saves via baseTramp\n",
+                         FILE__, __LINE__);
+      return false;
+   }
+   
+   Register resultReg = Null_Register;
+   if( !action->generateCode(irpcBuf, false, resultReg) ) {
+      proccontrol_printf("%s[%d]: failed to generate code from AST\n",
+                         FILE__, __LINE__);
+      return false;
+   }
 
     // Note: we should not do a corresponding baseTramp restore here:
     // 1) It isn't necessary because ProcControl will restore the
@@ -2511,15 +2424,7 @@ PCProcess::getOverwrittenBlocks(
 
         // 1. Read the modified page in from memory
         Address readAddr = curPageAddr;
-        if(isMemoryEmulated())
-        {
-            bool valid                  = false;
-            boost::tie(valid, readAddr) = getMemEm()->translate(curPageAddr);
-            cerr << "\t\t Reading from shadow page " << hex << readAddr
-                 << " instead of original " << curPageAddr << endl;
-            assert(valid);
-        }
-        readTextSpace((void*) readAddr, MEM_PAGE_SIZE, memVersion);
+        readTextSpace((void*)readAddr, MEM_PAGE_SIZE, memVersion);
 
         // 2. build overwritten region list by comparing shadow, memory
         for(unsigned mIdx = 0; mIdx < MEM_PAGE_SIZE; mIdx++)
@@ -2607,183 +2512,6 @@ PCProcess::updateCodeBytes(const list<pair<Address, Address>>& owRanges)  // inp
            1);  // o/w analysis code may not be prepared for other cases
 }
 
-#if 0
-static void otherFuncBlocks(func_instance *func, 
-                            const set<block_instance*> &blks, 
-                            set<block_instance*> &otherBlks)
-{
-    const func_instance::BlockSet &allBlocks = 
-        func->blocks();
-    for (func_instance::BlockSet::const_iterator bit =
-         allBlocks.begin();
-         bit != allBlocks.end(); 
-         bit++) 
-    {
-        if (blks.end() == blks.find((*bit))) {
-            otherBlks.insert((*bit));
-        }
-    }
-}
-#endif
-
-/* Summary
- * Given a list of overwritten blocks, find blocks that are unreachable,
- * functions that have been overwritten at their entry points and can go away,
- * and new function entry for functions that are being overwritten while still
- * executing
- *
- * variables
- * f:  the overwritten function
- * ow: the set of overwritten blocks
- * ex: the set of blocks that are executing on the call stack that were not overwritten
- *
- * primitives
- * R(b,s): yields set of reachable blocks for collection of blocks b, starting
- *         at seed blocks s.
- * B(f):   the blocks pertaining to function f
- * EP(f):  the entry point of function f
- * F(b):   functions containing block b
- *
- * calculations
- * Elim(f): the set of blocks to eliminate from function f.
- *          Elim(f) = B(f) - R( B(f)-ow , EP(f) )
- * New(f):  new function entry candidates for f's surviving blocks.
- *          If EB(f) not in ow(f), empty set
- *          Else, all blocks b such that ( b in ex AND e in Elim(f) )
- *          Eliminate New(f) elements that have ancestors in New(f)
- * Del(f):  A block can be deleted altogether if
- *          forall f in F(b): B(F) - R( B(f) - ow , New(f) U (EP(f) \ ow(f)) U (ex(f)
- * intersect Elim(f)) ), b is not in the resulting set. In other words, b is not reachable
- * from non-overwritten blocks in the functions in which it appears, seeded at new entry
- * points and original non-overwritten entry points to the function, and at f's executing
- * blocks if these will be deleted from the function (they constitute an entry point into
- * the function even if they've been overwritten). DeadF:   the set of functions that have
- * no executing blocks and were overwritten in their entry blocks EP(f) in ow(f) AND ex(f)
- * is empty
- */
-bool
-PCProcess::getDeadCode(
-    const std::list<block_instance*>& /*owBlocks*/,  // input
-    std::set<block_instance*>& /*delBlocks*/,        // output: Del(for all f)
-    std::map<func_instance*, set<block_instance*>>& /*elimMap*/,    // output: elimF
-    std::list<func_instance*>& /*deadFuncs*/,                       // output: DeadF
-    std::map<func_instance*, block_instance*>& /*newFuncEntries*/)  // output: newF
-{
-    assert(0 && "TODO");
-    return false;
-#if 0
-    // do a stackwalk to see which functions are currently executing
-    std::vector<std::vector<Frame> >  stacks;
-    std::vector<Address> pcs;
-    if (!walkStacks(stacks)) {
-        inst_printf("%s[%d]:  walkStacks failed\n", FILE__, __LINE__);
-        return false;
-    }
-    for (unsigned i = 0; i < stacks.size(); ++i) {
-        std::vector<Frame> &stack = stacks[i];
-        for (unsigned int j = 0; j < stack.size(); ++j) {
-            Address origPC = 0;
-            vector<func_instance*> dontcare1;
-            baseTramp *dontcare2 = NULL;
-            getAddrInfo(stack[j].getPC(), origPC, dontcare1, dontcare2);
-            pcs.push_back( origPC );
-        }
-    }
-
-    // group blocks by function
-    std::map<func_instance*,set<block_instance*> > deadMap;
-    std::set<func_instance*> deadEntryFuncs;
-    std::set<Address> owBlockAddrs;
-    for (list<block_instance*>::const_iterator bIter=owBlocks.begin();
-         bIter != owBlocks.end(); 
-         bIter++) 
-    {
-       deadMap[(*bIter)->func()].insert(*bIter);
-       owBlockAddrs.insert((*bIter)->start());
-       if ((*bIter)->llb() == (*bIter)->func()->ifunc()->entry()) {
-          deadEntryFuncs.insert((*bIter)->func());
-       }
-    }
-
-    // for each modified function, calculate ex, ElimF, NewF, DelF
-    for (map<func_instance*,set<block_instance*> >::iterator fit = deadMap.begin();
-         fit != deadMap.end(); 
-         fit++) 
-    {
-
-        // calculate ex(f)
-        set<block_instance*> execBlocks;
-        for (unsigned pidx=0; pidx < pcs.size(); pidx++) {
-            std::set<block_instance *> candidateBlocks;
-            fit->first->findBlocksByAddr(pcs[pidx], candidateBlocks);
-            for (std::set<block_instance *>::iterator cb_iter = candidateBlocks.begin();
-                cb_iter != candidateBlocks.end(); ++cb_iter) {
-                block_instance *exB = *cb_iter;
-                if (exB && owBlockAddrs.end() == owBlockAddrs.find(
-                                                        exB->start())) 
-                {
-                    execBlocks.insert(exB);
-                }
-            }
-        }
-
-        // calculate DeadF: EP(f) in ow and EP(f) not in ex
-        if ( 0 == execBlocks.size() ) {
-            set<block_instance*>::iterator eb = fit->second.find(
-                fit->first->entryBlock());
-            if (eb != fit->second.end()) {
-                deadFuncs.push_back(fit->first);
-                continue;// treated specially, don't need elimF, NewF or DelF
-            }
-        } 
-
-        // calculate elimF
-        set<block_instance*> keepF;
-        list<block_instance*> seedBs;
-        seedBs.push_back(fit->first->entryBlock());
-        fit->first->getReachableBlocks(fit->second, seedBs, keepF);
-        otherFuncBlocks(fit->first, keepF, elimMap[fit->first]);
-
-        // calculate NewF
-        if (deadEntryFuncs.end() != deadEntryFuncs.find(fit->first)) {
-            for (set<block_instance*>::iterator bit = execBlocks.begin();
-                 bit != execBlocks.end();
-                 bit++) 
-            {
-                if (elimMap[fit->first].end() != 
-                    elimMap[fit->first].find(*bit)) 
-                {
-                    newFuncEntries[fit->first] = *bit;
-                    break; // just need one candidate
-                }
-            }
-        }
-
-        // calculate Del(f)
-        seedBs.clear();
-        if (deadEntryFuncs.end() == deadEntryFuncs.find(fit->first)) {
-            seedBs.push_back(fit->first->entryBlock());
-        }
-        else if (newFuncEntries.end() != newFuncEntries.find(fit->first)) {
-            seedBs.push_back(newFuncEntries[fit->first]);
-        }
-        for (set<block_instance*>::iterator xit = execBlocks.begin();
-             xit != execBlocks.end();
-             xit++) 
-        {
-            if (elimMap[fit->first].end() != elimMap[fit->first].find(*xit)) {
-                seedBs.push_back(*xit);
-            }
-        }
-        keepF.clear();
-        fit->first->getReachableBlocks(fit->second, seedBs, keepF);
-        otherFuncBlocks(fit->first, keepF, delBlocks);
-        
-    }
-
-    return true;
-#endif
-}
 
 // will flush addresses of all addresses in the specified range, if the
 // range is null, flush all addresses from the cache.  Also flush

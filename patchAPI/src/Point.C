@@ -128,17 +128,10 @@ Point::obj() const
 }
 
 /* for single instruction */
-Point::Point(Point::Type type, PatchMgrPtr mgr, PatchBlock* b, Address a,
-             InstructionAPI::Instruction i, PatchFunction* f)
-: addr_(a)
-, type_(type)
-, mgr_(mgr)
-, the_block_(b)
-, the_edge_(NULL)
-, the_func_(f)
-, insn_(i)
-{
-    initCodeStructure();
+Point::Point(Point::Type type, PatchMgrPtr mgr, PatchBlock *b, Dyninst::Address a, InstructionAPI::Instruction i, PatchFunction *f)
+   :addr_(a), type_(type), mgr_(mgr), the_block_(b), the_edge_(NULL), the_func_(f), insn_(i) {
+
+  initCodeStructure();
 }
 
 /* for a block */

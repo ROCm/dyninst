@@ -36,9 +36,7 @@
 #include <string.h>
 #include <string>
 
-#include "common/src/Types.h"
 #include <unordered_map>
-#include "common/src/Pair.h"
 
 #include "BPatch_process.h"
 #include "BPatch_edge.h"
@@ -644,35 +642,8 @@ BPatch_flowGraph::fillPostDominatorInfo()
     isPostDominatorInfoReady = true;
 }
 
-// return a pair of the min and max source lines for this loop
-pdpair<u_short, u_short>
-getLoopMinMaxSourceLines(BPatch_loop* loop)
-{
-    BPatch_Vector<BPatch_basicBlock*> blocks;
-    loop->getLoopBasicBlocks(blocks);
 
-    BPatch_Vector<u_short> lines;
-
-    for(u_int j = 0; j < blocks.size(); j++)
-    {
-        BPatch_Vector<BPatch_sourceBlock*> sourceBlocks;
-        blocks[j]->getSourceBlocks(sourceBlocks);
-
-        for(u_int k = 0; k < sourceBlocks.size(); k++)
-        {
-            BPatch_Vector<u_short> sourceLines;
-            sourceBlocks[k]->getSourceLines(sourceLines);
-            for(u_int l = 0; l < sourceLines.size(); l++)
-                lines.push_back(sourceLines[l]);
-        }
-    }
-
-    pdpair<u_short, u_short> mm = min_max_pdpair<u_short>(lines);
-    return mm;
-}
-
-BPatch_loopTreeNode*
-BPatch_flowGraph::getLoopTree()
+BPatch_loopTreeNode *BPatch_flowGraph::getLoopTree()
 {
     if(loopRoot == NULL)
     {
@@ -692,13 +663,9 @@ BPatch_flowGraph::findLoop(const char* name)
 void
 BPatch_flowGraph::dfsPrintLoops(BPatch_loopTreeNode* n)
 {
-    if(n->loop != NULL)
-    {
-        //    pdpair<u_short, u_short> mm = getLoopMinMaxSourceLines(n->loop);
-        //  printf("%s (source %d-%d)\n", n->name(), mm.first, mm.second);
-
-        printf("%s %s\n", n->name(), ll_func()->prettyName().c_str());
-    }
+  if (n->loop != NULL) {
+    printf("%s %s\n", n->name(),ll_func()->prettyName().c_str());
+  }
 
     for(unsigned i = 0; i < n->children.size(); i++)
     {

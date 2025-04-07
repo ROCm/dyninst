@@ -33,15 +33,19 @@
 #if !defined(_SLICING_H_)
 #    define _SLICING_H_
 
-#    include <vector>
-#    include "dyntypes.h"
-#    include <queue>
-#    include <set>
-#    include <unordered_set>
-#    include <map>
-#    include <unordered_map>
-#    include <list>
-#    include <stack>
+#include <vector>
+#include "dyntypes.h"
+#include <queue>
+#include <set>
+#include <unordered_set>
+#include <map>
+#include <unordered_map>
+#include <list>
+#include <stack>
+#include <deque>
+#include <stddef.h>
+#include <string>
+#include <utility>
 
 #    include "util.h"
 #    include "Node.h"

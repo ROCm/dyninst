@@ -30,12 +30,14 @@
 #if !defined(_codegen_h_)
 #    define _codegen_h_
 
-#    include <vector>
-#    include <string>
-#    include <map>
-
-#    include "common/src/arch.h"
-#    include "dyninstAPI/src/patch.h"
+#include <utility>
+#include <vector>
+#include <string>
+#include <map>
+#include "dyntypes.h"
+#include "dyn_register.h"
+#include "common/src/arch.h"
+#include "dyninstAPI/src/patch.h"
 
 #    if defined(arch_power)
 #        include "codegen-power.h"
@@ -168,15 +170,10 @@ public:
     // For code generation -- given the current state of
     // generation and a base address in the mutatee,
     // produce a "current" address.
-    Address currAddr() const;
-    Address currAddr(Address base) const;
-
-    enum
-    {
-        cgNOP,
-        cgTrap,
-        cgIllegal
-    };
+    Dyninst::Address currAddr() const;
+    Dyninst::Address currAddr(Dyninst::Address base) const;
+    
+    enum { cgNOP, cgTrap, cgIllegal };
 
     void fill(unsigned fillSize, int fillType);
     // Since we have a known size
@@ -190,7 +187,7 @@ public:
 
     // Have each region generate code with this codeGen object being
     // placed at addr
-    void applyPCRels(Address addr);
+    void applyPCRels(Dyninst::Address addr);
 
     // Return true if there are any active regions.
     bool hasPCRels() const;
@@ -198,40 +195,40 @@ public:
     // Add a new patch point
     void addPatch(const relocPatch& p);
 
-    // Create a patch into the codeRange
-    void addPatch(codeBufIndex_t index, patchTarget* source,
-                  unsigned                 size  = sizeof(Address),
-                  relocPatch::patch_type_t ptype = relocPatch::abs,
-                  Dyninst::Offset          off   = 0);
+    //Create a patch into the codeRange
+    void addPatch(codeBufIndex_t index, patchTarget *source, 
+                  unsigned size = sizeof(Dyninst::Address),
+                  relocPatch::patch_type_t ptype = relocPatch::patch_type_t::abs,
+                  Dyninst::Offset off = 0);
 
     std::vector<relocPatch>& allPatches();
 
     // Apply all patches that have been added
     void applyPatches();
 
-    void setAddrSpace(AddressSpace* a);
-    void setThread(PCThread* t) { thr_ = t; }
-    void setRegisterSpace(registerSpace* r) { rs_ = r; }
-    void setAddr(Address a) { addr_ = a; }
-    void setPoint(instPoint* i) { ip_ = i; }
-    void setRegTracker(regTracker_t* t) { t_ = t; }
-    void setCodeEmitter(Emitter* emitter) { emitter_ = emitter; }
-    void setFunction(func_instance* f) { f_ = f; }
-    void setBT(baseTramp* i) { bt_ = i; }
+    void setAddrSpace(AddressSpace *a);
+    void setThread(PCThread *t) { thr_ = t; }
+    void setRegisterSpace(registerSpace *r) { rs_ = r; }
+    void setAddr(Dyninst::Address a) { addr_ = a; }
+    void setPoint(instPoint *i) { ip_ = i; }
+    void setRegTracker(regTracker_t *t) { t_ = t; }
+    void setCodeEmitter(Emitter *emitter) { emitter_ = emitter; }
+    void setFunction(func_instance *f) { f_ = f; }
+    void setBT(baseTramp *i) { bt_ = i; }
     void setInInstrumentation(bool i) { inInstrumentation_ = i; }
 
-    unsigned       width() const;
-    AddressSpace*  addrSpace() const;
-    PCThread*      thread();
-    Address        startAddr() const { return addr_; }
-    instPoint*     point() const;
-    baseTramp*     bt() const { return bt_; }
-    func_instance* func() const;
-    registerSpace* rs() const;
-    regTracker_t*  tracker() const;
-    Emitter*       codeEmitter() const;
-    Emitter*       emitter() const { return codeEmitter(); }  // A little shorter
-    bool           inInstrumentation() const { return inInstrumentation_; }
+    unsigned width() const;
+    AddressSpace *addrSpace() const;
+    PCThread *thread();
+    Dyninst::Address startAddr() const { return addr_; }
+    instPoint *point() const;
+    baseTramp *bt() const { return bt_; }
+    func_instance *func() const;
+    registerSpace *rs() const;
+    regTracker_t *tracker() const;
+    Emitter *codeEmitter() const;
+    Emitter *emitter() const { return codeEmitter(); } // A little shorter
+    bool inInstrumentation() const { return inInstrumentation_; }
 
     bool insertNaked() const { return insertNaked_; }
     void setInsertNaked(bool i) { insertNaked_ = i; }
@@ -241,27 +238,27 @@ public:
 
     Dyninst::Architecture getArch() const;
 
-    void            beginTrackRegDefs();
-    void            endTrackRegDefs();
-    const bitArray& getRegsDefined();
-    void            markRegDefined(Register r);
-    bool            isRegDefined(Register r);
+    void beginTrackRegDefs();
+    void endTrackRegDefs();
+    const bitArray &getRegsDefined();
+    void markRegDefined(Dyninst::Register r);
+    bool isRegDefined(Dyninst::Register r);
 
     void setPCRelUseCount(int c) { pc_rel_use_count = c; }
     int  getPCRelUseCount() const { return pc_rel_use_count; }
 
     // SD-DYNINST
-    //
-    typedef std::pair<Address, unsigned> Extent;
-    void registerDefensivePad(block_instance*, Address, unsigned);
-    std::map<block_instance*, Extent>& getDefensivePads() { return defensivePads_; }
-
+    // 
+    typedef std::pair<Dyninst::Address, unsigned> Extent;
+    void registerDefensivePad(block_instance *, Dyninst::Address, unsigned);
+    std::map<block_instance *, Extent> &getDefensivePads() { return defensivePads_; }
+    
     // Immediate uninstrumentation
-    void registerInstrumentation(baseTramp* bt, Address loc)
-    {
-        instrumentation_[bt] = loc;
-    }
-    std::map<baseTramp*, Address>& getInstrumentation() { return instrumentation_; }
+    void registerInstrumentation(baseTramp *bt, Dyninst::Address loc) { instrumentation_[bt] = loc; }
+    std::map<baseTramp *, Dyninst::Address> &getInstrumentation() { return instrumentation_; }
+    
+    void registerRemovedInstrumentation(baseTramp *bt, Dyninst::Address loc) { removedInstrumentation_[bt] = loc; }
+    std::map<baseTramp *, Dyninst::Address> &getRemovedInstrumentation() { return removedInstrumentation_; }
 
     void registerRemovedInstrumentation(baseTramp* bt, Address loc)
     {
@@ -284,15 +281,15 @@ private:
     Emitter* emitter_;
     bool     allocated_;
 
-    AddressSpace*  aSpace_;
-    PCThread*      thr_;
-    registerSpace* rs_;
-    regTracker_t*  t_;
-    Address        addr_;
-    instPoint*     ip_;
-    func_instance* f_;
-    baseTramp*     bt_;
-    bool           isPadded_;
+    AddressSpace *aSpace_;
+    PCThread *thr_;
+    registerSpace *rs_;
+    regTracker_t *t_;
+    Dyninst::Address addr_;
+    instPoint *ip_;
+    func_instance *f_;
+    baseTramp *bt_;
+    bool isPadded_;
 
     bitArray regsDefined_;
     bool     trackRegDefs_;
@@ -305,9 +302,9 @@ private:
     std::vector<relocPatch>   patches_;
     std::vector<pcRelRegion*> pcrels_;
 
-    std::map<block_instance*, Extent> defensivePads_;
-    std::map<baseTramp*, Address>     instrumentation_;
-    std::map<baseTramp*, Address>     removedInstrumentation_;
+    std::map<block_instance *, Extent> defensivePads_;
+    std::map<baseTramp *, Dyninst::Address> instrumentation_;
+    std::map<baseTramp *, Dyninst::Address> removedInstrumentation_;
 };
 
 #endif

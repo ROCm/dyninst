@@ -1,12 +1,12 @@
 #include "dyntypes.h"
 #include "CodeObject.h"
 #include "CodeSource.h"
-
 #include "BoundFactCalculator.h"
 #include "IndirectASTVisitor.h"
 #include "debug_parse.h"
 #include "Instruction.h"
 #include "JumpTableIndexPred.h"
+#include "registers/x86_64_regs.h"
 using namespace Dyninst::InstructionAPI;
 
 void
@@ -321,14 +321,14 @@ static bool
 IsConditionalJump(Instruction insn)
 {
     entryID id = insn.getOperation().getID();
-    if(id == e_jz || id == e_jnz || id == e_jb || id == e_jnb || id == e_jbe ||
-       id == e_jnbe || id == e_jb_jnaej_j || id == e_jnb_jae_j || id == e_jle ||
-       id == e_jl || id == e_jnl || id == e_jnle)
-        return true;
-    if(id == aarch64_op_b_cond)
-        return true;
-    if(id == power_op_bc || id == power_op_bcctr || id == power_op_bclr)
-        return true;
+    if (id == e_je || id == e_jne ||
+        id == e_jb || id == e_jae ||
+	id == e_jbe || id == e_ja ||
+	id == e_jb_jnaej_j || id == e_jnb_jae_j ||
+	id == e_jle || id == e_jl ||
+	id == e_jge || id == e_jg) return true;
+    if (id == aarch64_op_b_cond) return true;
+    if (id == power_op_bc || id == power_op_bcctr || id == power_op_bclr) return true;
     return false;
 }
 
@@ -557,12 +557,11 @@ BoundFactsCalculator::CalcTransferFunction(Node::Ptr curNode, BoundFact* newFact
     }
 
     // Assume all SETxx entry ids are contiguous
-    if(id >= e_setb && id <= e_setz)
-    {
-        newFact->GenFact(outAST, new StridedInterval(1, 0, 1), false);
-        parsing_printf("\t\t\tCalculating transfer function: Output facts\n");
-        newFact->Print();
-        return;
+    if (id >= e_setb && id <= e_sete) {
+        newFact->GenFact(outAST, new StridedInterval(1,0,1), false);
+	parsing_printf("\t\t\tCalculating transfer function: Output facts\n");
+	newFact->Print();
+	return;
     }
 
     bool findBound = false;

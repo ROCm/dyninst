@@ -65,39 +65,59 @@ public:
     DATAFLOW_EXPORT virtual ASTPtr   visit(YicesAST*) { return AST::Ptr(); };
     DATAFLOW_EXPORT virtual ASTPtr   visit(SemanticsAST*) { return AST::Ptr(); };
 
-    DATAFLOW_EXPORT virtual ~StackVisitor(){};
+class StackVisitor : public ASTVisitor {
+ public:
+  StackVisitor(Address a,
+	       ParseAPI::Function *func,
+	       StackAnalysis::Height &stackHeight,
+	       StackAnalysis::Height &frameHeight) :
+    addr_(a), func_(func), stack_(stackHeight), frame_(frameHeight) {}
 
-private:
-    Address               addr_;
-    ParseAPI::Function*   func_;
-    StackAnalysis::Height stack_;
-    StackAnalysis::Height frame_;
+    DATAFLOW_EXPORT virtual AST::Ptr visit(AST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(BottomAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(ConstantAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(VariableAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(RoseAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(StackAST *);
+    DATAFLOW_EXPORT virtual ASTPtr visit(InputVariableAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(ReferenceAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(StpAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(YicesAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(SemanticsAST *) {return AST::Ptr();}
+
+    DATAFLOW_EXPORT virtual ~StackVisitor() {}
+
+  private:
+  Address addr_;
+  ParseAPI::Function *func_;
+  StackAnalysis::Height stack_;
+  StackAnalysis::Height frame_;
 };
 
-// Simplify boolean expressions for PPC
-class BooleanVisitor : public ASTVisitor
-{
-public:
-    BooleanVisitor(){};
+  // Simplify boolean expressions for PPC
+class BooleanVisitor : public ASTVisitor {
+ public:
+    BooleanVisitor() {}
 
-    DATAFLOW_EXPORT virtual AST::Ptr visit(AST*);
-    DATAFLOW_EXPORT virtual AST::Ptr visit(BottomAST*);
-    DATAFLOW_EXPORT virtual AST::Ptr visit(ConstantAST*);
-    DATAFLOW_EXPORT virtual AST::Ptr visit(VariableAST*);
-    DATAFLOW_EXPORT virtual AST::Ptr visit(RoseAST*);
-    DATAFLOW_EXPORT virtual AST::Ptr visit(StackAST*);
-    DATAFLOW_EXPORT virtual ASTPtr   visit(InputVariableAST*) { return AST::Ptr(); };
-    DATAFLOW_EXPORT virtual ASTPtr   visit(ReferenceAST*) { return AST::Ptr(); };
-    DATAFLOW_EXPORT virtual ASTPtr   visit(StpAST*) { return AST::Ptr(); };
-    DATAFLOW_EXPORT virtual ASTPtr   visit(YicesAST*) { return AST::Ptr(); };
-    DATAFLOW_EXPORT virtual ASTPtr   visit(SemanticsAST*) { return AST::Ptr(); };
+    DATAFLOW_EXPORT virtual AST::Ptr visit(AST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(BottomAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(ConstantAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(VariableAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(RoseAST *);
+    DATAFLOW_EXPORT virtual AST::Ptr visit(StackAST *);
+    DATAFLOW_EXPORT virtual ASTPtr visit(InputVariableAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(ReferenceAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(StpAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(YicesAST *) {return AST::Ptr();}
+    DATAFLOW_EXPORT virtual ASTPtr visit(SemanticsAST *) {return AST::Ptr();}
 
-    DATAFLOW_EXPORT virtual ~BooleanVisitor(){};
-
-private:
+  
+    DATAFLOW_EXPORT virtual ~BooleanVisitor() {}
+    
+  private:
 };
 
-};  // namespace DataflowAPI
-};  // namespace Dyninst
+}
+}
 
 #endif

@@ -37,7 +37,6 @@
 #include "addressSpace.h"
 #include "dynThread.h"
 #include "dynProcess.h"
-#include "common/src/Types.h"
 #include "compiler_annotations.h"
 #include "codegen.h"
 #include "util.h"
@@ -58,52 +57,51 @@
 const unsigned int codeGenPadding  = (128);
 const unsigned int codeGenMinAlloc = (4 * 1024);
 
-codeGen::codeGen()
-: buffer_(NULL)
-, offset_(0)
-, size_(0)
-, max_(0)
-, pc_rel_use_count(0)
-, emitter_(NULL)
-, allocated_(false)
-, aSpace_(NULL)
-, thr_(NULL)
-, rs_(NULL)
-, t_(NULL)
-, addr_((Address) -1)
-, ip_(NULL)
-, f_(NULL)
-, bt_(NULL)
-, isPadded_(true)
-, trackRegDefs_(false)
-, inInstrumentation_(false)
-,  // save default
-insertNaked_(false)
-, modifiedStackFrame_(false)
+codeGen::codeGen() :
+    buffer_(NULL),
+    offset_(0),
+    size_(0),
+    max_(0),
+    pc_rel_use_count(0),
+    emitter_(NULL),
+    allocated_(false),
+    aSpace_(NULL),
+    thr_(NULL),
+    rs_(NULL),
+    t_(NULL),
+    addr_((Dyninst::Address)-1),
+    ip_(NULL),
+    f_(NULL),
+    bt_(NULL),
+    isPadded_(true),
+    trackRegDefs_(false),
+    inInstrumentation_(false), // save default
+    insertNaked_(false),
+    modifiedStackFrame_(false)
 {}
 
 // size is in bytes
-codeGen::codeGen(unsigned size)
-: buffer_(NULL)
-, offset_(0)
-, size_(size)
-, max_(size + codeGenPadding)
-, pc_rel_use_count(0)
-, emitter_(NULL)
-, allocated_(true)
-, aSpace_(NULL)
-, thr_(NULL)
-, rs_(NULL)
-, t_(NULL)
-, addr_((Address) -1)
-, ip_(NULL)
-, f_(NULL)
-, bt_(NULL)
-, isPadded_(true)
-, trackRegDefs_(false)
-, inInstrumentation_(false)
-, insertNaked_(false)
-, modifiedStackFrame_(false)
+codeGen::codeGen(unsigned size) :
+    buffer_(NULL),
+    offset_(0),
+    size_(size),
+    max_(size+codeGenPadding),
+    pc_rel_use_count(0),
+    emitter_(NULL),
+    allocated_(true),
+    aSpace_(NULL),
+    thr_(NULL),
+    rs_(NULL),
+	t_(NULL),
+    addr_((Dyninst::Address)-1),
+    ip_(NULL),
+    f_(NULL),
+    bt_(NULL),
+    isPadded_(true),
+    trackRegDefs_(false),
+    inInstrumentation_(false),
+    insertNaked_(false),
+    modifiedStackFrame_(false)
 {
     buffer_ = (codeBuf_t*) malloc(size + codeGenPadding);
     if(!buffer_)
@@ -116,27 +114,27 @@ codeGen::codeGen(unsigned size)
 }
 
 // size is in bytes
-codeGen::codeGen(codeBuf_t* buffer, int size)
-: buffer_(buffer)
-, offset_(0)
-, size_(size - codeGenPadding)
-, max_(size + codeGenPadding)
-, pc_rel_use_count(0)
-, emitter_(NULL)
-, allocated_(false)
-, aSpace_(NULL)
-, thr_(NULL)
-, rs_(NULL)
-, t_(NULL)
-, addr_((Address) -1)
-, ip_(NULL)
-, f_(NULL)
-, bt_(NULL)
-, isPadded_(true)
-, trackRegDefs_(false)
-, inInstrumentation_(false)
-, insertNaked_(false)
-, modifiedStackFrame_(false)
+codeGen::codeGen(codeBuf_t *buffer, int size) :
+    buffer_(buffer),
+    offset_(0),
+    size_(size-codeGenPadding),
+    max_(size+codeGenPadding),
+    pc_rel_use_count(0),
+    emitter_(NULL),
+    allocated_(false),
+    aSpace_(NULL),
+    thr_(NULL),
+    rs_(NULL),
+    t_(NULL),
+    addr_((Dyninst::Address)-1),
+    ip_(NULL),
+    f_(NULL),
+    bt_(NULL),
+    isPadded_(true),
+    trackRegDefs_(false),
+    inInstrumentation_(false),
+    insertNaked_(false),
+    modifiedStackFrame_(false)
 {
     assert(buffer_);
     memset(buffer_, 0, size + codeGenPadding);
@@ -504,18 +502,13 @@ codeGen::getDisplacement(codeBufIndex_t from, codeBufIndex_t to)
     return ((to_l - from_l) * CODE_GEN_OFFSET_SIZE);
 }
 
-Address
-codeGen::currAddr() const
-{
-    if(addr_ == (Address) -1)
-        return (Address) -1;
-    assert(addr_ != (Address) -1);
-    return currAddr(addr_);
+Dyninst::Address codeGen::currAddr() const {
+  if(addr_ == (Dyninst::Address) -1) return (Dyninst::Address) -1;
+  assert(addr_ != (Dyninst::Address) -1);
+  return currAddr(addr_);
 }
 
-Address
-codeGen::currAddr(Address base) const
-{
+Dyninst::Address codeGen::currAddr(Dyninst::Address base) const {
     return (offset_ * CODE_GEN_OFFSET_SIZE) + base;
 }
 
@@ -615,24 +608,20 @@ codeGen::addPCRelRegion(pcRelRegion* reg)
     reg->gen        = this;
     reg->cur_offset = used();
 
-    if(startAddr() != (Address) -1 && reg->canPreApply())
-    {
-        // If we already have addressess for everything (usually when relocating a
-        // function)
-        // then don't bother creating the region, just generate the code.
-        reg->apply(startAddr() + reg->cur_offset);
-        delete reg;
-    }
-    else
-    {
-        reg->cur_size = reg->maxSize();
-        fill(reg->cur_size, cgNOP);
-        pcrels_.push_back(reg);
-    }
+   if (startAddr() != (Dyninst::Address) -1 && reg->canPreApply()) {
+     //If we already have addressess for everything (usually when relocating a function)
+     // then don't bother creating the region, just generate the code.
+     reg->apply(startAddr() + reg->cur_offset);
+     delete reg;
+   }
+   else {
+     reg->cur_size = reg->maxSize();
+     fill(reg->cur_size, cgNOP);
+     pcrels_.push_back(reg);
+   }
 }
 
-void
-codeGen::applyPCRels(Address base)
+void codeGen::applyPCRels(Dyninst::Address base)
 {
     vector<pcRelRegion*>::iterator i;
 
@@ -744,7 +733,23 @@ relocPatch::applyPatch()
 bool
 relocPatch::isApplied()
 {
-    return applied_;
+   if (applied_)
+      return;
+
+   Dyninst::Address addr = source_->get_address();
+
+
+   switch (ptype_) {
+      case patch_type_t::pcrel:
+	addr = addr - (gen_->startAddr() + offset_);
+	DYNINST_FALLTHROUGH;
+      case patch_type_t::abs:
+	gen_->copy(&addr, size_, dest_);
+	break;
+      default:
+         assert(0);
+   }
+   applied_ = true;
 }
 
 bool
@@ -773,10 +778,17 @@ toAddressPatch::get_size() const
     return 0;
 }
 
-void
-toAddressPatch::set_address(Address a)
-{
-    addr = a;
+Dyninst::Address toAddressPatch::get_address() const
+{ 
+  return addr; 
+}
+
+unsigned toAddressPatch::get_size() const { 
+  return 0; 
+}
+
+void toAddressPatch::set_address(Dyninst::Address a) {
+   addr = a;
 }
 
 codeGen codeGen::baseTemplate;
@@ -876,19 +888,15 @@ codeGen::getRegsDefined()
     return regsDefined_;
 }
 
-void
-codeGen::markRegDefined(Register r)
-{
-    if(!trackRegDefs_)
-        return;
-    regsDefined_[r] = true;
+void codeGen::markRegDefined(Dyninst::Register r) {
+   if (!trackRegDefs_)
+      return;
+   regsDefined_[r] = true;
 }
 
-bool
-codeGen::isRegDefined(Register r)
-{
-    assert(trackRegDefs_);
-    return regsDefined_[r];
+bool codeGen::isRegDefined(Dyninst::Register r) {
+   assert(trackRegDefs_);
+   return regsDefined_[r];
 }
 
 Dyninst::Architecture
@@ -908,17 +916,13 @@ codeGen::getArch() const
     return Arch_none;
 }
 
-void
-codeGen::registerDefensivePad(block_instance* callBlock, Address padStart,
-                              unsigned padSize)
-{
-    // Register a match between a call instruction
-    // and a padding area post-reloc-call for
-    // control flow interception purposes.
-    // This is kind of hacky, btw.
-    // cerr << "Registering pad [" << hex << padStart << "," << padStart + padSize << "],
-    // for block @ " << callBlock->start() << dec << endl;
-    defensivePads_[callBlock] = Extent(padStart, padSize);
+void codeGen::registerDefensivePad(block_instance *callBlock, Dyninst::Address padStart, unsigned padSize) {
+  // Dyninst::Register a match between a call instruction
+  // and a padding area post-reloc-call for
+  // control flow interception purposes.
+  // This is kind of hacky, btw.
+    //cerr << "Registering pad [" << hex << padStart << "," << padStart + padSize << "], for block @ " << callBlock->start() << dec << endl;
+  defensivePads_[callBlock] = Extent(padStart, padSize);
 }
 
 #include "InstructionDecoder.h"
@@ -932,17 +936,16 @@ codeGen::format() const
 
     stringstream ret;
 
-    Address            base = (addr_ != (Address) -1) ? addr_ : 0;
-    InstructionDecoder deco(buffer_, used(), aSpace_->getArch());
-    Instruction        insn = deco.decode();
-    ret << hex;
-    while(insn.isValid())
-    {
-        ret << "\t" << base << ": " << insn.format(base) << " / "
-            << *((const unsigned*) insn.ptr()) << endl;
-        base += insn.size();
-        insn = deco.decode();
-    }
-    ret << dec;
-    return ret.str();
+   Dyninst::Address base = (addr_ != (Dyninst::Address)-1) ? addr_ : 0;
+   InstructionDecoder deco
+      (buffer_,used(),aSpace_->getArch());
+   Instruction insn = deco.decode();
+   ret << hex;
+   while(insn.isValid()) {
+       ret << "\t" << base << ": " << insn.format(base) << " / " << *((const unsigned *)insn.ptr()) << endl;
+       base += insn.size();
+       insn = deco.decode();
+   }
+   ret << dec;
+   return ret.str();
 }

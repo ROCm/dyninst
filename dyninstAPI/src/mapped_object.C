@@ -46,7 +46,6 @@
 #include "InstructionDecoder.h"
 #include "Parsing.h"
 #include "instPoint.h"
-#include "MemoryEmulator/memEmulator.h"
 #include <boost/tuple/tuple.hpp>
 #include "BPatch_image.h"
 #include "PatchCFG.h"
@@ -306,7 +305,31 @@ mapped_object::codeAbs() const
 Address
 mapped_object::dataAbs() const
 {
-    return dataBase_ + dataOffset();
+   parsing_printf("findModule for %s (substr match %d)\n",
+         m_name.c_str(), wildcard);
+   std::string tmp = m_name.c_str();
+   for (unsigned i = 0; i < everyModule.size(); i++) {
+      if (everyModule[i]->fileName() == m_name ||
+            (wildcard &&
+             (wildcardEquiv(tmp, everyModule[i]->fileName())))) {
+         //parsing_printf("... found!\n");
+         return everyModule[i];
+      }
+   }
+   // Create a new one IF there's one in the child pd_module
+
+   pdmodule *pdmod = image_->findModule(m_name, wildcard);
+   if (pdmod) {
+      mapped_module *mod = mapped_module::createMappedModule(this,
+            pdmod);
+      everyModule.push_back(mod);
+      //parsing_printf("... made new module!\n");
+      return mod;
+   }
+   else {
+      //parsing_printf("... error, no module found...\n");
+      return NULL;
+   }
 }
 
 bool
@@ -467,31 +490,26 @@ mapped_object::set_short_name()
 const std::vector<func_instance*>*
 mapped_object::findFuncVectorByPretty(const std::string& funcname)
 {
-    if(funcname.empty())
-        return NULL;
-    // First, check the underlying image.
-    const std::vector<parse_func*>* img_funcs =
-        parse_img()->findFuncVectorByPretty(funcname);
-    if(img_funcs == NULL)
-    {
-        return NULL;
-    }
+   if (funcname.empty()) return NULL;
+   // First, check the underlying image.
+   const std::vector<parse_func *> *img_funcs = parse_img()->findFuncVectorByPretty(funcname);
+   if (img_funcs == NULL) {
+      return NULL;
+   }
 
-    assert(img_funcs->size());
-    // Fast path:
-    auto iter = allFunctionsByPrettyName.find(funcname);
-    if(iter != allFunctionsByPrettyName.end() && iter->second != nullptr)
-    {
-        // Okay, we've pulled in some of the functions before (this can happen as a
-        // side effect of adding functions). But did we get them all?
-        std::vector<func_instance*>* map_funcs = iter->second;
-        if(map_funcs->size() == img_funcs->size())
-        {
-            // We're allocating at the lower level....
-            delete img_funcs;
-            return map_funcs;
-        }
-    }
+   assert(img_funcs->size());
+   // Fast path:
+   auto iter = allFunctionsByPrettyName.find(funcname);
+   if (iter != allFunctionsByPrettyName.end() && iter->second != nullptr) {
+      // Okay, we've pulled in some of the functions before (this can happen as a
+      // side effect of adding functions). But did we get them all?
+      std::vector<func_instance *> *map_funcs = iter->second;
+      if (map_funcs->size() == img_funcs->size()) {
+         // We're allocating at the lower level....
+         delete img_funcs;
+         return map_funcs;
+      }
+   }
 
     // Slow path: check each img_func, add those we don't already have, and return.
     for(unsigned i = 0; i < img_funcs->size(); i++)
@@ -510,8 +528,7 @@ mapped_object::findFuncVectorByPretty(const std::string& funcname)
 const std::vector<func_instance*>*
 mapped_object::findFuncVectorByMangled(const std::string& funcname)
 {
-    if(funcname.empty())
-        return NULL;
+    if (funcname.empty()) return NULL;
 
     // First, check the underlying image.
     const std::vector<parse_func*>* img_funcs =
@@ -524,8 +541,7 @@ mapped_object::findFuncVectorByMangled(const std::string& funcname)
     assert(img_funcs->size());
     // Fast path:
     auto iter = allFunctionsByMangledName.find(funcname);
-    if(iter != allFunctionsByMangledName.end() && iter->second != nullptr)
-    {
+    if (iter != allFunctionsByMangledName.end() && iter->second != nullptr) {
         // Okay, we've pulled in some of the functions before (this can happen as a
         // side effect of adding functions). But did we get them all?
         std::vector<func_instance*>* map_funcs = iter->second;
@@ -554,8 +570,7 @@ mapped_object::findFuncVectorByMangled(const std::string& funcname)
 const std::vector<int_variable*>*
 mapped_object::findVarVectorByPretty(const std::string& varname)
 {
-    if(varname.empty())
-        return NULL;
+    if (varname.empty()) return NULL;
 
     // First, check the underlying image.
     const std::vector<image_variable*>* img_vars =
@@ -566,16 +581,14 @@ mapped_object::findVarVectorByPretty(const std::string& varname)
     assert(img_vars->size());
     // Fast path:
     auto iter = allVarsByPrettyName.find(varname);
-    if(iter != allVarsByPrettyName.end() && iter->second != nullptr)
-    {
-        // Okay, we've pulled in some of the variabletions before (this can happen as a
-        // side effect of adding variabletions). But did we get them all?
-        std::vector<int_variable*>* map_variables = iter->second;
-        if(map_variables->size() == img_vars->size())
-        {
-            delete img_vars;
-            return map_variables;
-        }
+    if (iter != allVarsByPrettyName.end() && iter->second != nullptr) {
+       // Okay, we've pulled in some of the variabletions before (this can happen as a
+       // side effect of adding variabletions). But did we get them all?
+       std::vector<int_variable *> *map_variables = iter->second;
+       if (map_variables->size() == img_vars->size()) {
+          delete img_vars;
+          return map_variables;
+       }
     }
 
     // Slow path: check each img_variable, add those we don't already have, and return.
@@ -596,8 +609,7 @@ mapped_object::findVarVectorByPretty(const std::string& varname)
 const std::vector<int_variable*>*
 mapped_object::findVarVectorByMangled(const std::string& varname)
 {
-    if(varname.empty())
-        return NULL;
+  if (varname.empty()) return NULL;
 
     // First, check the underlying image.
     const std::vector<image_variable*>* img_vars =
@@ -608,32 +620,28 @@ mapped_object::findVarVectorByMangled(const std::string& varname)
     assert(img_vars->size());
     // Fast path:
 
-    auto iter = allVarsByMangledName.find(varname);
-    if(iter != allVarsByMangledName.end() && iter->second != nullptr)
-    {
-        // Okay, we've pulled in some of the variabletions before (this can happen as a
-        // side effect of adding variables). But did we get them all?
-        std::vector<int_variable*>* map_variables = iter->second;
-        if(map_variables->size() == img_vars->size())
-        {
-            delete img_vars;
-            return map_variables;
-        }
-    }
-
-    // Slow path: check each img_variable, add those we don't already have, and return.
-    for(unsigned i = 0; i < img_vars->size(); i++)
-    {
-        image_variable* var   = (*img_vars)[i];
-        auto            iter2 = everyUniqueVariable.find(var);
-        if(iter2 == everyUniqueVariable.end())
-        {
-            findVariable(var);
-        }
-        assert(everyUniqueVariable[var]);
-    }
-    delete img_vars;
-    return allVarsByMangledName[varname];
+  auto iter = allVarsByMangledName.find(varname);
+  if (iter != allVarsByMangledName.end() && iter->second != nullptr) {
+      // Okay, we've pulled in some of the variabletions before (this can happen as a
+      // side effect of adding variables). But did we get them all?
+     std::vector<int_variable *> *map_variables = iter->second;
+      if (map_variables->size() == img_vars->size()) {
+         delete img_vars;
+         return map_variables;
+      }
+  }
+  
+  // Slow path: check each img_variable, add those we don't already have, and return.
+  for (unsigned i = 0; i < img_vars->size(); i++) {
+     image_variable *var = (*img_vars)[i];
+     auto iter2 = everyUniqueVariable.find(var);
+     if (iter2 == everyUniqueVariable.end()) {
+        findVariable(var);
+     }
+     assert(everyUniqueVariable[var]);
+  }
+  delete img_vars;
+  return allVarsByMangledName[varname];
 }
 
 // Returns one variable, doesn't search other mapped_objects.  Use carefully.
@@ -1174,12 +1182,11 @@ mapped_object::getOrCreateForkedModule(mapped_module* parMod)
 mapped_module*
 mapped_object::getDefaultModule()
 {
-    mapped_module* ret = findModule("DEFAULT_MODULE");
-    if(ret)
-        return ret;
+  // Make sure the everyModule vector is initialized
+  getModules();
 
-    // Make sure the everyModule vector is initialized
-    getModules();
+  assert(everyModule.size() > 0);
+  return everyModule[0];
 
     assert(everyModule.size() > 0);
     return everyModule[0];
@@ -1484,13 +1491,10 @@ mapped_object::expandCodeBytes(SymtabAPI::Region* reg)
 
     // 1. copy memory into regBuf
     Address readAddr = regStart + codeBase();
-    if(proc()->isMemoryEmulated())
-    {
-        bool valid                  = false;
-        boost::tie(valid, readAddr) = proc()->getMemEm()->translate(readAddr);
-        assert(valid);
-    }
-    if(!proc()->readDataSpace((void*) readAddr, copySize, regBuf, true))
+    if (!proc()->readDataSpace((void*)readAddr,
+                               copySize,
+                               regBuf,
+                               true))
     {
         fprintf(stderr, "%s[%d] Failed to read from region [%lX %lX]\n", __FILE__,
                 __LINE__, (long) regStart + codeBase(), copySize);
@@ -1499,10 +1503,9 @@ mapped_object::expandCodeBytes(SymtabAPI::Region* reg)
     mal_printf("EXTEND_CB: copied to [%lx %lx)\n", codeBase() + regStart,
                codeBase() + regStart + copySize);
 
-    if(!proc()->isMemoryEmulated())
-    {
-        // 2. copy code bytes back into the regBuf to wipe out instrumentation
-        //    and set regBuf to be the data for the region
+
+    // 2. copy code bytes back into the regBuf to wipe out instrumentation
+    //    and set regBuf to be the data for the region
 
         // find the first block in the region
         set<ParseAPI::Block*> analyzedBlocks;
@@ -1537,7 +1540,6 @@ mapped_object::expandCodeBytes(SymtabAPI::Region* reg)
         }
         mal_printf("Expand region: %lx blocks copied back into mapped file\n",
                    analyzedBlocks.size());
-    }
 
     if(reg->isDirty())
     {
@@ -1565,9 +1567,8 @@ mapped_object::expandCodeBytes(SymtabAPI::Region* reg)
 void
 mapped_object::updateCodeBytes(const list<pair<Address, Address>>& owRanges)
 {
-    bool memEmulation = proc()->isMemoryEmulated();
-    // 1. use other update functions to update non-code areas of mapped files,
-    //    expanding them if we wrote in un-initialized memory
+// 1. use other update functions to update non-code areas of mapped files,
+//    expanding them if we wrote in un-initialized memory
     using namespace SymtabAPI;
     std::set<Region*> expandRegs;  // so we don't update regions more than once
     Address           baseAddress = codeBase();
@@ -1605,12 +1606,6 @@ mapped_object::updateCodeBytes(const list<pair<Address, Address>>& owRanges)
     for(rIter = owRanges.begin(); rIter != owRanges.end(); rIter++)
     {
         Address readAddr = rIter->first;
-        if(memEmulation)
-        {
-            bool valid                  = false;
-            boost::tie(valid, readAddr) = proc()->getMemEm()->translate(readAddr);
-            assert(valid);
-        }
 
         Region* reg =
             parse_img()->getObject()->findEnclosingRegion((*rIter).first - baseAddress);
@@ -1681,15 +1676,11 @@ mapped_object::updateCodeBytes(SymtabAPI::Region* symReg)
         {
             // update the mapped file
             Address readAddr = prevEndAddr + base;
-            if(proc()->isMemoryEmulated())
-            {
-                bool valid                  = false;
-                boost::tie(valid, readAddr) = proc()->getMemEm()->translate(readAddr);
-                assert(valid);
-            }
-            if(!proc()->readDataSpace(
-                   (void*) readAddr, curB->start() - prevEndAddr,
-                   (void*) ((Address) mappedPtr + prevEndAddr - regStart), true))
+            if (!proc()->readDataSpace(
+                    (void*)readAddr,
+                    curB->start() - prevEndAddr,
+                    (void*)((Address)mappedPtr + prevEndAddr - regStart),
+                    true))
             {
                 assert(0);  // read failed
             }
@@ -1714,15 +1705,11 @@ mapped_object::updateCodeBytes(SymtabAPI::Region* symReg)
     if(prevEndAddr < regStart + symReg->getDiskSize())
     {
         Address readAddr = prevEndAddr + base;
-        if(proc()->isMemoryEmulated())
-        {
-            bool valid                  = false;
-            boost::tie(valid, readAddr) = proc()->getMemEm()->translate(readAddr);
-            assert(valid);
-        }
-        if(!proc()->readDataSpace(
-               (void*) readAddr, regStart + symReg->getDiskSize() - prevEndAddr,
-               (void*) ((Address) mappedPtr + prevEndAddr - regStart), true))
+        if (!proc()->readDataSpace(
+                (void*)readAddr,
+                regStart + symReg->getDiskSize() - prevEndAddr,
+                (void*)((Address)mappedPtr + prevEndAddr - regStart),
+                true))
         {
             assert(0);  // read failed
         }
@@ -1798,17 +1785,10 @@ mapped_object::isUpdateNeeded(Address entry)
     // in which case the difference is due to instrumentation, as we would
     // have otherwise detected the overwrite
     Address page_size = proc()->proc()->getMemoryPageSize();
-    comparison_size   = (comparison_size < page_size) ? comparison_size : page_size;
-    regBuf            = malloc(comparison_size);
-    Address readAddr  = entry;
-    if(proc()->isMemoryEmulated())
-    {
-        bool    valid                 = false;
-        Address translated            = 0;
-        boost::tie(valid, translated) = proc()->getMemEm()->translate(readAddr);
-        if(valid)
-            readAddr = translated;
-    }
+    comparison_size = ( comparison_size <  page_size)
+                      ? comparison_size : page_size;
+    regBuf = malloc(comparison_size);
+    Address readAddr = entry;
 
     // mal_printf("%s[%d] Comparing %lx bytes starting at %lx\n",
     //      FILE__,__LINE__,comparison_size,entry);
@@ -1855,13 +1835,8 @@ mapped_object::isExpansionNeeded(Address entry)
 
     // if there is uninitialized space in the region,
     // see if the first few bytes have been updated
-    Address compareStart = base + reg->getMemOffset() + reg->getDiskSize();
-    if(proc()->isMemoryEmulated())
-    {
-        bool valid                      = false;
-        boost::tie(valid, compareStart) = proc()->getMemEm()->translate(compareStart);
-        assert(valid);
-    }
+    Address compareStart =
+        base + reg->getMemOffset() + reg->getDiskSize();
     unsigned compareSize = InstructionAPI::InstructionDecoder::maxInstructionLength;
 
     Address uninitSize = reg->getMemSize() - reg->getDiskSize();
@@ -1954,18 +1929,12 @@ mapped_object::updateCodeBytesIfNeeded(Address entry)
     return true;
 }
 
-void
-mapped_object::remove(func_instance* func)
-{
-    if(as()->isMemoryEmulated())
-    {
-        as()->getMemEm()->removeSpringboards(func);
-    }
-
-    // clear out module- and BPatch-level data structures
-    BPatch_addressSpace* bpAS   = (BPatch_addressSpace*) proc()->up_ptr();
-    BPatch_module*       bpmod  = bpAS->getImage()->findModule(func->mod());
-    BPatch_function*     bpfunc = bpAS->findOrCreateBPFunc(SCAST_FI(func), bpmod);
+void mapped_object::remove(func_instance *func) {
+    
+    // clear out module- and BPatch-level data structures 
+    BPatch_addressSpace* bpAS = (BPatch_addressSpace*)proc()->up_ptr();
+    BPatch_module *bpmod = bpAS->getImage()->findModule(func->mod());
+    BPatch_function *bpfunc = bpAS->findOrCreateBPFunc(SCAST_FI(func), bpmod);
     bpfunc->removeCFG();
     bpmod->remove(bpfunc);
     func->mod()->remove(func);
@@ -2033,14 +2002,8 @@ mapped_object::remove(instPoint* point)
 }
 
 // does not delete
-void
-mapped_object::destroy(PatchAPI::PatchBlock* b)
-{
-    calleeNames_.erase(SCAST_BI(b));
-    if(as()->isMemoryEmulated())
-    {
-        as()->getMemEm()->removeSpringboards(SCAST_BI(b));
-    }
+void mapped_object::destroy(PatchAPI::PatchBlock *b) {
+   calleeNames_.erase(SCAST_BI(b));
 }
 
 // does not delete

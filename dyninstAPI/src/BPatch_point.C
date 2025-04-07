@@ -623,41 +623,45 @@ BPatchToInternalArgs(BPatch_point* point, BPatch_callWhen when, BPatch_snippetOr
     else
         return false;
 
-    //
-    // Check for valid combinations of BPatch_procedureLocation & call*
-    //  Right now we don't allow
-    //          BPatch_callBefore + BPatch_exit
-    //          BPatch_callAfter + BPatch_entry
-    //
-    //  These combinations are intended to be used to mark the point that
-    //      is the last, first valid point where the local variables are
-    //      valid.  This is different than the first/last instruction of
-    //      a subroutine which is what the other combinations of BPatch_entry
-    //      and BPatch_exit refer to.
-    //
-    if(when == BPatch_callBefore && point->getPointType() == BPatch_exit)
-    {
-        BPatch_reportError(BPatchSerious, 113,
-                           "BPatch_callBefore at BPatch_exit not supported yet");
-        return false;
-    }
-    if(when == BPatch_callAfter && point->getPointType() == BPatch_entry)
-    {
-        BPatch_reportError(BPatchSerious, 113,
-                           "BPatch_callAfter at BPatch_entry not supported yet");
-        return false;
-    }
+  if (order == BPatch_firstSnippet)
+    ipOrder = orderFirstAtPoint;
+  else if (order == BPatch_lastSnippet)
+    ipOrder = orderLastAtPoint;
+  else
+    return false;
 
-    if((point->getPointType() == BPatch_exit))
-    {
-        //  XXX - Hack!
-        //  The semantics of pre/post insn at exit are setup for the new
-        //  defintion of using this to control before/after stack creation,
-        //  but the lower levels of dyninst don't know about this yet.
-        ipWhen = callPreInsn;
-    }
+  //
+  // Check for valid combinations of BPatch_procedureLocation & call*
+  //  Right now we don't allow
+  //          BPatch_callBefore + BPatch_exit
+  //          BPatch_callAfter + BPatch_entry
+  //
+  //  These combinations are intended to be used to mark the point that
+  //      is the last, first valid point where the local variables are
+  //      valid.  This is different than the first/last instruction of
+  //      a subroutine which is what the other combinations of BPatch_entry
+  //      and BPatch_exit refer to.
+  //
+  if (when == BPatch_callBefore && point->getPointType() == BPatch_exit) {
+      BPatch_reportError(BPatchSerious, 113,
+                         "BPatch_callBefore at BPatch_exit not supported yet");
+      return false;
+  }
+  if (when == BPatch_callAfter && point->getPointType() == BPatch_entry) {
+      BPatch_reportError(BPatchSerious, 113,
+                         "BPatch_callAfter at BPatch_entry not supported yet");
+      return false;
+  }
 
-    return true;
+  if ((point->getPointType() == BPatch_exit)) {
+      //  XXX - Hack!
+      //  The semantics of pre/post insn at exit are setup for the new
+      //  defintion of using this to control before/after stack creation,
+      //  but the lower levels of dyninst don't know about this yet.
+      ipWhen = callPreInsn;
+  }
+
+  return true;
 }
 
 BPatch_procedureLocation

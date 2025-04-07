@@ -31,7 +31,7 @@
 #define REGISTERMAP_H
 
 #include <map>
-#include "common/h/dyn_regs.h"
+#include "registers/MachRegister.h"
 
 namespace Dyninst
 {
@@ -39,16 +39,15 @@ namespace DataflowAPI
 {
 typedef std::map<MachRegister, int> RegisterMap;
 
-RegisterMap&
-machRegIndex_x86();
-RegisterMap&
-machRegIndex_x86_64();
-RegisterMap&
-machRegIndex_ppc();
-RegisterMap&
-machRegIndex_ppc_64();
-RegisterMap&
-machRegIndex_aarch64();
+RegisterMap &machRegIndex_x86();
+RegisterMap &machRegIndex_x86_64();
+RegisterMap &machRegIndex_ppc();
+RegisterMap &machRegIndex_ppc_64();
+RegisterMap &machRegIndex_aarch64();
+
+}
+}
+#endif //REGISTERMAP_H
 
 };      // namespace DataflowAPI
 };      // namespace Dyninst

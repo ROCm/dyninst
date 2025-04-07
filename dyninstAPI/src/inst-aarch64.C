@@ -159,7 +159,7 @@ void
 EmitterAARCH64SaveRegs::saveSPR(codeGen& gen, Register scratchReg, int sprnum,
                                 int stkOffset)
 {
-    assert(scratchReg != REG_NULL);
+    assert(scratchReg!=Null_Register);
 
     // TODO move map to common location
     map<int, int> sysRegCodeMap =
@@ -358,11 +358,12 @@ EmitterAARCH64RestoreRegs::restoreSPRegisters(codeGen& gen, registerSpace* theRe
     std::vector<registerSlot*> spRegs;
     map<registerSlot*, int>    regMap;
 
-    registerSlot* regNzcv = (*theRegSpace)[registerSpace::pstate];
-    assert(regNzcv);
-    regMap[regNzcv] = SPR_NZCV;
-    if(force_save || regNzcv->liveState == registerSlot::spilled)
-        spRegs.push_back(regNzcv);
+
+    registerSlot *regFpsr = (*theRegSpace)[registerSpace::fpsr];
+    assert(regFpsr);
+    regMap[regFpsr] = SPR_FPSR;
+    if(force_save || regFpsr->liveState == registerSlot::spilled)
+        spRegs.push_back(regFpsr);
 
     registerSlot* regFpcr = (*theRegSpace)[registerSpace::fpcr];
     assert(regFpcr);
@@ -370,11 +371,11 @@ EmitterAARCH64RestoreRegs::restoreSPRegisters(codeGen& gen, registerSpace* theRe
     if(force_save || regFpcr->liveState == registerSlot::spilled)
         spRegs.push_back(regFpcr);
 
-    registerSlot* regFpsr = (*theRegSpace)[registerSpace::fpsr];
-    assert(regFpsr);
-    regMap[regFpsr] = SPR_FPSR;
-    if(force_save || regFpsr->liveState == registerSlot::spilled)
-        spRegs.push_back(regFpsr);
+    registerSlot *regNzcv = (*theRegSpace)[registerSpace::pstate];
+    assert(regNzcv);
+    regMap[regNzcv] = SPR_NZCV;
+    if(force_save || regNzcv->liveState == registerSlot::spilled)
+        spRegs.push_back(regNzcv);
 
     for(std::vector<registerSlot*>::iterator itr = spRegs.begin(); itr != spRegs.end();
         itr++)
@@ -614,13 +615,15 @@ EmitterAARCH64::clobberAllFuncCall(registerSpace* rs, func_instance* callee)
             itr++)
             rs->GPRs()[*itr]->beenUsed = true;
 
-        std::set<Register>* fpRegs = callee->ifunc()->usedFPRs();
-        for(std::set<Register>::iterator itr = fpRegs->begin(); itr != fpRegs->end();
-            itr++)
-            rs->FPRs()[*itr]->beenUsed = true;
-    }
-    else
-    {
+        std::set<Register> *fpRegs = callee->ifunc()->usedFPRs();
+        for(std::set<Register>::iterator itr = fpRegs->begin(); itr != fpRegs->end(); itr++) {
+            if (*itr <= rs->FPRs().size())
+              rs->FPRs()[*itr]->beenUsed = true;
+            else
+              // parse_func::calcUsedRegs includes the subtype; we only want the regno
+              rs->FPRs()[*itr & 0xff]->beenUsed = true;
+        }
+    } else {
         for(int idx = 0; idx < rs->numGPRs(); idx++)
             rs->GPRs()[idx]->beenUsed = true;
         for(int idx = 0; idx < rs->numFPRs(); idx++)
@@ -709,25 +712,26 @@ EmitterAARCH64::emitCall(opCode op, codeGen& gen, const std::vector<AstNodePtr>&
     // Passing operands to registers
     for(size_t id = 0; id < operands.size(); id++)
     {
-        Register reg = REG_NULL;
-        if(gen.rs()->allocateSpecificRegister(gen, registerSpace::r0 + id, true))
+        Register reg = Null_Register;
+        if (gen.rs()->allocateSpecificRegister(gen, registerSpace::r0 + id, true))
             reg = registerSpace::r0 + id;
 
         Address unnecessary = ADDR_NULL;
         if(!operands[id]->generateCode_phase2(gen, false, unnecessary, reg))
             assert(0);
-        assert(reg != REG_NULL);
+        assert(reg!=Null_Register);
     }
 
     assert(gen.rs());
 
     // Address of function to call in scratch register
     Register scratch = gen.rs()->getScratchRegister(gen);
-    assert(scratch != REG_NULL && "cannot get a scratch register");
+    assert(scratch != Null_Register && "cannot get a scratch register");
     gen.markRegDefined(scratch);
 
-    if(gen.addrSpace()->edit() != NULL)
-    {
+    if (gen.addrSpace()->edit() != NULL
+	&& (gen.func()->obj() != callee->obj()
+	    || gen.addrSpace()->needsPIC())) {
         // gen.as.edit() checks if we are in rewriter mode
         Address dest = getInterModuleFuncAddr(callee, gen);
 
@@ -737,18 +741,14 @@ EmitterAARCH64::emitCall(opCode op, codeGen& gen, const std::vector<AstNodePtr>&
         instruction insn;
         insn.clear();
         INSN_SET(insn, 31, 31, 0);
-        // INSN_SET(insn, 29, 30, disp & 0x3);
         INSN_SET(insn, 28, 28, 1);
         INSN_SET(insn, 5, 23, disp >> 2);
         INSN_SET(insn, 0, 4, scratch);
         insnCodeGen::generate(gen, insn);
 
-        insnCodeGen::generateMemAccess(gen, insnCodeGen::Load, scratch, scratch, 0, 8,
-                                       insnCodeGen::Offset);
-    }
-    else
-    {
-        insnCodeGen::loadImmIntoReg<Address>(gen, scratch, callee->addr());
+        insnCodeGen::generateMemAccess(gen, insnCodeGen::Load, scratch, scratch, 0, 8, insnCodeGen::Offset);
+    } else {
+        insnCodeGen::loadImmIntoReg(gen, scratch, callee->addr());
     }
 
     instruction branchInsn;
@@ -840,8 +840,7 @@ emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen,
                 // TODO: PARAM_OFFSET(addrWidth) is currently not used
                 // should delete that macro if it's useless
 
-                if(src2 != REG_NULL)
-                    insnCodeGen::saveRegister(gen, src2, stkOffset);
+                if (src2 != Null_Register) insnCodeGen::saveRegister(gen, src2, stkOffset);
                 insnCodeGen::restoreRegister(gen, dest, stkOffset);
 
                 return dest;
@@ -854,26 +853,28 @@ emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen,
     assert(regSlot);
     Register reg = regSlot->number;
 
-    switch(regSlot->liveState)
-    {
-        case registerSlot::spilled: {
-            int offset = TRAMP_GPR_OFFSET(addrWidth);
-            // its on the stack so load it.
-            // if (src2 != REG_NULL) saveRegister(gen, src2, reg, offset);
-            insnCodeGen::restoreRegister(gen, dest, offset + (reg * gen.width()));
-            return (dest);
-        }
-        case registerSlot::live: {
-            // its still in a register so return the register it is in.
-            cerr << "emitR state:" << reg << " live" << endl;
-            assert(0);
-            return (reg);
-        }
-        case registerSlot::dead: {
-            cerr << "emitR state" << reg << ": dead" << endl;
-            // Uhhh... wha?
-            assert(0);
-        }
+    switch(regSlot->liveState) {
+        case registerSlot::spilled:
+            {
+                int offset = TRAMP_GPR_OFFSET(addrWidth);
+                // its on the stack so load it.
+                //if (src2 != Null_Register) saveRegister(gen, src2, reg, offset);
+                insnCodeGen::restoreRegister(gen, dest, offset + (reg * gen.width()));
+                return(dest);
+            }
+        case registerSlot::live:
+            {
+                // its still in a register so return the register it is in.
+                cerr << "emitR state:" << reg << " live" << endl;
+                assert(0);
+                return(reg);
+            }
+        case registerSlot::dead:
+            {
+                cerr << "emitR state" << reg << ": dead" << endl;
+                // Uhhh... wha?
+                assert(0);
+            }
     }
     return reg;
 }
@@ -959,30 +960,25 @@ emitASload(const BPatch_addrSpec_NP* as, Register dest, int stackShift, codeGen&
     int      rb  = as->getReg(1);
     int      sc  = as->getScale();
     gen.markRegDefined(dest);
-    if(ra > -1)
-    {
-        if(ra == 32)
-        {
-            // Special case where the actual address is store in imm.
-            // Need to change this for rewriting PIE or shared libraries
-            insnCodeGen::loadImmIntoReg<long int>(gen, dest, imm);
-            return;
-        }
-        else
-        {
-            restoreGPRtoGPR(gen, ra, dest);
-        }
-    }
-    else
-    {
-        insnCodeGen::loadImmIntoReg<long int>(gen, dest, 0);
+    if(ra > -1) {
+        if(ra == 32) {
+	    // Special case where the actual address is store in imm.
+	    // Need to change this for rewriting PIE or shared libraries
+	    insnCodeGen::loadImmIntoReg(gen, dest, static_cast<Address>(imm));
+	    return;
+	}
+	else {
+	    restoreGPRtoGPR(gen, ra, dest);
+	}
+    } else {
+        insnCodeGen::loadImmIntoReg(gen, dest, static_cast<Address>(0));
     }
     if(rb > -1)
     {
         std::vector<Register> exclude;
         exclude.push_back(dest);
         Register scratch = gen.rs()->getScratchRegister(gen, exclude);
-        assert(scratch != REG_NULL && "cannot get a scratch register");
+        assert(scratch != Null_Register && "cannot get a scratch register");
         gen.markRegDefined(scratch);
         restoreGPRtoGPR(gen, rb, scratch);
         // call adds, save 2^scale * rb to dest
@@ -1298,10 +1294,9 @@ AddressSpace::getDynamicCallSiteArgs(InstructionAPI::Instruction i, Address addr
     if(branch_target == registerSpace::ignored)
         return false;
 
-    // jumping to Xn (BLR Xn)
-    args.push_back(
-        AstNode::operandNode(AstNode::origRegister, (void*) (long) branch_target));
-    args.push_back(AstNode::operandNode(AstNode::Constant, (void*) addr));
+    //jumping to Xn (BLR Xn)
+    args.push_back(AstNode::operandNode(AstNode::operandType::origRegister,(void *)(long)branch_target));
+    args.push_back(AstNode::operandNode(AstNode::operandType::Constant, (void *) addr));
 
     // inst_printf("%s[%d]:  Inserting dynamic call site instrumentation for %s\n",
     //        FILE__, __LINE__, cft->format(insn.getArch()).c_str());
@@ -1419,11 +1414,9 @@ bool EmitterAARCH6432Stat::emitPIC(codeGen& gen, Address origAddr, Address reloc
       bool newStackFrame = false;
       int stack_size = 0;
       int gpr_off, fpr_off, ctr_off;
-      //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx Registers PC %d scratch %d
-\n", origAddr, relocAddr, scratchPCReg, scratchReg); if ((scratchPCReg == REG_NULL) ||
-(scratchReg == REG_NULL)) {
-        //fprintf(stderr, " Creating new stack frame for 0x%lx to 0x%lx \n", origAddr,
-relocAddr);
+      //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx Registers PC %d scratch %d \n", origAddr, relocAddr, scratchPCReg, scratchReg);
+      if ((scratchPCReg == Null_Register) || (scratchReg == Null_Register)) {
+		//fprintf(stderr, " Creating new stack frame for 0x%lx to 0x%lx \n", origAddr, relocAddr);
 
         newStackFrame = true;
         //create new stack frame
@@ -1437,17 +1430,15 @@ relocAddr);
             // Save GPRs
           stack_size = saveGPRegisters(gen, gen.rs(), gpr_off, 2);
 
-          scratchPCReg = gen.rs()->getScratchRegister(gen, true);
-          assert(scratchPCReg != REG_NULL);
-          excludeReg.clear();
-          excludeReg.push_back(scratchPCReg);
-          scratchReg = gen.rs()->getScratchRegister(gen, excludeReg, true);
-          assert(scratchReg != REG_NULL);
-          // relocaAddr has moved since we added instructions to setup a new stack frame
-          relocAddr = relocAddr + ((stack_size + 1)*(gen.width()));
-              //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx stack size %d
-Registers PC %d scratch %d \n", origAddr, relocAddr, stack_size, scratchPCReg,
-scratchReg);
+	      scratchPCReg = gen.rs()->getScratchRegister(gen, true);
+	      assert(scratchPCReg != Null_Register);
+	      excludeReg.clear();
+	      excludeReg.push_back(scratchPCReg);
+	      scratchReg = gen.rs()->getScratchRegister(gen, excludeReg, true);
+	      assert(scratchReg != Null_Register);
+	      // relocaAddr has moved since we added instructions to setup a new stack frame
+	      relocAddr = relocAddr + ((stack_size + 1)*(gen.width()));
+              //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx stack size %d Registers PC %d scratch %d \n", origAddr, relocAddr, stack_size, scratchPCReg, scratchReg);
 
     }
     emitMovePCToReg(scratchPCReg, gen);
@@ -1469,12 +1460,12 @@ bool EmitterAARCH64Stat::emitPIC(codeGen& gen, Address origAddr, Address relocAd
 }
 bool EmitterAARCH64Dyn::emitPIC(codeGen &gen, Address origAddr, Address relocAddr) {
 
-    Address origRet = origAddr + 4;
-    Register scratch = gen.rs()->getScratchRegister(gen, true);
-    assert(scratch != REG_NULL);
-    instruction::loadImmIntoReg(gen, scratch, origRet);
-    insnCodeGen::generateMoveToLR(gen, scratch);
-    return true;
+	Address origRet = origAddr + 4;
+	Register scratch = gen.rs()->getScratchRegister(gen, true);
+	assert(scratch != Null_Register);
+	instruction::loadImmIntoReg(gen, scratch, origRet);
+	insnCodeGen::generateMoveToLR(gen, scratch);
+	return true;
 
 }
 */
@@ -1538,7 +1529,7 @@ bool EmitterAARCH64Stat::emitPLTCommon(func_instance *callee, bool call, codeGen
 
   Register scratchReg = 3; // = gen.rs()->getScratchRegister(gen, true);
   int stackSize = 0;
-  if (scratchReg == REG_NULL) {
+  if (scratchReg == Null_Register) {
     std::vector<Register> freeReg;
     std::vector<Register> excludeReg;
     stackSize = insnCodeGen::createStackFrame(gen, 1, freeReg, excludeReg);
@@ -1583,7 +1574,7 @@ EmitterAARCH64Stat::emitPLTCall(func_instance* callee, codeGen& gen)
     long    varOffset = dest - gen.currAddr();
 
     Register baseReg = gen.rs()->getScratchRegister(gen, true);
-    assert(baseReg != REG_NULL && "cannot get a scratch register");
+    assert(baseReg != Null_Register && "cannot get a scratch register");
     emitMovePCToReg(baseReg, gen);
 
     std::vector<Register> exclude;
@@ -1621,7 +1612,7 @@ EmitterAARCH64Stat::emitPLTJump(func_instance* callee, codeGen& gen)
     long    varOffset = dest - gen.currAddr();
 
     Register baseReg = gen.rs()->getScratchRegister(gen, true);
-    assert(baseReg != REG_NULL && "cannot get a scratch register");
+    assert(baseReg != Null_Register && "cannot get a scratch register");
     emitMovePCToReg(baseReg, gen);
 
     std::vector<Register> exclude;
@@ -1714,7 +1705,7 @@ EmitterAARCH64::emitLoadShared(opCode op, Register dest, const image_variable* v
 
     // load register with address from jump slot
     Register baseReg = gen.rs()->getScratchRegister(gen, true);
-    assert(baseReg != REG_NULL && "cannot get a scratch register");
+    assert(baseReg != Null_Register && "cannot get a scratch register");
 
     emitMovePCToReg(baseReg, gen);
     Address varOffset = addr - gen.currAddr() + 4;
@@ -1775,7 +1766,7 @@ EmitterAARCH64::emitStoreShared(Register source, const image_variable* var, bool
 
     // load register with address from jump slot
     Register baseReg = gen.rs()->getScratchRegister(gen, true);
-    assert(baseReg != REG_NULL && "cannot get a scratch register");
+    assert(baseReg != Null_Register && "cannot get a scratch register");
 
     emitMovePCToReg(baseReg, gen);
     Address varOffset = addr - gen.currAddr() + 4;
@@ -1785,7 +1776,7 @@ EmitterAARCH64::emitStoreShared(Register source, const image_variable* var, bool
         std::vector<Register> exclude;
         exclude.push_back(baseReg);
         Register scratchReg1 = gen.rs()->getScratchRegister(gen, exclude, true);
-        assert(scratchReg1 != REG_NULL && "cannot get a scratch register");
+        assert(scratchReg1 != Null_Register && "cannot get a scratch register");
         emitLoadRelative(scratchReg1, varOffset, baseReg, gen.width(), gen);
         emitStoreRelative(source, 0, scratchReg1, size, gen);
     }

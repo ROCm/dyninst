@@ -28,12 +28,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+
+#include <deque>
 #include "Absloc.h"
 #include "AbslocInterface.h"
 
+#include "Register.h"
 // Pile of InstructionAPI includes
 #include "Expression.h"
-#include "Register.h"
 #include "Result.h"
 #include "Dereference.h"
 #include "BinaryFunction.h"
@@ -43,6 +45,7 @@
 #include "common/src/singleton_object_pool.h"
 #include "parseAPI/h/CFG.h"
 #include "parseAPI/h/CodeObject.h"
+#include "registers/aarch64_regs.h"
 
 #include <deque>
 #include <set>
@@ -475,19 +478,14 @@ AbsRegionConverter::getCurrentStackHeight(ParseAPI::Function* func,
         return false;
     StackAnalysis sA(func);
 
-    StackAnalysis::Height heightSA = sA.findSP(block, addr);
-
-    // Ensure that analysis has been performed.
-    assert(!heightSA.isTop());
-
-    if(heightSA.isBottom())
-    {
-        return false;
-    }
-
-    height = heightSA.height();
-
-    return true;
+  // return false if height unknown
+  if (heightSA.isBottom() || heightSA.isTop()) {
+    return false;
+  }
+  
+  height = heightSA.height();
+  
+  return true;
 }
 
 bool
@@ -503,17 +501,14 @@ AbsRegionConverter::getCurrentFrameHeight(ParseAPI::Function* func,
         sA.find(block, addr, MachRegister::getFramePointer(func->isrc()->getArch()));
     ;
 
-    // Ensure that analysis has been performed.
-    assert(!heightSA.isTop());
-
-    if(heightSA.isBottom())
-    {
-        return false;
-    }
-
-    height = heightSA.height();
-
-    return true;
+  // return false if height unknown
+  if (heightSA.isBottom() || heightSA.isTop()) {
+    return false;
+  }
+  
+  height = heightSA.height();
+  
+  return true;
 }
 
 bool
@@ -572,40 +567,259 @@ AssignmentConverter::convert(const Instruction& I, const Address& addr,
     //    based on the opcode of the instruction
     // 2) Generic handling for things like flags and the PC.
 
-    // Non-PC handling section
-    switch(I.getOperation().getID())
-    {
-        case amdgpu_op_s_getpc_b64: {
-            // SGPR_PAIR[0] = PC & 0xffffffff
-            // SGPR_PARI[1] = PC >> 32
-            //
-            std::vector<Operand> operands;
-            I.getOperands(operands);
-            assert(operands.size() == 1);
-            RegisterAST::Ptr sgpr_pair =
-                boost::dynamic_pointer_cast<RegisterAST>(operands[0].getValue());
-            unsigned int offset    = sgpr_pair->getID() - amdgpu_vega::sgpr_vec2_0;
-            AbsRegion    lowpc_dst = AbsRegion(MachRegister(amdgpu_vega::sgpr0 + offset));
-            AbsRegion    highpc_dst =
-                AbsRegion(MachRegister(amdgpu_vega::sgpr0 + offset + 1));
+  // Non-PC handling section
+  switch(I.getOperation().getID()) {
+    case amdgpu_gfx908_op_S_GETPC_B64:
+    case amdgpu_gfx90a_op_S_GETPC_B64: 
+    case amdgpu_gfx940_op_S_GETPC_B64: {
+        // SGPR_PAIR[0] = PC & 0xffffffff
+        // SGPR_PARI[1] = PC >> 32
+        //
+        std::vector<Operand> operands;
+        I.getOperands(operands);
+        assert(operands.size() == 3);
+        RegisterAST::Ptr lowpc_reg  = boost::dynamic_pointer_cast<RegisterAST>(operands[0].getValue());
+        RegisterAST::Ptr highpc_reg = boost::dynamic_pointer_cast<RegisterAST>(operands[1].getValue());
+        AbsRegion lowpc_dst  = AbsRegion(lowpc_reg->getID()) ;
+        AbsRegion highpc_dst = AbsRegion(highpc_reg->getID()) ;
 
-            // AbsRegion pc = AbsRegion(Absloc::makePC(func->isrc()->getArch()));
-            AbsRegion pc = AbsRegion(Absloc(addr));
+        //AbsRegion pc = AbsRegion(Absloc::makePC(func->isrc()->getArch()));
+        AbsRegion pc = AbsRegion(Absloc(addr));
 
-            Assignment::Ptr lowpcA =
-                Assignment::makeAssignment(I, addr, func, block, lowpc_dst);
-            Assignment::Ptr highpcA =
-                Assignment::makeAssignment(I, addr, func, block, highpc_dst);
-            // lowpcA->addInput(pc); // treating pc as constant
-            // highpcA->addInput(pc); //treating pc as constant
+        Assignment::Ptr lowpcA = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                lowpc_dst);
+        Assignment::Ptr highpcA = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                highpc_dst);
 
-            assignments.push_back(lowpcA);
-            assignments.push_back(highpcA);
-            // The slicing stops as long as we find at least one of the above assgignment
+        assignments.push_back(lowpcA);
+        assignments.push_back(highpcA);
 
-            // TODO:
-            // DST_SGPR_PAIR = PC+4
-            break;
+        break;
+    }
+    case amdgpu_gfx908_op_S_SETPC_B64:
+    case amdgpu_gfx90a_op_S_SETPC_B64: 
+    case amdgpu_gfx940_op_S_SETPC_B64: {
+        // TODO:
+        // PC = SRC_SGPR_PAIR
+        AbsRegion pc = AbsRegion(Absloc::makePC(func->isrc()->getArch()));
+        Assignment::Ptr pcA = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                pc);
+
+        std::vector<Operand> operands;
+        I.getOperands(operands);
+        assert(operands.size() == 3);
+        RegisterAST::Ptr lowpc_reg  = boost::dynamic_pointer_cast<RegisterAST>(operands[0].getValue());
+        RegisterAST::Ptr highpc_reg = boost::dynamic_pointer_cast<RegisterAST>(operands[1].getValue());
+        AbsRegion lowpc_src  = AbsRegion(lowpc_reg->getID()) ;
+        AbsRegion highpc_src = AbsRegion(highpc_reg->getID()) ;
+
+        pcA->addInput(lowpc_src);
+        pcA->addInput(highpc_src);
+        assignments.push_back(pcA);
+        break;
+    }
+    case amdgpu_gfx908_op_S_SWAPPC_B64:
+    case amdgpu_gfx90a_op_S_SWAPPC_B64: 
+    case amdgpu_gfx940_op_S_SWAPPC_B64: {
+        std::vector<Operand> operands;
+        I.getOperands(operands);
+        assert(operands.size() == 6);
+
+        RegisterAST::Ptr new_pc_value_low  = boost::dynamic_pointer_cast<RegisterAST>(operands[2].getValue());
+        RegisterAST::Ptr new_pc_value_high = boost::dynamic_pointer_cast<RegisterAST>(operands[3].getValue());
+        AbsRegion new_pc_reg_low  = AbsRegion(new_pc_value_low->getID()) ;
+        AbsRegion new_pc_reg_high = AbsRegion(new_pc_value_high->getID()) ;
+        AbsRegion pc = AbsRegion(Absloc::makePC(func->isrc()->getArch()));
+
+        Assignment::Ptr pcA = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                pc);
+
+        pcA->addInput(new_pc_reg_low);
+        pcA->addInput(new_pc_reg_high);
+
+/*
+        RegisterAST::Ptr backup_pc_low  = boost::dynamic_pointer_cast<RegisterAST>(operands[0].getValue());
+        RegisterAST::Ptr backup_pc_high = boost::dynamic_pointer_cast<RegisterAST>(operands[1].getValue());
+        AbsRegion backup_pc_low_reg  = AbsRegion(backup_pc_low->getID()) ;
+        AbsRegion backup_pc_high_reg = AbsRegion(backup_pc_high->getID()) ;
+
+        Assignment::Ptr backup_pc_lowA = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                backup_pc_low_reg);
+        backup_pc_lowA->addInput(pc);
+
+        Assignment::Ptr backup_pc_highA = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                backup_pc_high_reg);
+        backup_pc_highA->addInput(pc);
+*/
+
+        assignments.push_back(pcA);
+        //assignments.push_back(backup_pc_lowA);
+        //assignments.push_back(backup_pc_highA);
+
+
+        break;
+    }
+    case amdgpu_gfx908_op_S_ADD_U32:
+    case amdgpu_gfx90a_op_S_ADD_U32: 
+    case amdgpu_gfx940_op_S_ADD_U32: {
+        std::vector<Operand> operands;
+        I.getOperands(operands);
+
+
+        assert(operands.size() == 4);
+
+        RegisterAST::Ptr dst_sgpr = boost::dynamic_pointer_cast<RegisterAST>(operands[0].getValue());
+
+        std::vector<AbsRegion> regions;
+
+        aConverter.convertAll(operands[0].getValue(), addr, func, block, regions);
+        AbsRegion dst1 = regions[0];
+        regions.clear();
+        aConverter.convertAll(operands[1].getValue(), addr, func, block, regions);
+        AbsRegion src1 = regions[0];
+        regions.clear();
+        aConverter.convertAll(operands[2].getValue(), addr, func, block, regions);
+        AbsRegion src0 = regions[0];
+        regions.clear();
+        aConverter.convertAll(operands[3].getValue(), addr, func, block, regions);
+        AbsRegion scc = regions[0];
+        regions.clear();
+
+        Assignment::Ptr scc_assign = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                scc);
+
+
+        Assignment::Ptr add_assign = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                dst1);
+
+        add_assign->addInput(src1);
+        add_assign->addInput(src0);
+
+        scc_assign->addInput(src1);
+        scc_assign->addInput(src0);
+
+
+        assignments.push_back(add_assign);
+        assignments.push_back(scc_assign);
+        break;
+    }
+
+    case amdgpu_gfx908_op_S_ADDC_U32:
+    case amdgpu_gfx90a_op_S_ADDC_U32: 
+    case amdgpu_gfx940_op_S_ADDC_U32: {
+        std::vector<Operand> operands;
+        I.getOperands(operands);
+        assert(operands.size() == 5);
+
+        RegisterAST::Ptr dst_sgpr = boost::dynamic_pointer_cast<RegisterAST>(operands[0].getValue());
+        std::vector<AbsRegion> regions;
+
+        aConverter.convertAll(operands[0].getValue(), addr, func, block, regions);
+        AbsRegion dst1 = regions[0];
+        regions.clear();
+        aConverter.convertAll(operands[1].getValue(), addr, func, block, regions);
+        AbsRegion src1 = regions[0];
+        regions.clear();
+        aConverter.convertAll(operands[2].getValue(), addr, func, block, regions);
+        AbsRegion src0 = regions[0];
+        regions.clear();
+        aConverter.convertAll(operands[3].getValue(), addr, func, block, regions);
+        AbsRegion scc = regions[0];
+        regions.clear();
+
+        Assignment::Ptr add_assign = Assignment::makeAssignment(I,
+                addr,
+                func,
+                block,
+                dst1);
+        add_assign->addInput(src1);
+        add_assign->addInput(src0);
+        add_assign->addInput(scc);
+        assignments.push_back(add_assign);
+        break;
+    }
+
+  case e_push: {
+    // SP = SP - 4 
+    // *SP = <register>
+ 
+    std::vector<Operand> operands;
+    I.getOperands(operands);
+
+    // According to the InstructionAPI, the first operand will be the argument, the second will be ESP.
+    assert(operands.size() == 2);
+
+    // The argument can be any of the following:
+    // 1) a register (push eax);
+    // 2) an immediate value (push $deadbeef)
+    // 3) a memory location. 
+
+    std::vector<AbsRegion> oper0;
+    aConverter.convertAll(operands[0].getValue(),
+                          addr,
+                          func,
+                          block,
+                          oper0);
+
+    handlePushEquivalent(I, addr, func, block, oper0, assignments);
+    break;
+  }
+  case e_call: {
+    // This can be seen as a push of the PC...
+
+    std::vector<AbsRegion> pcRegion;
+    pcRegion.push_back(Absloc::makePC(func->isrc()->getArch()));
+    Absloc sp = Absloc::makeSP(func->isrc()->getArch());
+    
+    handlePushEquivalent(I, addr, func, block, pcRegion, assignments);
+
+    // Now for the PC definition
+    // Assume full intra-dependence of non-flag and non-pc registers. 
+    std::vector<AbsRegion> used;
+    std::vector<AbsRegion> defined;
+
+    aConverter.convertAll(I,
+			  addr,
+			  func,
+                          block,
+			  used,
+			  defined);
+
+    Assignment::Ptr a = Assignment::makeAssignment(I, addr, func, block, pcRegion[0]);
+    if (!used.empty()) {
+        for(std::vector<AbsRegion>::const_iterator u = used.begin();
+            u != used.end();
+            ++u)
+        {
+            if(!(u->contains(pcRegion[0])) &&
+                 !(u->contains(sp)))
+            {
+                a->addInput(*u);
+            }
         }
         case amdgpu_op_s_setpc_b64: {
             // TODO:

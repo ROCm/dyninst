@@ -31,17 +31,16 @@
 #if !defined(NODE_H)
 #    define NODE_H
 
-#    include <set>
-#    include <string>
-#    include "Edge.h"
-#    include "Annotatable.h"
+#include <set>
+#include <string>
+#include <stddef.h>
+#include <unordered_set>
+#include "Edge.h"
+#include "Annotatable.h"
 
 #    include "dyntypes.h"
 #    include "boost/shared_ptr.hpp"
 
-#    if defined(_MSC_VER)
-#        pragma warning(disable : 4251)
-#    endif
 
 class BPatch_function;
 class BPatch_basicBlock;

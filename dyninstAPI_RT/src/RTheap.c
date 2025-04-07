@@ -31,6 +31,8 @@
 /* $Id: RTheap.c,v 1.25 2006/05/03 00:31:25 jodom Exp $ */
 /* RTheap.c: platform-generic heap management */
 
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #if !defined(os_windows) /* ccw 15 may 2000 : 29 mar 2001 */
@@ -50,6 +52,7 @@ getpagesize();
 
 #include "dyninstAPI_RT/src/RTheap.h"
 #include "dyninstAPI_RT/src/RTcommon.h"
+#include "unaligned_memory_access.h"
 
 typedef enum
 {
@@ -124,14 +127,34 @@ DYNINSTos_malloc(size_t nbytes, void* lo_addr, void* hi_addr)
         return ((void*) -1);
     }
 
-    /* use malloc() if appropriate */
-    if(DYNINSTheap_useMalloc(lo_addr, hi_addr))
-    {
-        char* ret_heap;
-        int   size_heap = size + DYNINSTheap_align + sizeof(heapList_t);
-        heap            = malloc(size_heap);
-        if(heap == NULL)
-        {
+    /* define new heap */
+    node = CAST_WITHOUT_ALIGNMENT_WARNING(heapList_t*, (ret_heap + size));
+    node->heap.ret_addr = (void *)ret_heap;
+    node->heap.addr = heap;
+    node->heap.len = size_heap;
+    node->heap.type = HEAP_TYPE_MALLOC;
+
+
+  } else { /* use mmap() for allocation */
+    Address lo = heap_alignUp((Address)lo_addr, psize);
+    Address hi = (Address) hi_addr;
+    heap = (char*)trymmap(size + sizeof(struct heapList_t), lo, hi, psize, -1);
+    if(!heap)
+        return NULL;
+    node = CAST_WITHOUT_ALIGNMENT_WARNING(heapList_t*, (heap + size));
+
+    /* define new heap */
+    node->heap.addr = heap;
+    node->heap.ret_addr = heap;
+    node->heap.len = size + sizeof(struct heapList_t);
+    node->heap.type = HEAP_TYPE_MMAP;
+  }
+
+  /* insert new heap into heap list */
+  node->prev = NULL;
+  node->next = Heaps;
+  if (Heaps) Heaps->prev = node;
+  Heaps = node;
 #ifdef DEBUG
             fprintf(stderr, "Failed to MALLOC\n");
 #endif

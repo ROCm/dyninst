@@ -13,6 +13,7 @@
 #if !defined(SG_ASM_POWERPC_INSN_H)
 #define SG_ASM_POWERPC_INSN_H
 
+#include <string>
 #include "external/rose/rose-compat.h"
 #include "typedefs.h"
 #include "external/rose/powerpcInstructionEnum.h"
@@ -52,7 +53,7 @@ class SgAsmPowerpcInstruction : public SgAsmInstruction
                 powerpc_unknown_instruction);
 
     protected:
-        rose_addr_t p_address;
+        rose_addr_t p_address{};
         PowerpcInstructionKind p_kind;
         SgAsmOperandList* p_operandList;
         std::string p_mnemonic;

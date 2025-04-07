@@ -41,15 +41,18 @@
  ************************************************************************/
 
 // trace data streams
-#    include <string>
-#    include <vector>
+#include <iosfwd>
+#include <utility>
+#include <string>
+#include <vector>
 
-#    include "Symbol.h"
-#    include "Symtab.h"
-#    include "LineInformation.h"
-#    include "common/src/headers.h"
-#    include "common/src/MappedFile.h"
-#    include "common/src/lprintf.h"
+#include "Symbol.h"
+#include "Symtab.h"
+#include "Module.h"
+#include "LineInformation.h"
+#include "common/src/headers.h"
+#include "common/src/MappedFile.h"
+#include "common/src/lprintf.h"
 
 namespace Dyninst
 {
@@ -97,14 +100,7 @@ public:
     SYMTAB_EXPORT unsigned no_of_sections() const;
     SYMTAB_EXPORT unsigned no_of_symbols() const;
 
-    SYMTAB_EXPORT bool getAllExceptions(std::vector<ExceptionBlock*>& excpBlocks) const;
-    SYMTAB_EXPORT std::vector<Region*> getAllRegions() const;
-
-    SYMTAB_EXPORT supportedLanguages pickLanguage(std::string&       working_module,
-                                                  char*              working_options,
-                                                  supportedLanguages working_lang);
-
-    SYMTAB_EXPORT Offset   loader_off() const;
+    SYMTAB_EXPORT Offset loader_off() const;
     SYMTAB_EXPORT unsigned loader_len() const;
     SYMTAB_EXPORT int      getAddressWidth() const;
 
@@ -137,10 +133,7 @@ public:
     }
 
     SYMTAB_EXPORT virtual Dyninst::Architecture getArch() const { return Arch_none; }
-    SYMTAB_EXPORT const std::string findModuleForSym(Symbol* sym);
-    SYMTAB_EXPORT void         setModuleForOffset(Offset sym_off, std::string module);
-    SYMTAB_EXPORT void         clearSymsToMods();
-    SYMTAB_EXPORT bool         hasError() const;
+    SYMTAB_EXPORT bool hasError() const;
     SYMTAB_EXPORT virtual bool isBigEndianDataEncoding() const { return false; }
     SYMTAB_EXPORT virtual bool getABIVersion(int& /*major*/, int& /*minor*/) const
     {
@@ -152,15 +145,15 @@ public:
     virtual Region::RegionType getRelType() const { return Region::RT_INVALID; }
 
     // Only implemented for ELF right now
-    SYMTAB_EXPORT virtual void getSegmentsSymReader(std::vector<SymSegment>&) {}
-    SYMTAB_EXPORT virtual void rebase(Offset) {}
-
+    SYMTAB_EXPORT virtual void getSegmentsSymReader(std::vector<SymSegment> &) {}
+	SYMTAB_EXPORT virtual void rebase(Offset) {}
+    virtual void addModule(SymtabAPI::Module *) {}
 protected:
     SYMTAB_EXPORT virtual ~AObject();
     // explicitly protected
-    SYMTAB_EXPORT AObject(MappedFile*, void (*err_func)(const char*), Symtab*);
-    friend class Module;
-    virtual void parseLineInfoForCU(Module::DebugInfoT, LineInformation*) {}
+    SYMTAB_EXPORT AObject(MappedFile *, void (*err_func)(const char *), Symtab*);
+friend class Module;
+    virtual void parseLineInfoForCU(Offset , LineInformation* ) { }
 
     MappedFile* mf;
 
@@ -168,11 +161,10 @@ protected:
 
     // XXX symbols_ is the owner of Symbol pointers; memory
     //     is reclaimed from this structure
-    dyn_c_hash_map<std::string, std::vector<Symbol*>> symbols_;
-    dyn_hash_map<std::string, std::vector<Symbol*>>   symbols_tmp_;
-    dyn_c_hash_map<Symbol*, std::string>              symsToModules_;
-    dyn_c_hash_map<Offset, std::vector<Symbol*>>      symsByOffset_;
-    std::vector<std::pair<std::string, Offset>>       modules_;
+    dyn_c_hash_map< std::string, std::vector< Symbol *> > symbols_;
+    dyn_hash_map< std::string, std::vector< Symbol *> > symbols_tmp_;
+    dyn_c_hash_map<Offset, std::vector<Symbol *> > symsByOffset_;
+    std::vector<std::pair<std::string, Offset> > modules_;
 
     char*  code_ptr_;
     Offset code_off_;

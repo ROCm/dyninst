@@ -36,6 +36,11 @@
  * A class that encapsulates a ProcControlAPI Process for the rest of Dyninst.
  */
 
+#include <assert.h>
+#include <list>
+#include <stddef.h>
+#include <utility>
+#include <vector>
 #include <string>
 #include <map>
 #include <set>
@@ -213,13 +218,6 @@ public:
         std::list<std::pair<Address, Address>>& overwrittenRegions,  // output
         std::list<block_instance*>&             writtenBBIs);                    // output
 
-    bool getDeadCode(
-        const std::list<block_instance*>& owBlocks,   // input
-        std::set<block_instance*>&        delBlocks,  // output: Del(for all f)
-        std::map<func_instance*, set<block_instance*>>& elimMap,     // output: elimF
-        std::list<func_instance*>&                      deadFuncs,   // output: DeadF
-        std::map<func_instance*, block_instance*>&      newFuncEntries);  // output: newF
-
     // synch modified mapped objects with current memory contents
     mapped_object* createObjectNoFile(Address addr);
     void updateCodeBytes(const std::list<std::pair<Address, Address>>& owRegions);
@@ -276,8 +274,7 @@ public:
     virtual bool multithread_capable(bool ignoreIfMtNotSet = false);  // platform-specific
     virtual bool multithread_ready(bool ignoreIfMtNotSet = false);
     virtual bool needsPIC();
-    // virtual bool unregisterTrapMapping(Address from);
-    virtual void addTrap(Address from, Address to, codeGen& gen);
+    virtual void addTrap(Address from, Address to, codeGen &gen);
     virtual void removeTrap(Address from);
 
     // Miscellaneuous
@@ -613,19 +610,19 @@ protected:
 class inferiorRPCinProgress : public codeRange
 {
 public:
-    inferiorRPCinProgress()
-    : rpc(ProcControlAPI::IRPC::ptr())
-    , rpcStartAddr(0)
-    , rpcCompletionAddr(0)
-    , resultRegister(REG_NULL)
-    , returnValue(NULL)
-    , runProcWhenDone(false)
-    , isComplete(false)
-    , deliverCallbacks(false)
-    , userData(NULL)
-    , thread(Dyninst::ProcControlAPI::Thread::ptr())
-    , synchronous(false)
-    , memoryAllocated(false)
+    inferiorRPCinProgress() :
+        rpc(ProcControlAPI::IRPC::ptr()),
+        rpcStartAddr(0),
+        rpcCompletionAddr(0),
+        resultRegister(Null_Register),
+        returnValue(NULL),
+        runProcWhenDone(false),
+        isComplete(false),
+        deliverCallbacks(false),
+        userData(NULL),
+		thread(Dyninst::ProcControlAPI::Thread::ptr()),
+        synchronous(false),
+        memoryAllocated(false)
     {}
 
     virtual Address  get_address() const { return rpc->getAddress(); }

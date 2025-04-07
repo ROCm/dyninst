@@ -31,10 +31,11 @@
 #if !defined(INTERVAL_TREE_H)
 #    define INTERVAL_TREE_H
 
-#    include <assert.h>
-#    include <stdio.h>
-#    include <vector>
-#    include <map>
+#include <assert.h>
+#include <stdio.h>
+#include <utility>
+#include <vector>
+#include <map>
 
 template <class K, class V>
 class IntervalTree

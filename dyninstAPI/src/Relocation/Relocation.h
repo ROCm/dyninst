@@ -34,11 +34,13 @@
 #if !defined(_RELOCATION_H_)
 #    define _RELOCATION_H_
 
-#    include "common/src/Types.h"
-#    include <list>
-#    include <map>
-#    include "dyninstAPI/src/codegen.h"  // codeGen structure
-#    include "boost/shared_ptr.hpp"
+#include <list>
+#include <map>
+#include "dyninstAPI/src/codegen.h" // codeGen structure
+#include "boost/shared_ptr.hpp"
+
+namespace Dyninst {
+namespace Relocation {
 
 namespace Dyninst
 {

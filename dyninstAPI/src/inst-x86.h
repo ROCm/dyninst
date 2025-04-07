@@ -54,6 +54,7 @@
 
 */
 
+#include <assert.h>
 #include "dyninstAPI/src/registerSpace.h"
 
 #define NUM_VIRTUAL_REGISTERS (32) /* number of virtual registers */
@@ -149,10 +150,16 @@ class codeGen;
     emitMovRMToReg(REGNUM_EAX, REGNUM_EBP, SAVED_EAX_OFFSET - (x * 4), insn)
 
 // Define access method for virtual registers (stack-based)
-#define LOAD_VIRTUAL32(x, insn) emitMovRMToReg(REGNUM_EAX, REGNUM_EBP, -1 * (x * 4), insn)
-#define SAVE_VIRTUAL32(x, insn) emitMovRegToRM(REGNUM_EBP, -1 * (x * 4), REGNUM_EAX, insn)
-#define LOAD_VIRTUAL64(x, insn) emitMovRMToReg(REGNUM_RAX, REGNUM_RBP, -1 * (x * 8), insn)
-#define SAVE_VIRTUAL64(x, insn) emitMovRegToRM(REGNUM_RBP, -1 * (x * 8), REGNUM_RAX, insn)
+#define LOAD_VIRTUAL32(x, insn) emitMovRMToReg(REGNUM_EAX, REGNUM_EBP, -1*(x*4), insn)
+#define SAVE_VIRTUAL32(x, insn) emitMovRegToRM(REGNUM_EBP, -1*(x*4), REGNUM_EAX, insn)
+#define LOAD_VIRTUAL64(x, insn) emitMovRMToReg(REGNUM_RAX, REGNUM_RBP, -1*(x*8), insn)
+#define SAVE_VIRTUAL64(x, insn) emitMovRegToRM(REGNUM_RBP, -1*(x*8), REGNUM_RAX, insn)
+
+void emitAddressingMode(unsigned base, unsigned index,
+                        unsigned int scale, Dyninst::RegValue disp,
+                        int reg_opcode, codeGen &gen);
+void emitAddressingMode(unsigned base, Dyninst::RegValue disp,
+                        unsigned reg_opcode, codeGen &gen);
 
 void
 emitAddressingMode(unsigned base, unsigned index, unsigned int scale, RegValue disp,
@@ -184,42 +191,24 @@ void
 emitOpSegRMReg(unsigned opcode, RealRegister dest, RealRegister src, int disp,
                codeGen& gen);
 
-void
-emitMovRegToReg(RealRegister dest, RealRegister src, codeGen& gen);
-void
-emitMovIRegToReg(RealRegister dest, RealRegister src, codeGen& gen);
-void
-emitMovPCRMToReg(RealRegister dest, int offset, codeGen& gen, bool deref_result = true);
-void
-emitMovMToReg(RealRegister dest, int disp, codeGen& gen);
-void
-emitMovMBToReg(RealRegister dest, int disp, codeGen& gen);
-void
-emitMovMWToReg(RealRegister dest, int disp, codeGen& gen);
-void
-emitMovRegToM(int disp, RealRegister src, codeGen& gen);
-void
-emitMovRegToMB(int disp, RealRegister dest, codeGen& gen);
-void
-emitMovRegToMW(int disp, RealRegister dest, codeGen& gen);
-void
-emitMovImmToReg(RealRegister dest, int imm, codeGen& gen);
-void
-emitMovImmToRM(RealRegister base, int disp, int imm, codeGen& gen);
-void
-emitMovRegToRM(RealRegister base, int disp, RealRegister src, codeGen& gen);
-void
-emitMovRMToReg(RealRegister dest, RealRegister base, int disp, codeGen& gen);
-void
-emitMovImmToMem(Address maddr, int imm, codeGen& gen);
-void
-emitPushImm(unsigned int imm, codeGen& gen);
-void
-emitSaveO(codeGen& gen);
-void
-emitRestoreO(codeGen& gen);
-void
-emitSimpleInsn(unsigned opcode, codeGen& gen);
+void emitMovRegToReg(RealRegister dest, RealRegister src, codeGen &gen);
+void emitMovIRegToReg(RealRegister dest, RealRegister src, codeGen &gen);
+void emitMovPCRMToReg(RealRegister dest, int offset, codeGen &gen, bool deref_result = true);
+void emitMovMToReg(RealRegister dest, int disp, codeGen &gen);
+void emitMovMBToReg(RealRegister dest, int disp, codeGen &gen);
+void emitMovMWToReg(RealRegister dest, int disp, codeGen &gen);
+void emitMovRegToM(int disp, RealRegister src, codeGen &gen);
+void emitMovRegToMB(int disp, RealRegister dest, codeGen &gen);
+void emitMovRegToMW(int disp, RealRegister dest, codeGen &gen);
+void emitMovImmToReg(RealRegister dest, int imm, codeGen &gen);
+void emitMovImmToRM(RealRegister base, int disp, int imm, codeGen &gen);
+void emitMovRegToRM(RealRegister base, int disp, RealRegister src, codeGen &gen);
+void emitMovRMToReg(RealRegister dest, RealRegister base, int disp, codeGen &gen);
+void emitMovImmToMem(Dyninst::Address maddr, int imm, codeGen &gen);
+void emitPushImm(unsigned int imm, codeGen &gen);
+void emitSaveO(codeGen &gen);
+void emitRestoreO(codeGen &gen);
+void emitSimpleInsn(unsigned opcode, codeGen &gen);
 
 void
 emitAddRegImm32(RealRegister dest, int imm, codeGen& gen);
@@ -228,14 +217,11 @@ emitSubRegReg(RealRegister dest, RealRegister src, codeGen& gen);
 void
 emitSHL(RealRegister dest, unsigned char pos, codeGen& gen);
 
-void
-restoreGPRtoGPR(RealRegister reg, RealRegister dest, codeGen& gen);
-Register
-restoreGPRtoReg(RealRegister reg, codeGen& gen, RealRegister* dest_to_use = NULL);
+void restoreGPRtoGPR(RealRegister reg, RealRegister dest, codeGen &gen);
+Dyninst::Register restoreGPRtoReg(RealRegister reg, codeGen &gen, RealRegister *dest_to_use = NULL);
 
-void
-emitLEA(RealRegister base, RealRegister index, unsigned int scale, RegValue disp,
-        RealRegister dest, codeGen& gen);
+void emitLEA(RealRegister base, RealRegister index, unsigned int scale,
+	     Dyninst::RegValue disp, RealRegister dest, codeGen &gen);
 
 bool
 emitPush(RealRegister reg, codeGen& gen);
@@ -255,8 +241,15 @@ emitAddMemImm32(Address dest, int imm, codeGen& gen);
 void
 emitCallRel32(unsigned disp32, codeGen& gen);
 
-void
-emitJmpMC(int condition, int offset, codeGen& gen);
+void emitJump(unsigned disp32, codeGen &gen);
+void emitJccR8(int condition_code, char jump_offset,
+               codeGen &gen);
+void emitJcc(int condition, int offset, codeGen &gen, bool willRegen=true);
+void emitPushImm(unsigned int imm, codeGen &gen);
+void emitAddMemImm32(Dyninst::Address dest, int imm, codeGen &gen);
+void emitCallRel32(unsigned disp32, codeGen &gen);
+
+void emitJmpMC(int condition, int offset, codeGen &gen);
 // helper functions for emitters
 
 unsigned char
@@ -272,26 +265,16 @@ xmmCapable();
 void
 emitBTRegRestores32(baseTramp* bti, codeGen& gen);
 
-struct stackItem
-{
-    enum stackItem_t
-    {
-        reg_item,
-        stacktop,
-        framebase
-    } item;
-    RealRegister reg;
-    stackItem(stackItem_t i)
-    {
-        assert(i != reg_item);
-        item = i;
-    }
-    stackItem(RealRegister r)
-    {
-        item = reg_item;
-        reg  = r;
-    }
-    stackItem() {}
+struct stackItem {
+   enum stackItem_t {
+      reg_item,
+      stacktop,
+      framebase
+   } item{};
+   RealRegister reg;
+   stackItem(stackItem_t i) { assert(i != reg_item); item = i; }
+   stackItem(RealRegister r) { item = reg_item; reg = r; }
+   stackItem() {}
 };
 
 struct stackItemLocation

@@ -33,32 +33,25 @@
 
 #include "dyninstAPI_RT/h/dyninstAPI_RT.h"
 #include "RTthread.h"
+#include <stddef.h>
 #include <stdarg.h>
 #include "common/h/compiler_annotations.h"
 
-void
-DYNINSTtrapFunction();
-void
-DYNINSTbreakPoint();
+void DYNINSTtrapFunction(void);
+void DYNINSTbreakPoint(void);
 /* Use a signal that is safe if we're not attached. */
-void
-DYNINSTsafeBreakPoint();
-void
-DYNINSTinit();
-int
-DYNINSTreturnZero();
-int
-DYNINSTwriteEvent(void* ev, size_t sz);
-int
-DYNINSTasyncConnect(int pid);
+void DYNINSTsafeBreakPoint(void);
+void DYNINSTinit(void);
+int DYNINSTreturnZero(void);
+int DYNINSTwriteEvent(void *ev, size_t sz);
+int DYNINSTasyncConnect(int pid);
 
-int
-DYNINSTinitializeTrapHandler();
-void*
-dyninstTrapTranslate(void* source, volatile unsigned long* table_used,
-                     volatile unsigned long*  table_version,
-                     volatile trapMapping_t** trap_table,
-                     volatile unsigned long*  is_sorted);
+int DYNINSTinitializeTrapHandler(void);
+void* dyninstTrapTranslate(void *source, 
+                           volatile unsigned long *table_used,
+                           volatile unsigned long *table_version,
+                           volatile trapMapping_t **trap_table,
+                           volatile unsigned long *is_sorted);
 
 extern int       DYNINST_mutatorPid;
 extern int       libdyninstAPI_RT_init_localCause;

@@ -33,6 +33,8 @@
  * RTposix.c: runtime instrumentation functions for generic posix.
  ************************************************************************/
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -55,8 +57,7 @@
 #define SOCKLEN_T socklen_t
 
 #if !(defined(arch_power) && defined(os_linux))
-void
-RTmutatedBinary_init()
+void RTmutatedBinary_init(void)
 {
     return;
 }
@@ -80,8 +81,7 @@ libdyninstAPI_RT_init(void) __attribute__((constructor));
 struct passwd* passwd_info = NULL;
 #endif
 
-void
-libdyninstAPI_RT_init()
+void libdyninstAPI_RT_init(void)
 {
     static int initCalledOnce = 0;
 
@@ -199,8 +199,7 @@ DYNINSTasyncConnect(int pid)
 #endif
 }
 
-int
-DYNINSTasyncDisconnect()
+int DYNINSTasyncDisconnect(void)
 {
     if(DYNINSTstaticMode)
         return 0;
@@ -287,8 +286,7 @@ unmap_region(void* addr, int len)
 extern void
 dyninstTrapHandler(int sig, siginfo_t* info, void* context);
 
-int
-DYNINSTinitializeTrapHandler()
+int DYNINSTinitializeTrapHandler(void)
 {
     int              result;
     struct sigaction new_handler;

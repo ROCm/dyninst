@@ -31,12 +31,15 @@
 #if !defined(REGISTER_H)
 #    define REGISTER_H
 
-#    include "Expression.h"
-#    include <vector>
-#    include <map>
-#    include <sstream>
+#include "Expression.h"
+#include <stdint.h>
+#include <string>
+#include <vector>
+#include <map>
+#include <sstream>
 
-#    include "dyn_regs.h"
+#include "registers/MachRegister.h"
+#include "Architecture.h"
 
 namespace Dyninst
 {
@@ -91,10 +94,24 @@ public:
     /// may be placed into sets or other sorted containers.
     bool operator<(const RegisterAST& rhs) const;
 
-    /// The \c getID function returns the ID number of a register.
-    MachRegister getID() const;
-    unsigned int lowBit() const { return m_Low; }
-    unsigned int highBit() const { return m_High; }
+    class INSTRUCTION_EXPORT RegisterAST : public Expression
+    {
+    public:
+      /// \brief A type definition for a reference-counted pointer to a %RegisterAST.
+      typedef boost::shared_ptr<RegisterAST> Ptr;
+      
+      /// Construct a register, assigning it the ID \c id.
+      RegisterAST(MachRegister r, uint32_t num_elements = 1 );
+      RegisterAST(MachRegister r, unsigned int lowbit, unsigned int highbit, uint32_t num_elements = 1);
+      RegisterAST(MachRegister r, unsigned int lowbit, unsigned int highbit, Result_Type regType, uint32_t num_elements = 1);
+  
+      virtual ~RegisterAST();
+      RegisterAST(const RegisterAST&) = default;
+      
+      /// By definition, a %RegisterAST object has no children.
+      /// \param children Since a %RegisterAST has no children, the \c children parameter is unchanged by this method.
+      virtual void getChildren(vector<InstructionAST::Ptr>& children) const;
+      virtual void getChildren(vector<Expression::Ptr>& children) const;
 
     /// Utility function to hide aliasing complexity on platforms (IA-32) that allow
     /// addressing part or all of a register
@@ -141,4 +158,48 @@ public:
 }  // namespace InstructionAPI
 }  // namespace Dyninst
 
-#endif  // !defined(REGISTER_H)
+      /// Utility function to hide aliasing complexity on platforms (IA-32) that allow addressing part 
+      /// or all of a register
+      // Note: not const because it may return *this...
+      static RegisterAST::Ptr promote(const InstructionAST::Ptr reg);
+      static RegisterAST::Ptr promote(const RegisterAST* reg);
+      
+      virtual void apply(Visitor* v);
+      virtual bool bind(Expression* e, const Result& val);
+
+    protected:
+      virtual bool isStrictEqual(const InstructionAST& rhs) const;
+      virtual bool isFlag() const;
+      virtual bool checkRegID(MachRegister id, unsigned int low, unsigned int high) const;
+      MachRegister getPromotedReg() const;
+      
+      MachRegister m_Reg;
+      unsigned int m_Low;
+      unsigned int m_High;
+      unsigned int m_num_elements;
+    };
+
+    /**
+     * Class for mask register operands. This class is the same as the RegisterAST
+     * class except it handles the syntactial differences between register operands
+     * and mask register operands.
+     */
+    class INSTRUCTION_EXPORT MaskRegisterAST : public RegisterAST
+    {
+        public:
+            MaskRegisterAST(MachRegister r) : RegisterAST(r) {}
+            MaskRegisterAST(MachRegister r, unsigned int lowbit, unsigned int highbit)
+                : RegisterAST(r, lowbit, highbit) {}
+            MaskRegisterAST(MachRegister r, unsigned int lowbit, unsigned int highbit, Result_Type regType)
+                : RegisterAST(r, lowbit, highbit, regType) {}
+           virtual std::string format(Architecture, formatStyle how = defaultStyle) const;
+
+            virtual std::string format(formatStyle how = defaultStyle) const;
+    };
+  }
+}
+
+
+  
+
+#endif // !defined(REGISTER_H)

@@ -41,7 +41,6 @@
 #include "debug.h"
 #include "dynProcess.h"
 #include "mapped_object.h"
-#include "MemoryEmulator/memEmulator.h"
 #include "mapped_module.h"
 #include <iostream>
 #include <fstream>
@@ -175,53 +174,10 @@ HybridAnalysis::init()
     proc()->finalizeInsertionSet(false);
     // Done instrumenting VirtualFree
 
-    if(proc()->lowlevel_process()->isMemoryEmulated())
-    {
-        // read in the list of whitelisted Windows API functions (those that
-        // don't use pointers) so we save time by not to synchronizing around
-        // them
-        char* dyn_root = getenv("DYNINST_ROOT");
-        if(!dyn_root)
-        {
-            fprintf(stderr,
-                    "ERROR: DYNINST_ROOT environment variable was not "
-                    "declared, couldn't find the list of non-pointer Windows API "
-                    "functions, will synchronize memory at all inter-library calls"
-                    " %s[%d]\n",
-                    FILE__, __LINE__);
-        }
-        else
-        {
-            string   fname = string(dyn_root) + "\\dyninst\\dyninstAPI\\nosynchfuncs.txt";
-            ifstream nsf_file(fname.c_str());
-            if(!nsf_file.is_open())
-            {
-                fprintf(stderr,
-                        "ERROR: failed to open file %s, which should "
-                        "contain the list of non-pointer Windows API functions, "
-                        "will synchronize memory at all inter-library calls "
-                        "%s[%d]\n",
-                        fname.c_str(), FILE__, __LINE__);
-            }
-            else
-            {
-                std::string curfunc;
-                while(nsf_file.good())
-                {
-                    getline(nsf_file, curfunc);
-                    skipShadowFuncs_.insert(curfunc);
-                }
-            }
-        }
-        skipShadowFuncs_.insert("GetCurrentProcessId");
-        skipShadowFuncs_.insert("VirtualAlloc");
-        skipShadowFuncs_.insert("VirtualFree");
-        skipShadowFuncs_.insert("GetCurrentThreadId");
-        skipShadowFuncs_.insert("GetLocalTime");
-        skipShadowFuncs_.insert("LocalAlloc");
-        skipShadowFuncs_.insert("TlsAlloc");
-        skipShadowFuncs_.insert("TlsSetValue");
-    }
+	}
+	proc()->finalizeInsertionSet(false);
+	// Done instrumenting VirtualFree
+
 #endif
 
     // mal_printf("   pre-inst  "); proc()->printKTimer();
@@ -411,15 +367,9 @@ HybridAnalysis::instrumentFunction(BPatch_function* func, bool useInsertionSet,
     assert(proc());
     assert(proc()->lowlevel_process());
 
-    if(proc()->lowlevel_process()->isMemoryEmulated() &&
-       BPatch_defensiveMode == func->lowlevel_func()->obj()->hybridMode())
-    {  // we have to relocate all functions to emulate their memory accesses
-        proc()->lowlevel_process()->addModifiedFunction(func->lowlevel_func());
-    }
-
-    if(instrumentedFuncs->end() == instrumentedFuncs->find(func))
-    {
-        (*instrumentedFuncs)[func] = new std::map<BPatch_point*, BPatchSnippetHandle*>();
+    if (instrumentedFuncs->end() == instrumentedFuncs->find(func)) {
+        (*instrumentedFuncs)[func] = new 
+            std::map<BPatch_point*,BPatchSnippetHandle*>();
     }
 
     // grab all unresolved control transfer points in the function
@@ -728,12 +678,10 @@ HybridAnalysis::instrumentFunction(BPatch_function* func, bool useInsertionSet,
     }
 
     // close insertion set
-    if(proc()->lowlevel_process()->isMemoryEmulated() || pointCount)
-    {
-        mal_printf("instrumented %d points in function at %p\n", pointCount,
-                   func->getBaseAddr());
-        if(useInsertionSet)
-        {
+    if (pointCount) {
+        mal_printf("instrumented %d points in function at %p\n", 
+                    pointCount, func->getBaseAddr());
+        if (useInsertionSet) {
             proc()->finalizeInsertionSet(false);
         }
         return true;
@@ -784,48 +732,7 @@ HybridAnalysis::removeInstrumentation(BPatch_function* func, bool useInsertionSe
     //}
 
     // 1. Remove elements from instrumentedFuncs
-    if(instrumentedFuncs->end() != instrumentedFuncs->find(func))
-    {
-        if(proc()->lowlevel_process()->isMemoryEmulated())
-        {
-            map<BPatch_point*, BPatchSnippetHandle*>::iterator pit =
-                (*instrumentedFuncs)[func]->begin();
-            for(; pit != (*instrumentedFuncs)[func]->end(); pit++)
-            {
-                if(synchMap_pre_.end() != synchMap_pre_.find(pit->first))
-                {
-                    SynchHandle* shandle = synchMap_pre_[pit->first];
-                    // Note: the points in this snippet handle may have been deleted, and
-                    // thus should not be dereferenced; use them only as key values in
-                    // maps.
-
-                    synchMap_pre_.erase(shandle->prePt_);
-                    /*
-                    // Don't remove an instrumentation point that we haven't specifically
-                    found;
-                    // it might be in a different function.
-                    synchMap_post_.erase(shandle->postPt_);
-                    */
-                    delete shandle;
-                }
-                else if(synchMap_post_.end() != synchMap_post_.find(pit->first))
-                {
-                    SynchHandle* shandle = synchMap_post_[pit->first];
-                    // Note: the points in this snippet handle may have been deleted, and
-                    // thus should not be dereferenced; use them only as key values in
-                    // maps.
-
-                    /*
-                    // Do not remove an instrumentation point that we haven't specifically
-                    found;
-                    // it might be in a different function.
-                    synchMap_pre_.erase(shandle->prePt_);
-                    */
-                    synchMap_post_.erase(shandle->postPt_);
-                    delete shandle;
-                }
-            }
-        }
+    if (instrumentedFuncs->end() != instrumentedFuncs->find(func)) {
         (*instrumentedFuncs)[func]->clear();
         delete(*instrumentedFuncs)[func];
         instrumentedFuncs->erase(func);

@@ -31,6 +31,10 @@
 #ifndef _BPatch_function_h_
 #define _BPatch_function_h_
 
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 #include "Annotatable.h"
 #include "BPatch_dll.h"
 #include "BPatch_Vector.h"
@@ -40,6 +44,7 @@
 #include "BPatch_module.h"
 #include "BPatch_memoryAccess_NP.h"
 #include "StackMod.h"
+#include "dyntypes.h"
 
 class func_instance;
 
@@ -106,17 +111,8 @@ private:
 
     void identifyParamDependencies(BPatch_function* callee, void* calleeAddress);
 
-#if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4251)
-#endif
-    // Disable warning that these vectors cannot be used externally,
-    // which is irrelevant since the vectors are private
-    std::map<BPatch_localVar*, BPatch_variableExpr*> local_vars;
-    BPatch_Vector<BPatch_localVar*>                  params;
-#if defined(_MSC_VER)
-#    pragma warning(pop)
-#endif
+   std::map<BPatch_localVar *, BPatch_variableExpr *> local_vars;
+   BPatch_Vector<BPatch_localVar *> params;
 
 public:
     // dynC internal use only

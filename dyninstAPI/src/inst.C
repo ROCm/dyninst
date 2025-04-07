@@ -78,9 +78,10 @@ findTags(const std::string)
 #endif
 }
 
-unsigned
-generateAndWriteBranch(AddressSpace* proc, Address fromAddr, Address newAddr,
-                       unsigned fillSize)
+unsigned generateAndWriteBranch(AddressSpace *proc, 
+                                Dyninst::Address fromAddr,
+                                Dyninst::Address newAddr,
+                                unsigned fillSize)
 {
     assert(fillSize != 0);
 

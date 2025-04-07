@@ -30,6 +30,7 @@
 #ifndef _CODE_SOURCE_H_
 #define _CODE_SOURCE_H_
 
+#include <set>
 #include <map>
 #include <vector>
 #include <utility>
@@ -312,9 +313,11 @@ public:
         bool operator<(const try_block& t) const { return tryStart < t.tryStart; }
     };
 
-    SymtabCodeSource(SymtabAPI::Symtab*, hint_filt*, bool allLoadedRegions = false);
-    SymtabCodeSource(SymtabAPI::Symtab*);
-    SymtabCodeSource(char*);
+    SymtabCodeSource(SymtabAPI::Symtab *, 
+                                   hint_filt *, 
+                                   bool allLoadedRegions=false);
+    SymtabCodeSource(SymtabAPI::Symtab *);
+    SymtabCodeSource(const char *);
 
     ~SymtabCodeSource();
 

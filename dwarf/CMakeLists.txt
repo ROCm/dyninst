@@ -1,18 +1,28 @@
-# CMake configuration for dynDwarf (dwarf) directory
+include_guard(GLOBAL)
 
-if(NOT UNIX)
-    add_library(Dyninst::dynDwarf ALIAS dynDummy)
-    return()
+include(DyninstLibrary)
+
+if(NOT DYNINST_OS_UNIX)
+  if(NOT TARGET dynDwarf)
+    add_library(dynDwarf INTERFACE)
+  endif()
+  return()
 endif()
 
-set(SRC_LIST src/dwarfResult.C src/dwarfExprParser.C src/dwarfFrameParser.C
-             src/dwarfHandle.C)
+set(_public_headers h/dwarfExprParser.h h/dwarfFrameParser.h h/dwarfHandle.h
+                    h/dwarfResult.h h/dwarf_unit_info.h)
 
+set(_sources src/dwarfResult.C src/dwarfExprParser.C src/dwarfFrameParser.C
+             src/dwarfHandle.C src/dwarf_subrange.cpp)
+
+# cmake-format: off
 dyninst_library(
-    dynDwarf
-    SOURCES ${SRC_LIST}
-    COMPILE_DEFINITIONS PRIVATE DYNDWARF_LIB
-    INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/h>
-                        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/common/src>
-    DEPENDS ElfUtils-External
-    LINK_LIBRARIES Dyninst::headers Dyninst::common Dyninst::dynElf)
+  dynDwarf
+  PUBLIC_HEADER_FILES ${_public_headers}
+  SOURCE_FILES ${_sources}
+  DEFINES DYNDWARF_LIB
+  DYNINST_DEPS dynElf common
+  PUBLIC_DEPS Dyninst::Boost_headers
+  PRIVATE_DEPS Dyninst::ElfUtils
+)
+# cmake-format: on

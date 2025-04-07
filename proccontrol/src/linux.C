@@ -42,9 +42,13 @@
 #include <iostream>
 #include <fstream>
 
-#include "common/h/dyn_regs.h"
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
+#include "registers/ppc32_regs.h"
+#include "registers/ppc64_regs.h"
+#include "registers/aarch64_regs.h"
 #include "common/h/dyntypes.h"
-
+#include "common/src/vm_maps.h"
 #include "compiler_annotations.h"
 
 #include "common/src/pathName.h"
@@ -70,12 +74,16 @@
 
 #include "boost/shared_ptr.hpp"
 
-// needed by GETREGSET/SETREGSET
+#include "unaligned_memory_access.h"
+
+//needed by GETREGSET/SETREGSET
 #if defined(arch_aarch64)
-#    include <sys/user.h>
-#    include <sys/procfs.h>
-#    include <sys/uio.h>
-#    include <linux/elf.h>
+#include<sys/user.h>
+#include<sys/procfs.h>
+#include<sys/uio.h>
+#if !defined(WITH_SYMLITE)
+#include<linux/elf.h>
+#endif
 #endif
 
 // Before glibc-2.7, sys/ptrace.h lacked PTRACE_O_* and PTRACE_EVENT_*, so we
@@ -1272,10 +1280,10 @@ linux_process::plat_execed()
     if(!result)
         return false;
 
-    char proc_exec_name[128];
-    snprintf(proc_exec_name, 128, "/proc/%d/exe", getPid());
-    executable = std::move(resolve_file_path(proc_exec_name));
-    return true;
+   char proc_exec_name[128];
+   snprintf(proc_exec_name, 128, "/proc/%d/exe", getPid());
+   executable = resolve_file_path(proc_exec_name);
+   return true;
 }
 
 bool
@@ -2606,10 +2614,21 @@ linux_thread::plat_getAllRegisters(int_registerPool& regpool)
                 *((uint64_t*) (user_area + i->second.first)) = val;
             }
             else
-            {
-                assert(0);
-            }
-        }
+               setLastError(err_internal, "Could not read user area from thread");
+            return false;
+         }
+         if (Dyninst::getArchAddressWidth(curplat) == 4) {
+            uint32_t val = (uint32_t) result;
+            write_memory_as(user_area + i->second.first, val);
+         }
+         else if (Dyninst::getArchAddressWidth(curplat) == 8) {
+            uint64_t val = (uint64_t) result;
+            write_memory_as(user_area + i->second.first, val);
+         }
+         else {
+            assert(0);
+         }
+      }
 #endif
     }
 
@@ -2628,23 +2647,18 @@ linux_thread::plat_getAllRegisters(int_registerPool& regpool)
         if(reg.getArchitecture() != curplat)
             continue;
         const unsigned int offset = i->second.first;
-        const unsigned int size   = i->second.second;
-        if(size == 4)
-        {
-            if(sizeof(void*) == 8)
-            {
-                // Avoid endian issues
-                uint64_t tmpVal = *((uint64_t*) (user_area + offset));
-                val             = (uint32_t) tmpVal;
-            }
-            else
-            {
-                val = *((uint32_t*) (user_area + offset));
-            }
+        const unsigned int size = i->second.second;
+        if (size == 4) {
+           if( sizeof(void *) == 8 ) {
+              // Avoid endian issues
+              auto tmpVal = Dyninst::read_memory_as<uint64_t>(user_area+offset);
+              val = (uint32_t) tmpVal;
+           }else{
+              val = Dyninst::read_memory_as<uint32_t>(user_area+offset);
+           }
         }
-        else if(size == 8)
-        {
-            val = *((uint64_t*) (user_area + offset));
+        else if (size == 8) {
+           val = Dyninst::read_memory_as<uint64_t>(user_area+offset);
         }
         else
         {
@@ -2943,10 +2957,21 @@ linux_thread::plat_convertToSystemRegs(const int_registerPool& regpool,
             }
         }
 
-        num_found++;
-        const unsigned int offset = i->second.first;
-        const unsigned int size   = i->second.second;
-        assert(offset + size < MAX_USER_SIZE);
+      if (size == 4) {
+          if( sizeof(void *) == 8 ) {
+              write_memory_as(user_area+offset, uint64_t{val});
+          } else {
+              write_memory_as(user_area+offset, static_cast<uint32_t>(val));
+          }
+      }
+      else if (size == 8) {
+         write_memory_as(user_area+offset, uint64_t{val});
+      }
+      else {
+         assert(0);
+      }
+      pthrd_printf("Register %s gets value %lx, offset %u\n", reg.name().c_str(), val, offset);
+   }
 
         if((offset + size) > sizeof(prgregset_t))
             continue;

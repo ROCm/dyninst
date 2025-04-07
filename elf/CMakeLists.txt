@@ -1,20 +1,25 @@
-# CMake configuration for dynElf (elf) directory
+include_guard(GLOBAL)
 
-if(NOT UNIX)
-    add_library(Dyninst::dynElf ALIAS dynDummy)
-    return()
+include(DyninstLibrary)
+
+if(NOT DYNINST_OS_UNIX)
+  if(NOT TARGET dynElf)
+    add_library(dynElf INTERFACE)
+  endif()
+  return()
 endif()
 
-set(SRC_LIST src/Elf_X.C)
+set(_public_headers h/Elf_X.h)
+set(_sources src/Elf_X.C)
 
-if(ENABLE_DEBUGINFOD AND LibDebuginfod_FOUND)
-    set(_PRIVATE_COMPILE_DEFS DEBUGINFOD_LIB)
-endif()
-
+# cmake-format: off
 dyninst_library(
-    dynElf
-    SOURCES ${SRC_LIST}
-    COMPILE_DEFINITIONS PRIVATE DYNELF_LIB ${_PRIVATE_COMPILE_DEFS}
-    INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/h>
-    DEPENDS TBB-External ElfUtils-External
-    LINK_LIBRARIES Dyninst::headers Dyninst::Boost Dyninst::TBB PRIVATE Dyninst::ElfUtils)
+  dynElf
+  PUBLIC_HEADER_FILES ${_public_headers}
+  SOURCE_FILES ${_sources}
+  DEFINES DYNELF_LIB
+  DYNINST_DEPS common
+  PRIVATE_DEPS Dyninst::Boost_headers
+  PUBLIC_DEPS Dyninst::ElfUtils
+)
+# cmake-format: on

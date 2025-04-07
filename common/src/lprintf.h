@@ -30,15 +30,28 @@
 
 /************************************************************************
  * lprintf.h: interface to printf-like error functions.
- ************************************************************************/
+************************************************************************/
+
+
+
 
 #if !defined(_lprintf_h_)
-#    define _lprintf_h_
-#    include "compiler_annotations.h"
+#define _lprintf_h_
+#include "compiler_annotations.h"
+
+
+
 
 /************************************************************************
  * function prototypes.
- ************************************************************************/
+************************************************************************/
+
+extern COMMON_EXPORT void log_msg(const char *);
+extern COMMON_EXPORT void log_printf(void (*)(const char *), const char *, ...)
+        DYNINST_PRINTF_ANNOTATION(2, 3);
+extern COMMON_EXPORT void log_perror(void (*)(const char *), const char *);
+
+
 
 extern COMMON_EXPORT void
 log_msg(const char*);

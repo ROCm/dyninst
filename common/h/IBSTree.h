@@ -41,6 +41,8 @@
 #include "dyntypes.h"
 #include "concurrent.h"
 
+#include <stddef.h>
+#include <vector>
 #include <set>
 #include <limits>
 #include <iostream>
@@ -103,11 +105,10 @@ public:
     virtual T low() const { return low_; }
     virtual T high() const { return high_; }
     virtual U id() const { return id_; }
-
-protected:
-    T low_;
-    T high_;
-    U id_;  // some arbitrary unique identifier
+  protected:
+    T low_{};
+    T high_{};
+    U id_{}; // some arbitrary unique identifier
 };
 
 template <class ITYPE>

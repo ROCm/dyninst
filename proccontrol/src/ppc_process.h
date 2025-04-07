@@ -31,8 +31,11 @@
 #if !defined(ppc_process_h_)
 #    define ppc_process_h_
 
-#    include <map>
-#    include "int_process.h"
+#include <set>
+#include <string>
+#include <vector>
+#include <map>
+#include "int_process.h"
 
 class ppc_process : virtual public int_process
 {

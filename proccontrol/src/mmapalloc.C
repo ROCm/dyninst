@@ -28,10 +28,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "common/src/Types.h"
 #include "mmapalloc.h"
 #include <sys/mman.h>
 #include <string.h>
+#include "unaligned_memory_access.h"
+#include "registers/ppc32_regs.h"
+#include "registers/ppc64_regs.h"
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
+#include "registers/aarch64_regs.h"
 
 static const unsigned int  linux_x86_64_mmap_flags_position = 26;
 static const unsigned int  linux_x86_64_mmap_size_position  = 43;
@@ -507,18 +512,20 @@ mmap_alloc_process::plat_createAllocationSnippet(Dyninst::Address addr, bool use
         buffer = malloc(buffer_size);
         memcpy(buffer, buf_tmp, buffer_size);
 
-        // Assuming endianess of debugger and debugee match.
-        *((unsigned int*) (((char*) buffer) + size_pos))  = size;
-        *((unsigned int*) (((char*) buffer) + flags_pos)) = flags;
-        if(addr_size == 8)
-            *((unsigned long*) (((char*) buffer) + addr_pos)) = addr;
-        else if(addr_size == 4)
-            *((unsigned*) (((char*) buffer) + addr_pos)) = (unsigned) addr;
-        else
+        //Assuming endianess of debugger and debugee match.
+        assert(size <= std::numeric_limits<uint32_t>::max() && "size more than 32 bits");
+        write_memory_as(static_cast<char *>(buffer)+size_pos, static_cast<uint32_t>(size));
+        write_memory_as(static_cast<char *>(buffer)+flags_pos, static_cast<uint32_t>(flags));
+        if (addr_size == 8)  {
+            write_memory_as(static_cast<char *>(buffer)+addr_pos, uint64_t{addr});
+        }  else if (addr_size == 4)  {
+            assert(addr <= std::numeric_limits<uint32_t>::max() && "addr more than 32 bits");
+            write_memory_as(static_cast<char *>(buffer)+addr_pos, static_cast<uint32_t>(addr));
+        }  else  {
             assert(0);
-    }
-    else if(getTargetArch() == Arch_ppc32)
-    {
+        }
+   }
+    else  if (getTargetArch() == Arch_ppc32) {
         unsigned int flags_hi_position;
         unsigned int flags_lo_position;
         unsigned int size_hi_position;
@@ -550,28 +557,27 @@ mmap_alloc_process::plat_createAllocationSnippet(Dyninst::Address addr, bool use
         memcpy(buffer, buf_tmp, buffer_size);
 
         // Assuming endianess of debugger and debuggee match
-        *((uint16_t*) (((char*) buffer) + size_hi_position))  = (uint16_t)(size >> 16);
-        *((uint16_t*) (((char*) buffer) + size_lo_position))  = (uint16_t) size;
-        *((uint16_t*) (((char*) buffer) + flags_hi_position)) = (uint16_t)(flags >> 16);
-        *((uint16_t*) (((char*) buffer) + flags_lo_position)) = (uint16_t) flags;
-        *((uint16_t*) (((char*) buffer) + addr_hi_position))  = (uint16_t)(addr >> 16);
-        *((uint16_t*) (((char*) buffer) + addr_lo_position))  = (uint16_t) addr;
-    }
-    else if(getTargetArch() == Arch_ppc64)
-    {
-        unsigned int flags_highest_position;
-        unsigned int flags_higher_position;
-        unsigned int flags_hi_position;
-        unsigned int flags_lo_position;
-        unsigned int size_highest_position;
-        unsigned int size_higher_position;
-        unsigned int size_hi_position;
-        unsigned int size_lo_position;
-        unsigned int addr_highest_position;
-        unsigned int addr_higher_position;
-        unsigned int addr_hi_position;
-        unsigned int addr_lo_position;
-        const void*  buf_tmp;
+        write_memory_as(static_cast<char *>(buffer)+size_hi_position, static_cast<uint16_t>(size >> 16));
+        write_memory_as(static_cast<char *>(buffer)+size_lo_position, static_cast<uint16_t>(size));
+        write_memory_as(static_cast<char *>(buffer)+flags_hi_position, static_cast<uint16_t>(flags >> 16));
+        write_memory_as(static_cast<char *>(buffer)+flags_lo_position, static_cast<uint16_t>(flags));
+        write_memory_as(static_cast<char *>(buffer)+addr_hi_position, static_cast<uint16_t>(addr >> 16));
+        write_memory_as(static_cast<char *>(buffer)+addr_lo_position, static_cast<uint16_t>(addr));
+   }
+   else if (getTargetArch() == Arch_ppc64) {
+      unsigned int flags_highest_position;
+      unsigned int flags_higher_position;
+      unsigned int flags_hi_position;
+      unsigned int flags_lo_position;
+      unsigned int size_highest_position;
+      unsigned int size_higher_position;
+      unsigned int size_hi_position;
+      unsigned int size_lo_position;
+      unsigned int addr_highest_position;
+      unsigned int addr_higher_position;
+      unsigned int addr_hi_position;
+      unsigned int addr_lo_position;
+      const void *buf_tmp;
 
         bool use_linux = (getOS() == Linux);
 
@@ -602,25 +608,21 @@ mmap_alloc_process::plat_createAllocationSnippet(Dyninst::Address addr, bool use
 
         uint32_t* pwords = (uint32_t*) buffer;
 
-        // MJMTODO - Assumes endianess of debugger and debuggee match
-        pwords[size_highest_position] |= (uint32_t)(((uint64_t) size >> 48) & 0x0000ffff);
-        pwords[size_higher_position] |= (uint32_t)(((uint64_t) size >> 32) & 0x0000ffff);
-        pwords[size_hi_position] |= (uint32_t)(((uint64_t) size >> 16) & 0x0000ffff);
-        pwords[size_lo_position] |= (uint32_t)((uint64_t) size & 0x0000ffff);
-        pwords[flags_highest_position] |=
-            (uint32_t)(((uint64_t) flags >> 48) & 0x0000ffff);
-        pwords[flags_higher_position] |=
-            (uint32_t)(((uint64_t) flags >> 32) & 0x0000ffff);
-        pwords[flags_hi_position] |= (uint32_t)(((uint64_t) flags >> 16) & 0x0000ffff);
-        pwords[flags_lo_position] |= (uint32_t)((uint64_t) flags & 0x0000ffff);
-        pwords[addr_highest_position] |= (uint32_t)(((uint64_t) addr >> 48) & 0x0000ffff);
-        pwords[addr_higher_position] |= (uint32_t)(((uint64_t) addr >> 32) & 0x0000ffff);
-        pwords[addr_hi_position] |= (uint32_t)(((uint64_t) addr >> 16) & 0x0000ffff);
-        pwords[addr_lo_position] |= (uint32_t)((uint64_t) addr & 0x0000ffff);
-    }
-    else if(getTargetArch() == Arch_aarch64)
-    {
-        const void*  buf_tmp;
+      // MJMTODO - Assumes endianess of debugger and debuggee match
+      pwords[size_highest_position]  |= static_cast<uint32_t>((uint64_t{size} >> 48) & 0x0000ffff);
+      pwords[size_higher_position]   |= static_cast<uint32_t>((uint64_t{size} >> 32) & 0x0000ffff);
+      pwords[size_hi_position]       |= static_cast<uint32_t>((uint64_t{size} >> 16) & 0x0000ffff);
+      pwords[size_lo_position]       |= static_cast<uint32_t>(uint64_t{size} & 0x0000ffff);
+      pwords[flags_highest_position] |= static_cast<uint32_t>((static_cast<uint64_t>(flags) >> 48) & 0x0000ffff);
+      pwords[flags_higher_position]  |= static_cast<uint32_t>((static_cast<uint64_t>(flags) >> 32) & 0x0000ffff);
+      pwords[flags_hi_position]      |= static_cast<uint32_t>((static_cast<uint64_t>(flags) >> 16) & 0x0000ffff);
+      pwords[flags_lo_position]      |= static_cast<uint32_t>(static_cast<uint64_t>(flags) & 0x0000ffff);
+      pwords[addr_highest_position]  |= static_cast<uint32_t>((uint64_t{addr} >> 48) & 0x0000ffff);
+      pwords[addr_higher_position]   |= static_cast<uint32_t>((uint64_t{addr} >> 32) & 0x0000ffff);
+      pwords[addr_hi_position]       |= static_cast<uint32_t>((uint64_t{addr} >> 16) & 0x0000ffff);
+      pwords[addr_lo_position]       |= static_cast<uint32_t>(uint64_t{addr} & 0x0000ffff);
+    } else if( getTargetArch() == Arch_aarch64 ){
+        const void *buf_tmp;
         unsigned int addr_pos, size_pos, flags_pos;
 
         bool use_linux = (getOS() == Linux);
@@ -643,35 +645,35 @@ mmap_alloc_process::plat_createAllocationSnippet(Dyninst::Address addr, bool use
 
         // To avoid the matter of endianness, I decided to operate on byte.
         pthrd_printf("ARM-info: create alloc snippet...\n");
-#define BYTE_ASSGN(POS, VAL)                                                             \
-    (*(((char*) buffer) + POS + 1)) |= ((VAL >> 11) & 0x1f);                             \
-    (*(((char*) buffer) + POS + 2)) |= ((VAL >> 3) & 0xff);                              \
-    (*(((char*) buffer) + POS + 3)) |= ((VAL << 5) & 0xf0);
+#define BYTE_ASSGN(POS, VAL) \
+            (*(static_cast<char *>(buffer) + POS + 1)) |= ((VAL>>11)&0x1f);\
+            (*(static_cast<char *>(buffer) + POS + 2)) |= ((VAL>> 3)&0xff);\
+            (*(static_cast<char *>(buffer) + POS + 3)) |= ((VAL<< 5)&0xf0);
 
-        BYTE_ASSGN(addr_pos, (uint16_t)(addr))
-        BYTE_ASSGN(addr_pos + 4, (uint16_t)(addr >> 16))
-        BYTE_ASSGN(addr_pos + 8, (uint16_t)(addr >> 32))
-        BYTE_ASSGN(addr_pos + 12, (uint16_t)(addr >> 48))
+        BYTE_ASSGN(addr_pos,    static_cast<uint16_t>(addr)     )
+        BYTE_ASSGN(addr_pos+4,  static_cast<uint16_t>(addr>>16) )
+        BYTE_ASSGN(addr_pos+8,  static_cast<uint16_t>(addr>>32) )
+        BYTE_ASSGN(addr_pos+12, static_cast<uint16_t>(addr>>48) )
 
-        BYTE_ASSGN(size_pos, (uint16_t)(size))
-        BYTE_ASSGN(size_pos + 4, (uint16_t)(size >> 16))
-        BYTE_ASSGN(size_pos + 8, (uint16_t)(size >> 32))
-        BYTE_ASSGN(size_pos + 12, (uint16_t)(size >> 48))
+        BYTE_ASSGN(size_pos,    static_cast<uint16_t>(size) )
+        BYTE_ASSGN(size_pos+4,  static_cast<uint16_t>(size>>16) )
+        BYTE_ASSGN(size_pos+8,  static_cast<uint16_t>(size>>32) )
+        BYTE_ASSGN(size_pos+12, static_cast<uint16_t>(size>>48) )
 
-        BYTE_ASSGN(flags_pos, (uint16_t)(flags))
-        BYTE_ASSGN(flags_pos + 4, (uint16_t)(flags >> 16))
-        // BYTE_ASSGN(flags_pos+8,  (uint16_t)(flags>>32) )
-        // BYTE_ASSGN(flags_pos+12, (uint16_t)(flags>>48) )
+        BYTE_ASSGN(flags_pos,    static_cast<uint16_t>(flags) )
+        BYTE_ASSGN(flags_pos+4,  static_cast<uint16_t>(flags>>16) )
+        //BYTE_ASSGN(flags_pos+8,  static_cast<uint16_t>(flags>>32) )
+        //BYTE_ASSGN(flags_pos+12, static_cast<uint16_t>(flags>>48) )
 
-        // according to experiments, aarch64 is little-endian
-        // the byte order with a word should be re-arranged
-#define SWAP4BYTE(POS)                                                                   \
-    ((char*) buffer)[POS + 3] ^= ((char*) buffer)[POS];                                  \
-    ((char*) buffer)[POS] ^= ((char*) buffer)[POS + 3];                                  \
-    ((char*) buffer)[POS + 3] ^= ((char*) buffer)[POS];                                  \
-    ((char*) buffer)[POS + 2] ^= ((char*) buffer)[POS + 1];                              \
-    ((char*) buffer)[POS + 1] ^= ((char*) buffer)[POS + 2];                              \
-    ((char*) buffer)[POS + 2] ^= ((char*) buffer)[POS + 1];
+        //according to experiments, aarch64 is little-endian
+        //the byte order with a word should be re-arranged
+#define SWAP4BYTE(POS) \
+            static_cast<char *>(buffer)[POS+3]^= static_cast<char*>(buffer)[POS]; \
+            static_cast<char *>(buffer)[POS]  ^= static_cast<char*>(buffer)[POS+3]; \
+            static_cast<char *>(buffer)[POS+3]^= static_cast<char*>(buffer)[POS]; \
+            static_cast<char *>(buffer)[POS+2]^= static_cast<char*>(buffer)[POS+1]; \
+            static_cast<char *>(buffer)[POS+1]^= static_cast<char*>(buffer)[POS+2]; \
+            static_cast<char *>(buffer)[POS+2]^= static_cast<char*>(buffer)[POS+1];
 
         for(unsigned int i = 0; i < buffer_size; i += 4)
         {
@@ -685,9 +687,8 @@ mmap_alloc_process::plat_createAllocationSnippet(Dyninst::Address addr, bool use
         pthrd_printf("size %lu, 0x%lx\n", size, size);
         pthrd_printf("flags 0x%x:\n", (unsigned int) flags);
 
-        for(unsigned int i = 0; i < buffer_size; i += 4)
-        {
-            pthrd_printf("0x%8x\n", *((unsigned int*) (((char*) buffer) + i)));
+        for(unsigned int i = 0; i< buffer_size ; i+=4){
+            pthrd_printf("0x%8x\n", Dyninst::read_memory_as<uint32_t>(static_cast<char *>(buffer)+i)) ;
         }
 
 #endif
@@ -761,22 +762,24 @@ mmap_alloc_process::plat_createDeallocationSnippet(Dyninst::Address addr,
         buffer = malloc(buffer_size);
         memcpy(buffer, buf_tmp, buffer_size);
 
-        // Assuming endianess of debugger and debugee match.
-        *((unsigned int*) (((char*) buffer) + size_pos)) = size;
-        if(addr_size == 8)
-            *((unsigned long*) (((char*) buffer) + addr_pos)) = addr;
-        else if(addr_size == 4)
-            *((unsigned*) (((char*) buffer) + addr_pos)) = (unsigned) addr;
-        else
-            assert(0);
-    }
-    else if(getTargetArch() == Arch_ppc32)
-    {
-        unsigned int size_hi_position;
-        unsigned int size_lo_position;
-        unsigned int addr_hi_position;
-        unsigned int addr_lo_position;
-        const void*  buf_tmp = NULL;
+       //Assuming endianess of debugger and debugee match.
+        assert(size <= std::numeric_limits<uint32_t>::max() && "size more than 32 bits");
+       write_memory_as(static_cast<char *>(buffer)+size_pos, static_cast<uint32_t>(size));
+       if (addr_size == 8)  {
+          write_memory_as(static_cast<char *>(buffer)+addr_pos, uint64_t{addr});
+       }  else if (addr_size == 4)  {
+          assert(addr <= std::numeric_limits<uint32_t>::max() && "addr more than 32 bits");
+          write_memory_as(static_cast<char *>(buffer)+addr_pos, static_cast<uint32_t>(addr));
+       }  else  {
+          assert(0);
+       }
+   }
+   else if (getTargetArch() == Arch_ppc32) {
+      unsigned int size_hi_position;
+      unsigned int size_lo_position;
+      unsigned int addr_hi_position;
+      unsigned int addr_lo_position;
+      const void *buf_tmp = NULL;
 
         bool use_linux = (getOS() == Linux);
         if(use_linux)
@@ -797,23 +800,22 @@ mmap_alloc_process::plat_createDeallocationSnippet(Dyninst::Address addr,
         buffer = malloc(buffer_size);
         memcpy(buffer, buf_tmp, buffer_size);
 
-        // Assuming endianess of debugger and debuggee match
-        *((uint16_t*) (((char*) buffer) + size_hi_position)) = (uint16_t)(size >> 16);
-        *((uint16_t*) (((char*) buffer) + size_lo_position)) = (uint16_t) size;
-        *((uint16_t*) (((char*) buffer) + addr_hi_position)) = (uint16_t)(addr >> 16);
-        *((uint16_t*) (((char*) buffer) + addr_lo_position)) = (uint16_t) addr;
-    }
-    else if(getTargetArch() == Arch_ppc64)
-    {
-        unsigned int size_highest_position;
-        unsigned int size_higher_position;
-        unsigned int size_hi_position;
-        unsigned int size_lo_position;
-        unsigned int addr_highest_position;
-        unsigned int addr_higher_position;
-        unsigned int addr_hi_position;
-        unsigned int addr_lo_position;
-        const void*  buf_tmp = NULL;
+       // Assuming endianess of debugger and debuggee match
+       write_memory_as(static_cast<char *>(buffer)+size_hi_position, static_cast<uint16_t>(size >> 16));
+       write_memory_as(static_cast<char *>(buffer)+size_lo_position, static_cast<uint16_t>(size));
+       write_memory_as(static_cast<char *>(buffer)+addr_hi_position, static_cast<uint16_t>(addr >> 16));
+       write_memory_as(static_cast<char *>(buffer)+addr_lo_position, static_cast<uint16_t>(addr));
+   }
+   else if( getTargetArch() == Arch_ppc64 ) {
+      unsigned int size_highest_position;
+      unsigned int size_higher_position;
+      unsigned int size_hi_position;
+      unsigned int size_lo_position;
+      unsigned int addr_highest_position;
+      unsigned int addr_higher_position;
+      unsigned int addr_hi_position;
+      unsigned int addr_lo_position;
+      const void *buf_tmp = NULL;
 
         bool use_linux = (getOS() == Linux);
         if(use_linux)
@@ -838,21 +840,20 @@ mmap_alloc_process::plat_createDeallocationSnippet(Dyninst::Address addr,
         buffer = malloc(buffer_size);
         memcpy(buffer, buf_tmp, buffer_size);
 
-        uint32_t* pwords = (uint32_t*) buffer;
+      uint32_t *pwords = static_cast<uint32_t *>(buffer);
 
-        // MJMTODO - Assumes endianess of debugger and debuggee match
-        pwords[size_highest_position] |= (uint32_t)(((uint64_t) size >> 48) & 0x0000ffff);
-        pwords[size_higher_position] |= (uint32_t)(((uint64_t) size >> 32) & 0x0000ffff);
-        pwords[size_hi_position] |= (uint32_t)(((uint64_t) size >> 16) & 0x0000ffff);
-        pwords[size_lo_position] |= (uint32_t)((uint64_t) size & 0x0000ffff);
-        pwords[addr_highest_position] |= (uint32_t)(((uint64_t) addr >> 48) & 0x0000ffff);
-        pwords[addr_higher_position] |= (uint32_t)(((uint64_t) addr >> 32) & 0x0000ffff);
-        pwords[addr_hi_position] |= (uint32_t)(((uint64_t) addr >> 16) & 0x0000ffff);
-        pwords[addr_lo_position] |= (uint32_t)((uint64_t) addr & 0x0000ffff);
-    }
-    else if(getTargetArch() == Arch_aarch64)
-    {
-        const void*  buf_tmp = NULL;
+      // MJMTODO - Assumes endianess of debugger and debuggee match
+      pwords[size_highest_position] |= static_cast<uint32_t>((uint64_t{size} >> 48) & 0x0000ffff);
+      pwords[size_higher_position]  |= static_cast<uint32_t>((uint64_t{size} >> 32) & 0x0000ffff);
+      pwords[size_hi_position]      |= static_cast<uint32_t>((uint64_t{size} >> 16) & 0x0000ffff);
+      pwords[size_lo_position]      |= static_cast<uint32_t>(uint64_t{size} & 0x0000ffff);
+      pwords[addr_highest_position] |= static_cast<uint32_t>((uint64_t{addr} >> 48) & 0x0000ffff);
+      pwords[addr_higher_position]  |= static_cast<uint32_t>((uint64_t{addr} >> 32) & 0x0000ffff);
+      pwords[addr_hi_position]      |= static_cast<uint32_t>((uint64_t{addr} >> 16) & 0x0000ffff);
+      pwords[addr_lo_position]      |= static_cast<uint32_t>(uint64_t{addr} & 0x0000ffff);
+   }
+   else if( getTargetArch() == Arch_aarch64 ) {
+        const void *buf_tmp = NULL;
         unsigned int addr_size;
         unsigned int addr_pos;
         unsigned int size_pos;
@@ -877,15 +878,15 @@ mmap_alloc_process::plat_createDeallocationSnippet(Dyninst::Address addr,
 
         pthrd_printf("ARM-info: create de-alloc snippet...\n");
 
-        BYTE_ASSGN(addr_pos, (uint16_t)(addr))
-        BYTE_ASSGN(addr_pos + 4, (uint16_t)(addr >> 16))
-        BYTE_ASSGN(addr_pos + 8, (uint16_t)(addr >> 32))
-        BYTE_ASSGN(addr_pos + 12, (uint16_t)(addr >> 48))
+        BYTE_ASSGN(addr_pos,    static_cast<uint16_t>(addr)     )
+        BYTE_ASSGN(addr_pos+4,  static_cast<uint16_t>(addr>>16) )
+        BYTE_ASSGN(addr_pos+8,  static_cast<uint16_t>(addr>>32) )
+        BYTE_ASSGN(addr_pos+12, static_cast<uint16_t>(addr>>48) )
 
-        BYTE_ASSGN(size_pos, (uint16_t)(size))
-        BYTE_ASSGN(size_pos + 4, (uint16_t)(size >> 16))
-        BYTE_ASSGN(size_pos + 8, (uint16_t)(size >> 32))
-        BYTE_ASSGN(size_pos + 12, (uint16_t)(size >> 48))
+        BYTE_ASSGN(size_pos,    static_cast<uint16_t>(size) )
+        BYTE_ASSGN(size_pos+4,  static_cast<uint16_t>(size>>16) )
+        BYTE_ASSGN(size_pos+8,  static_cast<uint16_t>(size>>32) )
+        BYTE_ASSGN(size_pos+12, static_cast<uint16_t>(size>>48) )
 
         // swap 4bytes
         for(unsigned int i = 0; i < buffer_size; i += 4)

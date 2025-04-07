@@ -732,10 +732,10 @@ Function::tampersStack(bool recalculate)
             mal_printf("Failed to produce a slice for retn at %lx %s[%d]\n", retnAddr,
                        FILE__, __LINE__);
             continue;
-        }
-        StackTamperVisitor vis(Absloc(-1 * isrc()->getAddressWidth(), 0, this));
-        Address            curTamperAddr = 0;
-        StackTamper        curtamper     = vis.tampersStack(sliceAtRet, curTamperAddr);
+        } 
+        StackTamperVisitor vis(Absloc(-static_cast<int>(isrc()->getAddressWidth()), 0, this));
+        Address curTamperAddr=0;
+        StackTamper curtamper = vis.tampersStack(sliceAtRet, curTamperAddr);
         mal_printf("StackTamperVisitor for func at 0x%lx block[%lx %lx) w/ "
                    "lastInsn at 0x%lx returns tamper=%d tamperAddr=0x%lx\n",
                    _start, (*bit)->start(), (*bit)->end(), retnAddr, curtamper,

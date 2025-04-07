@@ -36,11 +36,15 @@
 #if !defined(_Function_h_)
 #    define _Function_h_
 
-#    include "Annotatable.h"
-#    include "Aggregate.h"
-#    include "Variable.h"
-#    include "IBSTree.h"
-#    include "concurrent.h"
+#include <iosfwd>
+#include <stddef.h>
+#include <string>
+#include <utility>
+#include <vector>
+#include "Annotatable.h"
+#include "Aggregate.h"
+#include "Variable.h"
+#include "VariableLocation.h"
 
 SYMTAB_EXPORT std::ostream&
               operator<<(std::ostream& os, const Dyninst::SymtabAPI::Function&);
@@ -73,16 +77,20 @@ public:
     typedef Dyninst::Offset type;
 };
 
-typedef IBSTree<FuncRange>         FuncRangeLookup;
-typedef std::vector<FuncRange>     FuncRangeCollection;
-typedef std::vector<FunctionBase*> InlineCollection;
-typedef std::vector<FuncRange>     FuncRangeCollection;
+typedef std::vector<FuncRange> FuncRangeCollection;
+typedef std::vector<FunctionBase *> InlineCollection;
 
 class SYMTAB_EXPORT FunctionBase
 {
-    friend class InlinedFunction;
-    friend class Function;
-    friend class DwarfWalker;
+   friend class InlinedFunction;
+   friend class Function;
+   friend class DwarfWalker;
+  public:
+   /***** Return Type Information *****/
+   boost::shared_ptr<Type> getReturnType(Type::do_share_t) const;
+   Type* getReturnType() const {
+     return getReturnType(Type::share).get();
+   }
 
 public:
     /***** Return Type Information *****/
@@ -115,9 +123,10 @@ public:
     virtual bool        addPrettyName(std::string name, bool isPrimary,
                                       bool isDebug = false)  = 0;
 
-    /***** Opaque data object pointers, usable by user ****/
-    void* getData();
-    void  setData(void* d);
+   /* internal helper functions */
+   bool addLocalVar(localVar *);
+   bool addParam(localVar *);
+   bool	setReturnType(boost::shared_ptr<Type>);
 
     /* internal helper functions */
     bool addLocalVar(localVar*);
@@ -125,15 +134,13 @@ public:
     bool setReturnType(boost::shared_ptr<Type>);
     bool setReturnType(Type* t) { return setReturnType(t->reshare()); }
 
-    virtual Offset   getOffset() const = 0;
-    virtual unsigned getSize() const   = 0;
-    virtual Module*  getModule() const = 0;
+   virtual ~FunctionBase();
 
-protected:
-    FunctionBase(Symbol*);
-    FunctionBase(Module*);
-    FunctionBase();
-    virtual ~FunctionBase();
+  protected:
+   FunctionBase();
+
+   localVarCollection *locals;
+   localVarCollection *params;
 
     localVarCollection* locals;
     localVarCollection* params;
@@ -141,40 +148,31 @@ protected:
     mutable unsigned        functionSize_;
     boost::shared_ptr<Type> retType_;
 
-    dyn_mutex        inlines_lock;
-    InlineCollection inlines;
-    FunctionBase*    inline_parent;
-
-    dyn_mutex                     ranges_lock;
-    FuncRangeCollection           ranges;
-    std::vector<VariableLocation> frameBase_;
-    dyn_mutex                     frameBaseLock_;
-    bool                          frameBaseExpanded_;
-    void*                         data;
-    void expandLocation(const VariableLocation& loc, std::vector<VariableLocation>& ret);
+   FuncRangeCollection ranges;
+   std::vector<VariableLocation> frameBase_;
+   dyn_mutex frameBaseLock_;
+   bool frameBaseExpanded_;
+   void *data;
+   void expandLocation(const VariableLocation &loc,
+                       std::vector<VariableLocation> &ret);
 };
 
-class SYMTAB_EXPORT Function
-: public FunctionBase
-, public Aggregate
+/*
+ *  `Function` can be derived from (e.g., ParseAPI::PLTFunction), but does not create an
+ *  interface separate from FunctionBase.
+ */
+ class SYMTAB_EXPORT Function : public FunctionBase, public Aggregate
 {
-    friend class Symtab;
-    friend std::ostream& ::operator<<(std::ostream& os,
-                                      const Dyninst::SymtabAPI::Function&);
+	friend std::ostream &::operator<<(std::ostream &os, const Dyninst::SymtabAPI::Function &);
 
-protected:
-    Function(Symbol* sym);
+ public:
 
-public:
-    Function();
-    virtual ~Function();
+   Function();
+   Function(Symbol *sym);
+   virtual ~Function();
 
-    /* Symbol management */
-    bool removeSymbol(Symbol* sym);
-
-    /***** IA64-Specific Frame Pointer Information *****/
-    bool setFramePtrRegnum(int regnum);
-    int  getFramePtrRegnum() const;
+   /* Symbol management */
+   bool removeSymbol(Symbol *sym) override;
 
     /***** PPC64 Linux Specific Information *****/
     Offset getPtrOffset() const;
@@ -193,36 +191,43 @@ public:
         return Aggregate::addPrettyName(name, isPrimary, isDebug);
     }
 
-    virtual Module* getModule() const;
-};
+   unsigned getSymbolSize() const;
+   unsigned getSize() const override;
+   std::string getName() const override;
+   Offset getOffset() const override { return Aggregate::getOffset(); }
+   bool addMangledName(std::string name, bool isPrimary, bool isDebug=false) override
+   {return Aggregate::addMangledName(name, isPrimary, isDebug);}
+   bool addPrettyName(std::string name, bool isPrimary, bool isDebug=false) override
+   {return Aggregate::addPrettyName(name, isPrimary, isDebug);}
+
+     Module * getModule() const override;
+ };
 
 class SYMTAB_EXPORT InlinedFunction : public FunctionBase
 {
-    friend class Symtab;
-    friend class DwarfWalker;
+   friend class Symtab;
+   friend class DwarfWalker;
+   friend class Object;
+  public:
+   InlinedFunction(FunctionBase *parent);
+   virtual ~InlinedFunction();
 
-protected:
-    InlinedFunction(FunctionBase* parent);
-    ~InlinedFunction();
-    virtual Module* getModule() const { return module_; }
-
-public:
-    typedef std::vector<std::string>::const_iterator name_iter;
-    std::pair<std::string, Dyninst::Offset>          getCallsite();
-    virtual bool                                     removeSymbol(Symbol* sym);
-    virtual bool addMangledName(std::string name, bool isPrimary, bool isDebug = false);
-    virtual bool addPrettyName(std::string name, bool isPrimary, bool isDebug = false);
-    virtual std::string getName() const;
-    virtual Offset      getOffset() const;
-    virtual unsigned    getSize() const;
-    void                setFile(std::string filename);
-
-private:
-    size_t          callsite_file_number;
-    Dyninst::Offset callsite_line;
-    std::string     name_;
-    Module*         module_;
-    Dyninst::Offset offset_;
+   Module* getModule() const override { return module_; }
+   typedef std::vector<std::string>::const_iterator name_iter;
+   std::pair<std::string, Dyninst::Offset> getCallsite();
+   bool removeSymbol(Symbol *sym);
+   bool addMangledName(std::string name, bool isPrimary, bool isDebug=false) override;
+   bool addPrettyName(std::string name, bool isPrimary, bool isDebug=false) override;
+   std::string getName() const override;
+   Offset getOffset() const override;
+   unsigned getSize() const override;
+    void setFile(std::string filename);
+  private:
+   size_t callsite_file_number;
+   Dyninst::Offset callsite_line;
+   std::string name_;
+   Module* module_;
+   Dyninst::Offset offset_;
 };
 
 }  // namespace SymtabAPI

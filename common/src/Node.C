@@ -245,11 +245,9 @@ NodeIterator::operator==(const NodeIterator& rhs) const
     return iter_->equals(rhs.iter_);
 }
 
-NodeIterator&
-NodeIterator::operator=(const NodeIterator& rhs)
-{
-    if(iter_)
-        delete iter_;
+NodeIterator &NodeIterator::operator=(const NodeIterator &rhs) {
+    if(this == &rhs) return *this;
+    if (iter_) delete iter_;
     iter_ = rhs.copy();
     return *this;
 }

@@ -31,6 +31,8 @@
 #ifndef _EMITTER_AARCH64_H
 #define _EMITTER_AARCH64_H
 
+#include <assert.h>
+#include <vector>
 #include "common/src/headers.h"
 #include "dyninstAPI/src/instPoint.h"
 #include "dyninstAPI/src/baseTramp.h"

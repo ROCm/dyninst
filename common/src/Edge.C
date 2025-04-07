@@ -121,14 +121,11 @@ EdgeIterator::operator==(const EdgeIterator& rhs) const
     return iter_->equals(rhs.iter_);
 }
 
-EdgeIterator&
-EdgeIterator::operator=(const EdgeIterator& rhs)
-{
-    if(rhs.iter_ == NULL)
-    {
-        if(iter_)
-            delete iter_;  // No leaking!
-        iter_ = rhs.iter_;
+EdgeIterator &EdgeIterator::operator=(const EdgeIterator &rhs) {
+    if(this == &rhs) return *this;
+    if (rhs.iter_ == NULL) {
+        if (iter_) delete iter_; // No leaking!
+        iter_ = rhs.iter_; 
         return *this;
     }
     else

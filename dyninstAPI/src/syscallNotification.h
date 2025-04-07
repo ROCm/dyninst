@@ -55,9 +55,17 @@ private:
     PCProcess*   proc;
 
     // platform dependent
-    const char* getForkFuncName();
-    const char* getExecFuncName();
-    const char* getExitFuncName();
+    const char *getForkFuncName();
+    const char *getExecFuncName();
+    const char *getExitFuncName();
+    
+  public:
+    syscallNotification() :
+    preForkInst(NULL), postForkInst(NULL),
+    preExecInst(NULL), postExecInst(NULL),
+    preExitInst(NULL), preLwpExitInst(NULL),
+    proc(NULL)
+       { assert(0 && "ILLEGAL USE OF DEFAULT CONSTRUCTOR"); }
 
 public:
     syscallNotification()

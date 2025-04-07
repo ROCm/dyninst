@@ -30,12 +30,13 @@
 
 #include "ASTWidget.h"
 #include "dyninstAPI/src/ast.h"
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 #include "dyninstAPI/src/registerSpace.h"
 #include "dyninstAPI/src/instPoint.h"
 #include "../CodeBuffer.h"
 #include "CFG.h"
 #include <string>
+#include <iostream>
 #include "../CodeTracker.h"
 
 using namespace Dyninst;
@@ -70,12 +71,10 @@ ASTWidget::format() const
 }
 
 // Could be a lot smarter here...
-bool
-AstPatch::apply(codeGen& gen, CodeBuffer*)
-{
-    relocation_cerr << "\t\t AstPatch::apply" << endl;
-    registerSpace* localRegSpace = registerSpace::actualRegSpace(point);
-    gen.setRegisterSpace(localRegSpace);
+bool AstPatch::apply(codeGen &gen, CodeBuffer *) {
+  relocation_cerr << "\t\t AstPatch::apply" << std::endl;
+  registerSpace *localRegSpace = registerSpace::actualRegSpace(point);
+  gen.setRegisterSpace(localRegSpace);
 
     return ast->generateCode(gen, true);
 }

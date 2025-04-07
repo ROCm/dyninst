@@ -38,6 +38,7 @@
 #include "BPatch.h"
 #include <sstream>
 #include <string>
+#include <vector>
 
 class SnippetGenerator
 {
@@ -77,18 +78,20 @@ public:
     std::string getError() { return lastError.str(); }
     SGError     getErrorInfo() { return lastErrorInfo; }
 
-public:
-    SnippetGenerator()
-    : point(NULL)
-    , addSpace(NULL)
-    , image(NULL)
-    {}
-    SnippetGenerator(BPatch_point& pt)
-    : point(&pt)
-    {
-        addSpace = point->getAddressSpace();
-        image    = addSpace->getImage();
-    }
+  private:
+   std::stringstream lastError;
+   SGError lastErrorInfo{};
+   BPatch_point *point;
+   BPatch_addressSpace *addSpace;
+   BPatch_image *image;
+   
+   std::vector<BPatch_register> registers;
+  
+  public:
+   std::string getError() {return lastError.str();}
+   SGError getErrorInfo() {return lastErrorInfo;}
+  
+  public:
 
     SnippetGenerator(BPatch_addressSpace& aSpace)
     : addSpace(&aSpace)

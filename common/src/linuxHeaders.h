@@ -31,34 +31,38 @@
 #if !defined(_linux_headers_h)
 #    define _linux_headers_h
 
-#    include <assert.h>
-#    include <stdio.h>
-#    include <string.h>
-#    include <stdlib.h>
-#    include <errno.h>
-#    include <assert.h>
-#    include <fcntl.h>
-#    include <netinet/in.h>
-#    include <netdb.h>
-#    include <sys/types.h>
-#    include <sys/mman.h>
-#    include <sys/time.h>
-#    include <unistd.h>
-#    include <sys/file.h>
-#    include <sys/socket.h>
-#    include <sys/errno.h>
-#    include <sys/wait.h>
-#    include <signal.h>
-#    include <sys/ptrace.h>
-#    include <sys/resource.h>
-#    include <stdarg.h>
-#    include <time.h>
-#    include <sys/utsname.h>
-#    include <sys/stat.h>
-#    include <sys/un.h>
-#    include <sys/syscall.h>
+#include <stddef.h>
+#include <string>
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <sys/file.h>
+#include <sys/socket.h>
+#include <sys/errno.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <sys/ptrace.h>
+#include <sys/resource.h>
+#include <stdarg.h>
+#include <time.h>
+#include <sys/utsname.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <sys/syscall.h>
 
-#    include "compiler_annotations.h"
+#include "compiler_annotations.h"
+#include "dyntypes.h"
+#include "common/h/util.h"
 
 #    define PDSOCKET_ERROR (-1)
 typedef int PDSOCKET;
@@ -469,20 +473,33 @@ P_recv(int s, void* buf, int len, int flags)
 }
 
 /* Ugly */
-#    if 0
-inline long int P_ptrace(int req, pid_t pid, Address addr, Address data, int word_len = -1) {
-    if (word_len != -1 && word_len != sizeof(Address)) {
+#if 0
+inline long int P_ptrace(int req, pid_t pid, Dyninst::Address addr, Dyninst::Address data, int word_len = -1) {
+    if (word_len != -1 && word_len != sizeof(Dyninst::Address)) {
 	return (ptrace((enum __ptrace_request)req, pid, (uint32_t)addr, (uint32_t)data));
     } else {
 	return (ptrace((enum __ptrace_request)req, pid, addr, data));
     }
 }
-// long int P_ptrace(int req, pid_t pid, Address addr, Address data, int word_len);
-#    else
-inline long int
-P_ptrace(int req, pid_t pid, Address addr, Address data, int = -1)
-{
-    return (ptrace((enum __ptrace_request) req, pid, addr, data));
+// long int P_ptrace(int req, pid_t pid, Dyninst::Address addr, Dyninst::Address data, int word_len);
+#else
+inline long int P_ptrace(int req, pid_t pid, Dyninst::Address addr, Dyninst::Address data, int = -1) {
+	return (ptrace((enum __ptrace_request)req, pid, addr, data));}
+#endif
+
+inline int P_select(int wid, fd_set *rd, fd_set *wr, fd_set *ex,
+		    struct timeval *tm) {
+  return (select(wid, rd, wr, ex, tm));}
+
+inline int P_rexec(char **ahost, u_short inport, char *user,
+		   char *passwd, char *cmd, int *fd2p) {
+  return (rexec(ahost, inport, user, passwd, cmd, fd2p));}
+
+extern COMMON_EXPORT std::string P_cplus_demangle( const std::string &symbol,
+				bool includeTypes = false );
+
+inline int P_mkdir(const char *pathname, mode_t mode) {
+	return mkdir(pathname, mode);
 }
 #    endif
 

@@ -34,12 +34,12 @@
 #include "dwarfExprParser.h"
 #include "dwarfResult.h"
 #include "VariableLocation.h"
-#include "Types.h"
 #include "elfutils/libdw.h"
 #include <stdio.h>
 #include <iostream>
 #include "debug_common.h"  // dwarf_printf
 #include <libelf.h>
+#include "registers/abstract_regs.h"
 
 using namespace Dyninst;
 using namespace DwarfDyninst;
@@ -69,17 +69,15 @@ DwarfFrameParser::create(Dwarf* dbg, Elf* eh_frame, Architecture arch)
     }
 }
 
-DwarfFrameParser::DwarfFrameParser(Dwarf* dbg_, Elf* eh_frame, Architecture arch_)
-: dbg(dbg_)
-, dbg_eh_frame(eh_frame)
-, arch(arch_)
-,
-#ifndef BOOST_THREAD_PROVIDES_ONCE_CXX11
-fde_dwarf_once(BOOST_ONCE_INIT)
-,
-#endif
-fde_dwarf_status(dwarf_status_uninitialized)
-{}
+
+DwarfFrameParser::DwarfFrameParser(Dwarf * dbg_, Elf * eh_frame, Architecture arch_) :
+    dbg(dbg_),
+    dbg_eh_frame(eh_frame),
+    arch(arch_),
+    fde_dwarf_once(BOOST_ONCE_INIT),
+    fde_dwarf_status(dwarf_status_uninitialized)
+{
+}
 
 DwarfFrameParser::~DwarfFrameParser()
 {
@@ -346,8 +344,8 @@ DwarfFrameParser::getRegAtFrame(Address pc, Dyninst::MachRegister reg, DwarfResu
             }
 
             // translate dwarf reg to machine reg
-            // Dyninst::MachRegister dyn_register = MachRegister::DwarfEncToReg(dwarf_reg,
-            // arch); cons.readReg(dyn_register);
+            //Dyninst::MachRegister Register = MachRegister::DwarfEncToReg(dwarf_reg, arch);
+            //cons.readReg(Register);
 
             ConcreteDwarfResult aux_cdr;
             // if is concrete, add Deref as last operation if there isn't

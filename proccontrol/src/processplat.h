@@ -31,8 +31,14 @@
 #if !defined(PROCESSPLAT_H_)
 #    define PROCESSPLAT_H_
 
-#    include "int_process.h"
-#    include "resp.h"
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <utility>
+#include <vector>
+#include "int_process.h"
+#include "resp.h"
 
 class int_libraryTracking : virtual public int_process
 {

@@ -40,82 +40,89 @@ entryToCategory(entryID e)
 {
     switch(e)
     {
-        case e_ret_near:
-        case e_ret_far:
-        case aarch64_op_ret:
-            return c_ReturnInsn;
-        case amdgpu_op_s_endpgm:  // special treatment for endpgm
-            return c_GPUKernelExitInsn;
-        case e_call:
-        case aarch64_op_bl:
-        case aarch64_op_blr:
-            return c_CallInsn;
-        case e_jmp:
-        case e_jb:
-        case e_jb_jnaej_j:
-        case e_jbe:
-        case e_jcxz_jec:
-        case e_jl:
-        case e_jle:
-        case e_jmpe:
-        case e_jnb:
-        case e_jnb_jae_j:
-        case e_jnbe:
-        case e_jnl:
-        case e_jnle:
-        case e_jno:
-        case e_jnp:
-        case e_jns:
-        case e_jnz:
-        case e_jo:
-        case e_jp:
-        case e_js:
-        case e_jz:
-        case e_loop:
-        case e_loope:
-        case e_loopn:
-        case aarch64_op_b_uncond:
-        case aarch64_op_b_cond:
-        case aarch64_op_tbz:
-        case aarch64_op_tbnz:
-        case aarch64_op_cbz:
-        case aarch64_op_cbnz:
-        case aarch64_op_br:
+      switch(e)
+      {
+      case e_ret_near:
+      case e_ret_far:
+      case aarch64_op_ret:
+	return c_ReturnInsn;
+      case amdgpu_gfx908_op_S_ENDPGM: // special treatment for endpgm
+      case amdgpu_gfx90a_op_S_ENDPGM: // special treatment for endpgm
+      case amdgpu_gfx940_op_S_ENDPGM: // special treatment for endpgm
+    return c_GPUKernelExitInsn;
+      case e_call:
+      case aarch64_op_bl:
+      case aarch64_op_blr:
+	return c_CallInsn;
+      case e_jmp:
+      case e_jb:
+      case e_jb_jnaej_j:
+      case e_jbe:
+      case e_jcxz_jec:
+      case e_jl:
+      case e_jle:
+      case e_jae:
+      case e_jnb_jae_j:
+      case e_ja:
+      case e_jge:
+      case e_jg:
+      case e_jno:
+      case e_jnp:
+      case e_jns:
+      case e_jne:
+      case e_jo:
+      case e_jp:
+      case e_js:
+      case e_je:
+      case e_loop:
+      case e_loope:
+      case e_loopne:
+      case aarch64_op_b_uncond:
+      case aarch64_op_b_cond:
+      case aarch64_op_tbz:
+      case aarch64_op_tbnz:
+      case aarch64_op_cbz:
+      case aarch64_op_cbnz:
+      case aarch64_op_br: 
 #include "amdgpu_branchinsn_table.h"
-            return c_BranchInsn;
-        case e_cmp:
-        case e_cmppd:
-        case e_cmpps:
-        case e_cmpsb:
-        case e_cmpsd:
-        case e_cmpss:
-        case e_cmpsw:
-        case e_cmpxch:
-        case e_cmpxch8b:
-        case power_op_cmp:
-        case power_op_cmpi:
-        case power_op_cmpl:
-        case power_op_cmpli:
-            return c_CompareInsn;
-        case e_prefetch:
-        case e_prefetchNTA:
-        case e_prefetchT0:
-        case e_prefetchT1:
-        case e_prefetchT2:
-        case e_prefetch_w:
-        case e_prefetchw:
-            return c_PrefetchInsn;
-        case power_op_b:
-        case power_op_bc:
-        case power_op_bcctr:
-        case power_op_bclr:
-            return c_BranchInsn;
-        case e_sysenter:
-            return c_SysEnterInsn;
-        case e_syscall:
-            return c_SyscallInsn;
-        default:
-            return c_NoCategory;
+	return c_BranchInsn;
+          case e_cmp:
+          case e_cmppd:
+          case e_cmpps:
+          case e_cmpsb:
+          case e_cmpsd:
+          case e_cmpss:
+          case e_cmpsw:
+          case e_cmpxchg:
+          case e_cmpxchg8b:
+          case power_op_cmp:
+          case power_op_cmpi:
+          case power_op_cmpl:
+          case power_op_cmpli:
+              return c_CompareInsn;
+          case e_prefetch:
+          case e_prefetchnta:
+          case e_prefetcht0:
+          case e_prefetcht1:
+          case e_prefetcht2:
+          case e_prefetch_w:
+          case e_prefetchw:
+              return c_PrefetchInsn;
+          case power_op_b:
+          case power_op_bc:
+          case power_op_bcctr:
+          case power_op_bclr:
+              return c_BranchInsn;        
+      case e_sysenter:
+	return c_SysEnterInsn;
+      case e_syscall:
+      case e_int:
+    return c_SyscallInsn;
+          default:
+	return c_NoCategory;
+      }
+      
+
     }
 }
 

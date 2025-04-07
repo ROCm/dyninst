@@ -34,12 +34,12 @@
 #define UTIL_H
 
 #ifndef FILE__
-#    define FILE__ strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__
+#include <string.h>
+#define FILE__ strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__
 #endif
 
 #include <string>
 #include "common/src/headers.h"
-#include "common/src/Types.h"
 #include "common/src/stats.h"
 
 extern void

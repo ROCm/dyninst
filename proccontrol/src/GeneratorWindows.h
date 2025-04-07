@@ -28,7 +28,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #if !defined(GENERATOR_WINDOWS_H)
-#    define GENERATOR_WINDOWS_H
+#define GENERATOR_WINDOWS_H
+
+#include "Generator.h"
+#include "Event.h"
+#include "int_process.h"
+#include <sys/types.h>
+#include <vector>
+#include <map>
+#include <deque>
 
 #    include "Generator.h"
 #    include "Event.h"

@@ -38,10 +38,9 @@
 #include "os.h"
 #include "instPoint.h"
 #include "function.h"
+#include "Object.h"
 
 using namespace Dyninst::SymtabAPI;
-
-// #define USE_ADDRESS_MAPS
 
 // Reading and writing get somewhat interesting. We are building
 // a false address space - that of the "inferior" binary we're editing.
@@ -59,8 +58,8 @@ BinaryEdit::readTextSpace(const void* inOther, u_int size, void* inSelf)
     Address addr = (Address) inOther;
 
     // Look up this address in the code range tree of memory
-    codeRange* range = NULL;
-    if(!memoryTracker_->find(addr, range))
+    codeRange *range = NULL;
+    if (!memoryTracker_.find(addr, range))
         return false;
     assert(addr >= range->get_address());
 
@@ -83,49 +82,43 @@ BinaryEdit::writeTextSpace(void* inOther, u_int size, const void* inSelf)
     Address      local = (Address) inSelf;
     markDirty();
 
-    while(to_do)
-    {
-        // Look up this address in the code range tree of memory
-        codeRange* range = NULL;
-        if(!memoryTracker_->find(addr, range))
-        {
-            return false;
-        }
-
-        // We might (due to fragmentation) be overlapping multiple backing
-        // store "chunks", so this has to be iterative rather than a one-shot.
-
-        Address chunk_start = range->get_address();
-        Address chunk_end   = range->get_address() + range->get_size();
-
-        assert(addr >= chunk_start);
-
-        unsigned chunk_size = 0;
-        if((addr + to_do) <= chunk_end)
-        {
-            chunk_size = to_do;
-        }
-        else
-        {
-            chunk_size = chunk_end - addr;
-        }
-
-        Address offset = addr - range->get_address();
-        assert(offset < range->get_size());
-
-        void* local_ptr = ((void*) (offset + (Address) range->get_local_ptr()));
-        inst_printf("Copying to 0x%p [base=0x%p] from 0x%lx (%u bytes)  target=0x%lx  "
-                    "offset=0x%lx\n",
-                    local_ptr, range->get_local_ptr(), local, chunk_size, addr, offset);
-        // range->print_range();
-        memcpy(local_ptr, (void*) local, chunk_size);
-        memoryTracker* mt = dynamic_cast<memoryTracker*>(range);
-        assert(mt);
-        mt->dirty = true;
-
-        to_do -= chunk_size;
-        addr += chunk_size;
-        local += chunk_size;
+    while (to_do) {
+       // Look up this address in the code range tree of memory
+       codeRange *range = NULL;
+       if (!memoryTracker_.find(addr, range)) {
+          return false;
+       }
+       
+       // We might (due to fragmentation) be overlapping multiple backing
+       // store "chunks", so this has to be iterative rather than a one-shot.
+       
+       Address chunk_start = range->get_address();
+       Address chunk_end = range->get_address() + range->get_size();
+       
+       assert (addr >= chunk_start);
+       
+       unsigned chunk_size = 0;
+       if ((addr + to_do) <= chunk_end) {
+          chunk_size = to_do;
+       }
+       else {
+          chunk_size = chunk_end - addr;
+       }
+       
+       Address offset = addr - range->get_address();
+       assert(offset < range->get_size());
+       
+       void *local_ptr = ((void *) (offset + (Address)range->get_local_ptr()));
+       inst_printf("Copying to 0x%p [base=0x%p] from 0x%lx (%u bytes)  target=0x%lx  offset=0x%lx\n", 
+              local_ptr, range->get_local_ptr(), local, chunk_size, addr, offset);
+       memcpy(local_ptr, (void *)local, chunk_size);
+       memoryTracker* mt = dynamic_cast<memoryTracker*>(range);
+       assert(mt);
+       mt->dirty = true;
+       
+       to_do -= chunk_size;
+       addr += chunk_size;
+       local += chunk_size;
     }
 
     return true;
@@ -204,16 +197,12 @@ BinaryEdit::inferiorMalloc(unsigned size, inferiorHeapType /*ignored*/, Address 
                 return 0;
         }
         ret = inferiorMallocInternal(size, lo, hi, anyHeap);
-        if(ret)
-        {
-            memoryTracker* newTracker = new memoryTracker(ret, size);
-            newTracker->alloced       = true;
-            if(!memoryTracker_)
-                memoryTracker_ = new codeRangeTree();
-            memoryTracker_->insert(newTracker);
-
-            break;
-        }
+        if (ret) {
+	  memoryTracker *newTracker = new memoryTracker(ret, size);
+	  newTracker->alloced = true;
+	  memoryTracker_.insert(newTracker);
+	  break;
+	}
     }
 
     return ret;
@@ -224,16 +213,11 @@ BinaryEdit::inferiorFree(Address item)
 {
     inferiorFreeInternal(item);
 
-    codeRange* obj;
-    if(!memoryTracker_->find(item, obj))
-    {
-        // Warn the user?
-        return;
-    }
+  codeRange *obj{};
+  if(memoryTracker_.find(item, obj)) delete obj;
 
-    delete obj;
-
-    memoryTracker_->remove(item);
+  // Remove it from the tree
+  memoryTracker_.remove(item);
 }
 
 bool
@@ -245,19 +229,19 @@ BinaryEdit::inferiorRealloc(Address item, unsigned newsize)
 
     maxAllocedAddr();
 
-    codeRange* obj;
-    result = memoryTracker_->find(item, obj);
-    assert(result);
+  codeRange *obj;
+  result = memoryTracker_.find(item, obj);
+  assert(result);
 
-    memoryTracker_->remove(item);
+  memoryTracker_.remove(item);
 
     memoryTracker* mem_track = dynamic_cast<memoryTracker*>(obj);
     assert(mem_track);
 
     mem_track->realloc(newsize);
 
-    memoryTracker_->insert(obj);
-    return true;
+  memoryTracker_.insert(obj);
+  return true;
 }
 
 Architecture
@@ -294,14 +278,14 @@ BinaryEdit::multithread_ready(bool)
     return multithread_capable();
 }
 
-BinaryEdit::BinaryEdit()
-: highWaterMark_(0)
-, lowWaterMark_(0)
-, isDirty_(false)
-, memoryTracker_(NULL)
-, mobj(NULL)
-, multithread_capable_(false)
-, writing_(false)
+BinaryEdit::BinaryEdit() : 
+   highWaterMark_(0),
+   lowWaterMark_(0),
+   isDirty_(false),
+   memoryTracker_{},
+   mobj(NULL),
+   multithread_capable_(false),
+   writing_(false)
 {
     trapMapping.shouldBlockFlushes(true);
 }
@@ -317,7 +301,12 @@ BinaryEdit::~BinaryEdit()
     {
         delete rel;
     }
-    delete memoryTracker_;
+
+    std::vector<codeRange*> x;
+    memoryTracker_.elements(x);
+    for(auto const *c : x) {
+    	delete c;
+    }
 }
 
 BinaryEdit*
@@ -541,23 +530,7 @@ BinaryEdit::getAllDependencies(std::map<std::string, BinaryEdit*>& deps)
     return true;
 }
 
-#if 0  // KEVINTODO: I think this is redundant, SymtabAPI::emitWin.C does this
-static unsigned long addTrapTableSpace_win(AddressSpace *as)
-{
-#    if defined(os_windows)
-    return as->getAddressWidth() + 16;
-#    else
-    return 0;
-#    endif
-}
-
-void addTrapTable_win(newSectionPtr, Address tableAddr)
-{
-}
-#endif
-
-bool
-BinaryEdit::writeFile(const std::string& newFileName)
+bool BinaryEdit::writeFile(const std::string &newFileName) 
 {
     // Step 1: changes.
 
@@ -595,29 +568,18 @@ BinaryEdit::writeFile(const std::string& newFileName)
         trapMapping.flush();
     }
 
-    // Now, we need to copy in the memory of the new segments
-    for(unsigned i = 0; i < oldSegs.size(); i++)
-    {
-        codeRange* segRange = NULL;
-        if(!memoryTracker_->find(oldSegs[i]->getMemOffset(), segRange))
-        {
-#if 0
-            // Looks like BSS
-            if (newSegs[i].name == ".bss")
-#endif
-            continue;
-            // inst_printf (" segment name: %s\n", newSegs[i].name.c_str());
-            // assert(0);
-        }
-        // inst_printf(" ==> memtracker: Copying to 0x%lx from 0x%lx\n",
-        // newSegs[i].loadaddr, segRange->get_local_ptr());
-        memoryTracker* mt = dynamic_cast<memoryTracker*>(segRange);
-        assert(mt);
-        if(mt->dirty)
-        {
-            oldSegs[i]->setPtrToRawData(segRange->get_local_ptr(),
-                                        oldSegs[i]->getMemSize());
-        }
+      // Now, we need to copy in the memory of the new segments
+      for (unsigned i = 0; i < oldSegs.size(); i++) {
+         codeRange *segRange = NULL;
+         if (!memoryTracker_.find(oldSegs[i]->getMemOffset(), segRange)) {
+               continue;
+         }
+	 memoryTracker* mt = dynamic_cast<memoryTracker*>(segRange);
+	 assert(mt);
+	 if(mt->dirty) {
+            oldSegs[i]->setPtrToRawData(segRange->get_local_ptr(), oldSegs[i]->getMemSize());
+	 }
+      }
 
         // newSegs[i].data = segRange->get_local_ptr();
     }
@@ -627,10 +589,14 @@ BinaryEdit::writeFile(const std::string& newFileName)
     // Now we need to get the new stuff. That's all the allocated memory. First, big
     // buffer to hold it.  Use calloc so gaps from inferiorFree/Realloc are just zero.
 
-    void* newSectionPtr = calloc(highWaterMark_ - lowWaterMark_, 1);
+      std::vector<codeRange *> writes;
+      memoryTracker_.elements(writes);
 
-    std::vector<codeRange*> writes;
-    memoryTracker_->elements(writes);
+      for (unsigned i = 0; i < writes.size(); i++) {
+         assert(newSectionPtr);
+         memoryTracker *tracker = dynamic_cast<memoryTracker *>(writes[i]);
+         assert(tracker);
+         if (!tracker->alloced) continue;
 
     for(unsigned i = 0; i < writes.size(); i++)
     {
@@ -655,113 +621,53 @@ BinaryEdit::writeFile(const std::string& newFileName)
     // so skip it and see what we're talking about size-wise. Which should
     // be less than the highWaterMark, so we can double-check.
 
-    // Next, make a new section. We have the following parameters:
-    // Offset vaddr: we get this from Symtab - "first free address with sufficient space"
-    // std::string name: without reflection, ".dyninstInst"
-    // unsigned long flags: these are a SymtabAPI abstraction. We're going with text|data
-    // because
-    //    we might have both.
-    // bool loadable: heck yeah...
-
-    Region* newSec = NULL;
-    symObj->findRegion(newSec, ".dyninstInst");
-    if(newSec)
-    {
-        // We're re-instrumenting - will fail for now
-        fprintf(
-            stderr,
-            "ERROR:  unable to open/reinstrument previously instrumented binary %s!\n",
-            newFileName.c_str());
-        return false;
-    }
-
-    symObj->addRegion(lowWaterMark_, newSectionPtr, highWaterMark_ - lowWaterMark_,
-                      ".dyninstInst", Region::RT_TEXTDATA, true);
-
-    symObj->findRegion(newSec, ".dyninstInst");
-    assert(newSec);
-
-    if(mobj == getAOut())
-    {
-        // Add dynamic symbol relocations
-        for(unsigned i = 0; i < dependentRelocations.size(); i++)
-        {
-            Address to        = dependentRelocations[i]->getAddress();
-            Symbol* referring = dependentRelocations[i]->getReferring();
-            /*
-              if (!symObj->isStaticBinary() && !symObj->hasReldyn() &&
-              !symObj->hasReladyn()) { Address addr = referring->getOffset(); bool result
-              = writeDataSpace((void *) to, getAddressWidth(), &addr); assert(result);
-              continue;
-              }
-            */
-
+      
+      if (mobj == getAOut()) {
+         // Add dynamic symbol relocations
+         for (unsigned i=0; i < dependentRelocations.size(); i++) {
+            Address to = dependentRelocations[i]->getAddress();
+            Symbol *referring = dependentRelocations[i]->getReferring();
+               
             // Create the relocationEntry
-            relocationEntry localRel(
-                to, referring->getMangledName(), referring,
-                relocationEntry::getGlobalRelType(getAddressWidth(), referring));
-
-            /*
-              if( mobj->isSharedLib() ) {
-              localRel.setRelAddr(to - mobj->imageOffset());
-              }
-            */
-
+            relocationEntry localRel(to, referring->getMangledName(), referring,
+                                     relocationEntry::getGlobalRelType(getAddressWidth(), referring));
+	    
             symObj->addExternalSymbolReference(referring, newSec, localRel);
-
-            /*
-              newSymbol = new Symbol(referring->getName(),
-              Symbol::ST_FUNCTION,
-              Symbol::SL_GLOBAL,
-              Symbol::SV_DEFAULT,
-              (Address)0,
-              symObj->getDefaultModule(),
-              NULL,
-              8,
-              true,
-              false);
-              symObj->addSymbol(newSymbol, referring);
-              if (!symObj->hasReldyn() && symObj->hasReladyn()) {
-              newSec->addRelocationEntry(to, newSymbol, relocationEntry::dynrel,
-              Region::RT_RELA); } else { newSec->addRelocationEntry(to, newSymbol,
-              relocationEntry::dynrel);
-              }
-            */
-        }
-    }
-
-    std::vector<Symbol*> newSyms;
-    buildDyninstSymbols(newSyms, newSec,
-                        symObj->getOrCreateModule("dyninstInst", lowWaterMark_));
-    for(unsigned i = 0; i < newSyms.size(); i++)
-    {
-        symObj->addSymbol(newSyms[i]);
-    }
-
-    // Okay, now...
-    // Hand textSection and newSection to DynSymtab.
-
-    // First, textSection.
-
-    // From the SymtabAPI documentation: we have the following methods we want to use.
-    // Symtab::addSection(Offset vaddr, void *data, unsigned int dataSize, std::string
-    // name,
-    //                    unsigned long flags, bool loadable)
-    // Symtab::updateCode(void *buffer, unsigned size)
-    // Symtab::emit(std::string filename)
-
-    // First, text
-    assert(symObj);
-
-    // And now we generate the new binary
-    // if (!symObj->emit(newFileName.c_str())) {
-    if(!symObj->emit(newFileName.c_str()))
-    {
-        SymtabError lastError = Symtab::getLastSymtabError();
-        showErrorCallback(109, Symtab::printError(lastError));
-        return false;
-    }
-    return true;
+         }
+      }
+      
+      std::vector<Symbol *> newSyms;
+      auto *mod = symObj->getContainingModule(lowWaterMark_);
+      if(!mod) {
+	  mod = new Module(lang_Unknown, lowWaterMark_, "dyninstInst", symObj);
+	  symObj->getObject()->addModule(mod);
+      }
+      buildDyninstSymbols(newSyms, newSec, mod);
+      for (unsigned i = 0; i < newSyms.size(); i++) {
+         symObj->addSymbol(newSyms[i]);
+      }
+      
+      // Okay, now...
+      // Hand textSection and newSection to DynSymtab.
+        
+      // First, textSection.
+        
+      // From the SymtabAPI documentation: we have the following methods we want to use.
+      // Symtab::addSection(Offset vaddr, void *data, unsigned int dataSize, std::string name, 
+      //                    unsigned long flags, bool loadable)
+      // Symtab::updateCode(void *buffer, unsigned size)
+      // Symtab::emit(std::string filename)
+        
+      // First, text
+      
+      
+      // And now we generate the new binary
+      if (!symObj->emit(newFileName.c_str())) {
+         SymtabError lastError = Symtab::getLastSymtabError();
+         showErrorCallback(109, Symtab::printError(lastError));
+         return false;
+      }
+   return true;
 }
 
 Address
@@ -784,13 +690,7 @@ BinaryEdit::inferiorMallocStatic(unsigned size)
 {
     // Should be set by now
     assert(highWaterMark_ != 0);
-
-#if defined(USE_ADDRESS_MAPS)
-    void* buf = malloc(size);
-    if(!buf)
-        return false;
-#endif
-
+    
     Address newStart = highWaterMark_;
 
     // If there is a free heap that _ends_ at the highWaterMark,
@@ -831,23 +731,30 @@ BinaryEdit::createMemoryBackingStore(mapped_object* obj)
     vector<Region*> regs;
     symObj->getAllRegions(regs);
 
-    for(unsigned i = 0; i < regs.size(); i++)
-    {
-        memoryTracker* newTracker = NULL;
-        if(regs[i]->getRegionType() == Region::RT_BSS || (regs[i]->getMemSize() == 0))
-        {
-            continue;
-        }
-        else
-        {
-            newTracker = new memoryTracker(regs[i]->getMemOffset(), regs[i]->getMemSize(),
+   for (unsigned i = 0; i < regs.size(); i++) {
+      if (regs[i]->getRegionType() == Region::RT_BSS || (regs[i]->getMemSize() == 0))
+      {
+         continue;
+      }
+      auto *newTracker = new memoryTracker(regs[i]->getMemOffset(),
+                                           regs[i]->getMemSize(),
                                            regs[i]->getPtrToRawData());
-        }
-        newTracker->alloced = false;
-        if(!memoryTracker_)
-            memoryTracker_ = new codeRangeTree();
-        memoryTracker_->insert(newTracker);
-    }
+      newTracker->alloced = false;
+      memoryTracker_.insert(newTracker);
+   }
+   return true;
+}
+
+
+bool BinaryEdit::initialize() {
+   //Load the RT library
+   
+   // Create the tramp guard
+   
+   // Initialization. For now we're skipping threads, since we can't
+   // get the functions we need. However, we kinda need the recursion
+   // guard. This is an integer (one per thread, for now - 1) that 
+   // begins initialized to 1.
 
     return true;
 }

@@ -31,11 +31,13 @@
 #if !defined(DWARF_EXPR_H)
 #    define DWARF_EXPR_H
 
-#    include <stack>
-#    include "dyn_regs.h"
-#    include "elfutils/libdw.h"
-#    include "dwarf.h"
-#    include "util.h"
+#include <stack>
+#include "Architecture.h"
+#include "elfutils/libdw.h"
+#include "dwarf.h"
+#include "util.h"
+
+namespace Dyninst {
 
 namespace Dyninst
 {

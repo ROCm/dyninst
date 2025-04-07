@@ -44,6 +44,12 @@
 #include <dlfcn.h>
 #include <string>
 
+#include <exception>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "boost/shared_ptr.hpp"
 
 #include "pcEventMuxer.h"
@@ -194,9 +200,8 @@ PCEventMuxer::useCallback(Dyninst::ProcControlAPI::EventType et)
 
 namespace
 {
-
 template <typename ContainerT = std::vector<std::string>,
-          typename PredicateT = std::function<std::string(const std::string&)>>
+          typename PredicateT = std::string (*)(const std::string&)>
 inline ContainerT
 delimit(
     const std::string& line, const std::string& delimiters = ":",
@@ -225,7 +230,8 @@ delimit(
         } catch(std::exception& e)
         {
             // print the exception but don't fail, unless maybe it should?
-            fprintf(stderr, "%s\n", e.what());
+            fprintf(stderr, "[%s:%i] %s (delimiters: %s) :: %s\n", __FILE__, __LINE__,
+                    line.c_str(), delimiters.c_str(), e.what());
         }
         // don't add empty strings
         if(!_tmp.empty())
@@ -235,7 +241,7 @@ delimit(
     }
     return _result;
 }
-}
+}  // namespace
 
 bool
 BinaryEdit::getResolvedLibraryPath(const string& filename, std::vector<string>& paths)
@@ -328,7 +334,7 @@ BinaryEdit::getResolvedLibraryPath(const string& filename, std::vector<string>& 
                     auto _v = _data.str();
                     if(!_v.empty())
                     {
-                        _v          = _v.substr(_v.find_first_not_of(" \t"));
+                        _v = _v.substr(_v.find_first_not_of(" \t"));
                         if(_v.length() > 1)
                         {
                             auto _entry = _get_entry(_v.substr(0, _v.length() - 1));

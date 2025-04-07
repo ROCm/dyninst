@@ -318,10 +318,10 @@ BPatch_addressSpace::deleteSnippet(BPatchSnippetHandle* handle)
         return false;
     }
 
-    mal_printf("deleting snippet handle from func at %lx, point at %lx of type %d\n",
-               (Address) handle->getFunc()->getBaseAddr(),
-               handle->instances_.empty() ? 0 : handle->instances_[0]->point()->addr(),
-               handle->instances_.empty() ? -1 : handle->instances_[0]->point()->type());
+   mal_printf("deleting snippet handle from func at %lx, point at %lx of type %d\n",
+              (Address)handle->getFunc()->getBaseAddr(), 
+              handle->instances_.empty() ? 0 : handle->instances_[0]->point()->addr(),
+              handle->instances_.empty() ? -1 : static_cast<int>(handle->instances_[0]->point()->type()));
 
     // if this is a process, check to see if the instrumentation is
     // executing on the call stack
@@ -1058,15 +1058,10 @@ BPatch_addressSpace::init_registers()
 #    endif
 }
 
-bool
-BPatch_addressSpace::getRegisters(std::vector<BPatch_register>& regs)
-{
-    init_registers();
-    regs = registers_;
-    return true;
-
-    regs = registers_;
-    return true;
+bool BPatch_addressSpace::getRegisters(std::vector<BPatch_register> &regs) {
+   init_registers();
+   regs = registers_;
+   return true;
 }
 BPatch_addressSpace::register_iter
 BPatch_addressSpace::getRegisters_begin()

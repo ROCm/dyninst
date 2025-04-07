@@ -32,6 +32,20 @@
 #include "dataflowAPI/src/RegisterMap.h"
 #include <stdio.h>
 
+#if defined(arch_x86) || defined(arch_x86_64)
+#  include "registers/x86_regs.h"
+#  include "registers/x86_64_regs.h"
+#endif
+
+#if defined(arch_power)
+#  include "registers/ppc32_regs.h"
+#  include "registers/ppc64_regs.h"
+#endif
+
+#if defined(arch_aarch64)
+#  include "registers/aarch64_regs.h"
+#endif
+
 using namespace Dyninst;
 using namespace DataflowAPI;
 
@@ -99,9 +113,13 @@ ABI::getABI(int addr_width)
         globalABI64_->index      = &machRegIndex_aarch64();
 #endif
 
-        initialize32();
-#if defined(cap_32_64)
-        initialize64();
+// We _only_ support instrumenting 32-bit binaries on 64-bit systems
+#if !defined arch_64bit || defined cap_32_64
+	initialize32();
+#endif
+
+#ifdef arch_64bit
+	initialize64();
 #endif
     }
     return (addr_width == 4) ? globalABI_ : globalABI64_;
@@ -585,15 +603,7 @@ ABI::initialize64()
 
 //#warning "This is not verified!"
 #if defined(arch_aarch64)
-void
-ABI::initialize32()
-{
-    return;
-}
-
-void
-ABI::initialize64()
-{
+void ABI::initialize64(){
     RegisterMap aarch64Map = machRegIndex_aarch64();
     int         sz         = aarch64Map.size();
 

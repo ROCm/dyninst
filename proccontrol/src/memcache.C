@@ -215,18 +215,15 @@ memCache::markToken(token_t tk)
     if(!proc->plat_needsAsyncIO())
         return;
 
-    mcache_t::iterator i;
-    for(i = mem_cache.begin(); i != mem_cache.end(); i++)
-    {
-        if((*i)->token_type != tk)
-            continue;
-        last_operation = i;
-        return;
-    }
-    memEntry* newEntry = new memEntry(tk);
-    mem_cache.push_back(newEntry);
-    last_operation = mem_cache.end();
-    last_operation--;
+   mem_cache.push_back(new memEntry(me, me->buffer));
+   last_operation = mem_cache.end();
+   last_operation--;
+
+   if (!resp->isReady()) {
+      return aret_async;
+   }
+
+   return aret_success;
 }
 
 void

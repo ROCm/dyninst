@@ -31,7 +31,11 @@
 #if !defined(UNIX_H_)
 #    define UNIX_H_
 
-#    include "int_process.h"
+#include <map>
+#include <stddef.h>
+#include <string>
+#include <vector>
+#include "int_process.h"
 
 /**
  * For our purposes, a UNIX process is one that supports fork/exec.

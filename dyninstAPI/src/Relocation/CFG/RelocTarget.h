@@ -31,8 +31,13 @@
 #if !defined(_R_E_TARGET_H_)
 #    define _R_E_TARGET_H_
 
-#    include "../Widgets/Widget.h"
-#    include "RelocBlock.h"
+#include <assert.h>
+#include <string>
+#include "../Widgets/Widget.h"
+#include "RelocBlock.h"
+
+namespace Dyninst {
+namespace Relocation {
 
 namespace Dyninst
 {

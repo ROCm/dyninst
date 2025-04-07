@@ -31,12 +31,15 @@
 #if !defined(Absloc_Interface_H)
 #    define Absloc_Interface_H
 
-#    include "Instruction.h"
-#    include "Register.h"
-#    include "Expression.h"
-#    include "Operand.h"
-#    include "Absloc.h"
-#    include "util.h"
+#include <map>
+#include <vector>
+
+#include "Register.h"
+#include "Instruction.h"
+#include "Expression.h"
+#include "Operand.h"
+#include "Absloc.h"
+#include "util.h"
 
 class int_function;
 class BPatch_function;

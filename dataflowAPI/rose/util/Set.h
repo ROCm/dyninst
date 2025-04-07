@@ -11,6 +11,8 @@
 #include "Interval.h"
 #include "Sawyer.h"
 
+#include <memory>
+#include <stddef.h>
 #include <boost/foreach.hpp>
 #include <boost/range/iterator_range.hpp>
 #include <set>
@@ -83,7 +85,7 @@ public:
 
     template<class InputIterator>
     explicit Set(const boost::iterator_range<InputIterator> &range,
-                 const Comparator &comparator = Comparator(), const Allocator &allocator = Allocator())
+                 const Comparator &/*comparator*/ = Comparator(), const Allocator &/*allocator*/ = Allocator())
         : set_(range.begin(), range.end()) {}
     /** @} */
 

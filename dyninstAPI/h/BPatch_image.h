@@ -41,6 +41,8 @@
 #include "BPatch_parRegion.h"
 #include "dyntypes.h"
 
+#include <string>
+#include <utility>
 #include <vector>
 #include <map>
 
@@ -297,12 +299,8 @@ private:
     void           removeObject(BPatch_object* obj);
     void           removeAllModules();
 
-#if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4251)
-#endif
-    typedef std::map<mapped_module*, BPatch_module*> ModMap;
-    typedef std::map<mapped_object*, BPatch_object*> ObjMap;
+  typedef std::map<mapped_module *,  BPatch_module *> ModMap;
+  typedef std::map<mapped_object *,  BPatch_object *> ObjMap;
 
     ModMap modmap;
     ObjMap objmap;
@@ -310,11 +308,8 @@ private:
     // Annoying backwards-compatible return type
     std::vector<BPatch_module*> modlist;
 
-    BPatch_Vector<BPatch_module*> removed_list;
-    BPatch_Vector<BPatch_point*>  unresolvedCF;
-#if defined(_MSC_VER)
-#    pragma warning(pop)
-#endif
+  BPatch_Vector<BPatch_module *> removed_list;
+  BPatch_Vector<BPatch_point *> unresolvedCF;
 
     // These private "find" functions convert from internal func_instance
     // representation to the exported BPatch_Function type

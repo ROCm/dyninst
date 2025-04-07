@@ -57,6 +57,9 @@
 
 #include "boost/tuple/tuple.hpp"
 
+/* once flag for the warning of unimplemented symbolic expansion */
+#include <mutex>
+
 using namespace std;
 using namespace Dyninst;
 using namespace InstructionAPI;
@@ -573,34 +576,71 @@ SymEval::expandInsn(const Instruction& insn, const uint64_t addr, Result_t& res)
 
             exp.expandAarch64(roseInsn.get(), ops, insn.format());
 
-            break;
-        }
-        case Arch_amdgpu_vega: {
-            RoseInsnAmdgpuVegaFactory fac(Arch_amdgpu_vega);
-            auto roseInsn = std::unique_ptr<SgAsmInstruction>(fac.convert(insn, addr));
-            if(!roseInsn)
-                return false;
+                               break;
+                           }
+    case Arch_amdgpu_gfx908: {
 
-            SymbolicExpansion         exp;
-            const RegisterDictionary* reg_dict =
-                RegisterDictionary::dictionary_amdgpu_vega();
+        RoseInsnAMDGPUFactory fac(Arch_amdgpu_gfx908);
+        auto roseInsn = std::unique_ptr<SgAsmInstruction>(fac.convert(insn, addr));
+        if (!roseInsn) return false;
 
-            BaseSemantics::SValuePtr protoval = SymEvalSemantics::SValue::instance(1, 0);
-            BaseSemantics::RegisterStatePtr registerState =
-                SymEvalSemantics::RegisterStateAST_AMDGPU_VEGA::instance(protoval,
-                                                                         reg_dict);
-            BaseSemantics::MemoryStatePtr memoryState =
-                SymEvalSemantics::MemoryStateAST::instance(protoval, protoval);
-            BaseSemantics::StatePtr state = SymEvalSemantics::StateAST::instance(
-                res, addr, insn.getArch(), insn, registerState, memoryState);
-            BaseSemantics::RiscOperatorsPtr ops =
-                SymEvalSemantics::RiscOperatorsAST::instance(state);
-            exp.expandAmdgpuVega(roseInsn.get(), ops, insn.format());
+        SymbolicExpansion exp;
+        const RegisterDictionary *reg_dict = RegisterDictionary::dictionary_amdgpu();
 
-            break;
-        }
+        BaseSemantics::SValuePtr protoval = SymEvalSemantics::SValue::instance(1, 0);
+        BaseSemantics::RegisterStatePtr registerState = SymEvalSemantics::RegisterStateAST_amdgpu_gfx908::instance(protoval, reg_dict);
+        BaseSemantics::MemoryStatePtr memoryState = SymEvalSemantics::MemoryStateAST::instance(protoval, protoval);
+        BaseSemantics::StatePtr state = SymEvalSemantics::StateAST::instance(res, addr, insn.getArch(), insn, registerState, memoryState);
+        BaseSemantics::RiscOperatorsPtr ops = SymEvalSemantics::RiscOperatorsAST::instance(state);
+        exp.expandAMDGPU(roseInsn.get(), ops, insn.format());
+
+        break;
+    }
+    case Arch_amdgpu_gfx90a: {
+
+        RoseInsnAMDGPUFactory fac(Arch_amdgpu_gfx90a);
+        auto roseInsn = std::unique_ptr<SgAsmInstruction>(fac.convert(insn, addr));
+        if (!roseInsn) return false;
+
+        SymbolicExpansion exp;
+        const RegisterDictionary *reg_dict = RegisterDictionary::dictionary_amdgpu();
+
+        BaseSemantics::SValuePtr protoval = SymEvalSemantics::SValue::instance(1, 0);
+        BaseSemantics::RegisterStatePtr registerState = SymEvalSemantics::RegisterStateAST_amdgpu_gfx90a::instance(protoval, reg_dict);
+        BaseSemantics::MemoryStatePtr memoryState = SymEvalSemantics::MemoryStateAST::instance(protoval, protoval);
+        BaseSemantics::StatePtr state = SymEvalSemantics::StateAST::instance(res, addr, insn.getArch(), insn, registerState, memoryState);
+        BaseSemantics::RiscOperatorsPtr ops = SymEvalSemantics::RiscOperatorsAST::instance(state);
+        exp.expandAMDGPU(roseInsn.get(), ops, insn.format());
+
+        break;
+    }
+    case Arch_amdgpu_gfx940: {
+
+        RoseInsnAMDGPUFactory fac(Arch_amdgpu_gfx940);
+        auto roseInsn = std::unique_ptr<SgAsmInstruction>(fac.convert(insn, addr));
+        if (!roseInsn) return false;
+
+        SymbolicExpansion exp;
+        const RegisterDictionary *reg_dict = RegisterDictionary::dictionary_amdgpu();
+
+        BaseSemantics::SValuePtr protoval = SymEvalSemantics::SValue::instance(1, 0);
+        BaseSemantics::RegisterStatePtr registerState = SymEvalSemantics::RegisterStateAST_amdgpu_gfx940::instance(protoval, reg_dict);
+        BaseSemantics::MemoryStatePtr memoryState = SymEvalSemantics::MemoryStateAST::instance(protoval, protoval);
+        BaseSemantics::StatePtr state = SymEvalSemantics::StateAST::instance(res, addr, insn.getArch(), insn, registerState, memoryState);
+        BaseSemantics::RiscOperatorsPtr ops = SymEvalSemantics::RiscOperatorsAST::instance(state);
+        exp.expandAMDGPU(roseInsn.get(), ops, insn.format());
+
+        break;
+    }
+
         default:
-            assert(0 && "Unimplemented symbolic expansion architecture");
+            /* once per arch would be better, but ... */
+            static std::once_flag arch_warning_flag;
+            std::call_once(arch_warning_flag, [&]{
+                cerr << "Unimplemented symbolic expansion architecture: " << insn.getArch() << endl;
+            }
+            );
+            return false;
             break;
     }
 

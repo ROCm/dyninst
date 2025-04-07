@@ -50,7 +50,7 @@
 #include "common/src/parseauxv.h"
 #include "common/src/headers.h"
 #include "common/src/pathName.h"
-
+#include "common/src/vm_maps.h"
 #include "common/src/addrtranslate.h"
 #include "common/src/addrtranslate-sysv.h"
 
@@ -967,7 +967,7 @@ FCNode::FCNode(string f, dev_t d, ino_t i, SymbolReaderFactory* factory_)
 , symreader(NULL)
 , factory(factory_)
 {
-    filename = std::move(resolve_file_path(std::move(f)));
+   filename = resolve_file_path(std::move(f));
 }
 
 string
@@ -1169,22 +1169,27 @@ AddressTranslateSysV::adjustForAddrSpaceWrap(Address base, std::string name)
     if(fd == -1)
         return base;
 
-    lseek(fd, 0, SEEK_SET);
-    Elf32_Ehdr e_hdr;
-    if(read(fd, &e_hdr, sizeof(e_hdr)) != sizeof(e_hdr))
-        return base;
+   lseek(fd, 0, SEEK_SET);
+   Elf32_Ehdr e_hdr;
+   if (read(fd, &e_hdr, sizeof(e_hdr)) != sizeof(e_hdr)) {
+     close(fd);
+     return base;
+   }
 
-    if(e_hdr.e_phoff == 0)
-        return base;
+   if (e_hdr.e_phoff == 0) {
+     close(fd);
+     return base;
+   }
 
     lseek(fd, e_hdr.e_phoff, SEEK_SET);
 
-    Address codeOffset = 0;
-    while(true)
-    {
-        Elf32_Phdr p_hdr;
-        if(read(fd, &p_hdr, sizeof(p_hdr)) != sizeof(p_hdr))
-            return base;
+   Address codeOffset = 0;
+   while (true) {
+      Elf32_Phdr p_hdr;
+      if (read(fd, &p_hdr, sizeof(p_hdr)) != sizeof(p_hdr)) {
+        close(fd);
+        return base;
+      }
 
         Address  p_vaddr = p_hdr.p_vaddr;
         unsigned type    = p_hdr.p_type;

@@ -34,13 +34,12 @@
 #include "../rose/SgAsmInstruction.h"
 #include "../rose/SgAsmPowerpcInstruction.h"
 #include "../rose/SgAsmx86Instruction.h"
-#include "../rose/SgAsmAmdgpuVegaInstruction.h"
 
 #include "../rose/x86InstructionSemantics.h"
 #include "../rose/x86_64InstructionSemantics.h"
 
 #include "../rose/semantics/DispatcherARM64.h"
-#include "../rose/semantics/DispatcherAmdgpuVega.h"
+#include "../rose/semantics/DispatcherAMDGPU.h"
 #include "../rose/semantics/DispatcherPowerpc.h"
 
 using namespace Dyninst;
@@ -73,12 +72,10 @@ SymbolicExpansion::expandX86_64(SgAsmInstruction* rose_insn, SymEvalPolicy_64& p
     return true;
 }
 
-bool
-SymbolicExpansion::expandPPC32(SgAsmInstruction*               rose_insn,
-                               BaseSemantics::RiscOperatorsPtr ops,
-                               const std::string&              insn_dump)
-{
-    SgAsmPowerpcInstruction* insn = static_cast<SgAsmPowerpcInstruction*>(rose_insn);
+bool SymbolicExpansion::expandPPC32(SgAsmInstruction *rose_insn,
+                                    BaseSemantics::RiscOperatorsPtr ops, 
+				    const std::string &/*insn_dump*/) {
+    SgAsmPowerpcInstruction *insn = static_cast<SgAsmPowerpcInstruction *>(rose_insn);
 
     BaseSemantics::DispatcherPtr cpu = DispatcherPowerpc::instance(ops, 32);
 
@@ -93,12 +90,10 @@ SymbolicExpansion::expandPPC32(SgAsmInstruction*               rose_insn,
 
     return true;
 }
-bool
-SymbolicExpansion::expandPPC64(SgAsmInstruction*               rose_insn,
-                               BaseSemantics::RiscOperatorsPtr ops,
-                               const std::string&              insn_dump)
-{
-    SgAsmPowerpcInstruction* insn = static_cast<SgAsmPowerpcInstruction*>(rose_insn);
+bool SymbolicExpansion::expandPPC64(SgAsmInstruction *rose_insn,
+                                    BaseSemantics::RiscOperatorsPtr ops, 
+				    const std::string &/*insn_dump*/) {
+    SgAsmPowerpcInstruction *insn = static_cast<SgAsmPowerpcInstruction *>(rose_insn);
 
     BaseSemantics::DispatcherPtr cpu = DispatcherPowerpc::instance(ops, 64);
 
@@ -115,12 +110,8 @@ SymbolicExpansion::expandPPC64(SgAsmInstruction*               rose_insn,
     return true;
 }
 
-bool
-SymbolicExpansion::expandAarch64(SgAsmInstruction*               rose_insn,
-                                 BaseSemantics::RiscOperatorsPtr ops,
-                                 const std::string&              insn_dump)
-{
-    SgAsmArmv8Instruction* insn = static_cast<SgAsmArmv8Instruction*>(rose_insn);
+bool SymbolicExpansion::expandAarch64(SgAsmInstruction *rose_insn, BaseSemantics::RiscOperatorsPtr ops, const std::string &/*insn_dump*/) {
+    SgAsmArmv8Instruction *insn = static_cast<SgAsmArmv8Instruction *>(rose_insn);
 
     BaseSemantics::DispatcherPtr cpu = DispatcherARM64::instance(ops, 64);
 
@@ -136,15 +127,11 @@ SymbolicExpansion::expandAarch64(SgAsmInstruction*               rose_insn,
     return false;
 }
 
-bool
-SymbolicExpansion::expandAmdgpuVega(SgAsmInstruction*               rose_insn,
-                                    BaseSemantics::RiscOperatorsPtr ops,
-                                    const std::string&              insn_dump)
-{
-    SgAsmAmdgpuVegaInstruction* insn =
-        static_cast<SgAsmAmdgpuVegaInstruction*>(rose_insn);
 
-    BaseSemantics::DispatcherPtr cpu = DispatcherAmdgpuVega::instance(ops, 64);
+bool SymbolicExpansion::expandAMDGPU(SgAsmInstruction *rose_insn, BaseSemantics::RiscOperatorsPtr ops, const std::string &/*insn_dump*/) {
+    SgAsmAMDGPUInstruction *insn = static_cast<SgAsmAMDGPUInstruction *>(rose_insn);
+
+    BaseSemantics::DispatcherPtr cpu = DispatcherAMDGPU::instance(ops, 64);
 
     try
     {

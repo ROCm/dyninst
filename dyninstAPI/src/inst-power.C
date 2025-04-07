@@ -293,28 +293,27 @@ unsigned
 registerSpace::SPR(Register x)
 {
     // Encodings from architecture manual
-    switch((powerRegisters_t) x)
-    {
-        case xer:
-            return SPR_XER;
-            break;
-        case lr:
-            return SPR_LR;
-            break;
-        case ctr:
-            return SPR_CTR;
-            break;
-        case mq:
-            return SPR_MQ;
-            break;
-        case cr:
-            fprintf(stderr, "Error: condition register has no encoding!\n");
-            return REG_NULL;
-            break;
-        default:
-            assert(0);
-            return REG_NULL;
-            break;
+    switch ((powerRegisters_t) x) {
+    case xer:
+        return SPR_XER;
+        break;
+    case lr:
+        return SPR_LR;
+        break;
+    case ctr:
+        return SPR_CTR;
+        break;
+    case mq:
+        return SPR_MQ;
+        break;
+    case cr:
+        fprintf(stderr, "Error: condition register has no encoding!\n");
+        return Null_Register;
+        break;
+    default:
+        assert(0);
+        return Null_Register;
+        break;
     }
 }
 
@@ -920,12 +919,13 @@ restoreSPRegisters(codeGen& gen, registerSpace*, int save_off, int force_save)
         fpscr_off = STK_FP_CR_64;
     }
 
-    registerSlot* regCR = (*(gen.rs()))[registerSpace::cr];
-    assert(regCR != NULL);
-    if(force_save || regCR->liveState == registerSlot::spilled)
+    restoreFPSCR(gen, 10, save_off + fpscr_off); num_restored++;
+
+    registerSlot *regXER = (*(gen.rs()))[registerSpace::xer];
+    assert (regXER != NULL);
+    if (force_save || regXER->liveState == registerSlot::spilled)
     {
-        restoreCR(gen, 10, save_off + cr_off);
-        num_restored++;
+    restoreSPR(gen, 10, SPR_XER, save_off + xer_off); num_restored++;
     }
     registerSlot* regCTR = (*(gen.rs()))[registerSpace::ctr];
     assert(regCTR != NULL);
@@ -934,15 +934,12 @@ restoreSPRegisters(codeGen& gen, registerSpace*, int save_off, int force_save)
         restoreSPR(gen, 10, SPR_CTR, save_off + ctr_off);
         num_restored++;
     }
-    registerSlot* regXER = (*(gen.rs()))[registerSpace::xer];
-    assert(regXER != NULL);
-    if(force_save || regXER->liveState == registerSlot::spilled)
+    registerSlot *regCR = (*(gen.rs()))[registerSpace::cr];
+    assert (regCR != NULL);
+    if (force_save || regCR->liveState == registerSlot::spilled)
     {
-        restoreSPR(gen, 10, SPR_XER, save_off + xer_off);
-        num_restored++;
+    restoreCR(gen, 10, save_off + cr_off); num_restored++;
     }
-    restoreFPSCR(gen, 10, save_off + fpscr_off);
-    num_restored++;
 
     return num_restored;
 }
@@ -1257,7 +1254,7 @@ EmitterPOWER::emitCallReplacement(opCode ocode, codeGen& gen, bool /* noCost */,
     }
 
     // What to return here?
-    return REG_NULL;
+    return Null_Register;
 }
 
 // Register EmitterPOWER::emitCallReplacementLR(opCode ocode,
@@ -1310,7 +1307,7 @@ EmitterPOWER::emitCallReplacement(opCode ocode, codeGen& gen, bool /* noCost */,
 //     }
 
 //     // What to return here?
-//     return REG_NULL;
+//     return Null_Register;
 // }
 // There are four "axes" going on here:
 // 32 bit vs 64 bit
@@ -1447,23 +1444,33 @@ EmitterPOWER::emitCall(opCode ocode, codeGen& gen,
                 Register dummyReg = gen.rs()->allocateRegister(gen, noCost);
                 srcs.push_back(dummyReg);
 
-                insnCodeGen::generateImm(gen, CALop, dummyReg, 0, 0);
-            }
-        */
-        // Register src = REG_NULL;
+	    insnCodeGen::generateImm(gen, CALop, dummyReg, 0, 0);
+	}
+*/
+	//Register src = Null_Register;
         // Try to target the code generation
-
-        Register reg = REG_NULL;
+        
+        Register reg = Null_Register;
         // Try to allocate the correct parameter register
         if(gen.rs()->allocateSpecificRegister(gen, registerSpace::r3 + u, true))
             reg = registerSpace::r3 + u;
-        // fprintf(stderr, "info: %s:%d: Register: %d \n", __FILE__, __LINE__, reg);
-        Address unused = ADDR_NULL;
-        if(!operands[u]->generateCode_phase2(gen, false, unused, reg))
-            assert(0);
-        assert(reg != REG_NULL);
-        srcs.push_back(reg);
-        // bperr( "Generated operand %d, base %d\n", u, base);
+             //fprintf(stderr, "info: %s:%d: Register: %d \n", __FILE__, __LINE__, reg); 
+	Address unused = ADDR_NULL;
+	if (!operands[u]->generateCode_phase2( gen, false, unused, reg)) assert(0);
+	assert(reg != Null_Register);
+	srcs.push_back(reg);
+	//bperr( "Generated operand %d, base %d\n", u, base);
+    }
+  
+    if(srcs.size() > 8) {
+	// This is not necessarily true; more then 8 arguments could be passed,
+	// the first 8 need to be in registers while the others need to be on
+	// the stack, -- sec 3/1/97
+       std::string msg = "Too many arguments to function call in instrumentation code:"
+	    " only 8 arguments can (currently) be passed on the POWER architecture.\n";
+	bperr("%s", msg.c_str());
+	showErrorCallback(94,msg);
+	exit(-1);
     }
 
     if(srcs.size() > 8)
@@ -1558,9 +1565,8 @@ EmitterPOWER::emitCall(opCode ocode, codeGen& gen,
 
     emitCallInstruction(gen, callee, setTOC, toc_anchor);
     // ALL instrumentation
-    Register retReg = REG_NULL;
-    if(inInstrumentation)
-    {
+    Register retReg = Null_Register;
+    if (inInstrumentation) {
         // get a register to keep the return value in.
         retReg = gen.rs()->allocateRegister(gen, noCost);
         // put the return value from register 3 to the newly allocated register.
@@ -1663,10 +1669,25 @@ emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen,
     registerSlot* regSlot   = NULL;
     unsigned      addrWidth = gen.width();
 
-    switch(op)
-    {
-        case getRetValOp: {
-            regSlot = (*(gen.rs()))[registerSpace::r3];
+    switch (op) {
+    case getRetValOp: {
+        regSlot = (*(gen.rs()))[registerSpace::r3];
+        break;
+    }
+
+    case getParamOp: {
+        // The first 8 parameters (0-7) are stored in registers (r3-r10) upon
+        // entering the function and then saved above the stack upon entering
+        // the trampoline; in emit functional call the stack pointer is moved
+        // so the saved registers are not over-written the other parameters >
+        // 8 are stored on the caller's stack at an offset.
+        // 
+        // src1 is the argument number 0..X, the first 8 are stored in regs
+        // src2 (if not Null_Register) holds the value to be written into src1
+
+        if(src1 < 8) {
+            // src1 is 0..8 - it's a parameter number, not a register
+            regSlot = (*(gen.rs()))[registerSpace::r3 + src1];
             break;
         }
 
@@ -1690,25 +1711,12 @@ emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen,
             {
                 // Registers from 11 (src = 8) and beyond are saved on the stack.
 
-                int stkOffset;
-                if(addrWidth == 4)
-                {
-                    stkOffset = TRAMP_FRAME_SIZE_32 + (src1 - 8) * sizeof(int) +
-                                PARAM_OFFSET(addrWidth);
-                }
-                else
-                {
-                    // Linux ABI says:
-                    // Parameters go in the "argument save area", which starts at
-                    // PARAM_OFFSET(...). However, we'd save argument _0_ at the base
-                    // of it, so the first 8 slots are normally empty (as they go in
-                    // registers). To get the 9th, etc. argument you want
-                    // PARAM_OFFSET(...) + (8 * arg number) instead of
-                    // 8 * (arg_number - 8)
-                    int stackSlot = src1;
-                    stkOffset     = TRAMP_FRAME_SIZE_64 + stackSlot * sizeof(long) +
-                                PARAM_OFFSET(addrWidth);
-                }
+            if (src2 != Null_Register) saveRegisterAtOffset(gen, src2, stkOffset);
+            restoreRegisterAtOffset(gen, dest, stkOffset);
+            return(dest);
+      }
+      break;
+    }
 
                 if(src2 != REG_NULL)
                     saveRegisterAtOffset(gen, src2, stkOffset);
@@ -1731,30 +1739,28 @@ emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen,
     assert(regSlot);
     Register reg = regSlot->number;
 
-    switch(regSlot->liveState)
-    {
-        case registerSlot::spilled: {
-            int offset = TRAMP_GPR_OFFSET(addrWidth);
-
-            // its on the stack so load it.
-            if(src2 != REG_NULL)
-                saveRegister(gen, src2, reg, offset);
-            restoreRegister(gen, reg, dest, offset);
-            return (dest);
-        }
-        case registerSlot::live: {
-            // its still in a register so return the register it is in.
-
-            return (reg);
-        }
-        case registerSlot::dead: {
-            // Uhhh... wha?
-            assert(0);
-        }
+    switch(regSlot->liveState) {
+    case registerSlot::spilled: {
+      int offset = TRAMP_GPR_OFFSET(addrWidth);
+      
+      // its on the stack so load it.
+      if (src2 != Null_Register) saveRegister(gen, src2, reg, offset);
+      restoreRegister(gen, reg, dest, offset);
+      return(dest);
+    }
+    case registerSlot::live: {
+        // its still in a register so return the register it is in.
+        
+        return(reg);
+    }
+    case registerSlot::dead: {
+        // Uhhh... wha?
+        assert(0);
+    }
     }
 
     assert(0);
-    return REG_NULL;
+    return Null_Register;
 }
 
 void
@@ -2593,11 +2599,12 @@ AddressSpace::getDynamicCallSiteArgs(InstructionAPI::Instruction i, Address addr
     if(branch_target != registerSpace::ignored)
     {
         // Where we're jumping to (link register, count register)
-        args.push_back(
-            AstNode::operandNode(AstNode::origRegister, (void*) (long) branch_target));
+        args.push_back( AstNode::operandNode(AstNode::operandType::origRegister,
+                        (void *)(long)branch_target));
 
         // Where we are now
-        args.push_back(AstNode::operandNode(AstNode::Constant, (void*) addr));
+        args.push_back( AstNode::operandNode(AstNode::operandType::Constant,
+                        (void *) addr));
 
         return true;
     }
@@ -2981,11 +2988,9 @@ bool EmitterPOWER32Stat::emitPIC(codeGen& gen, Address origAddr, Address relocAd
       bool newStackFrame = false;
       int stack_size = 0;
       int gpr_off, fpr_off, ctr_off;
-      //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx Registers PC %d scratch %d
-\n", origAddr, relocAddr, scratchPCReg, scratchReg); if ((scratchPCReg == REG_NULL) ||
-(scratchReg == REG_NULL)) {
-        //fprintf(stderr, " Creating new stack frame for 0x%lx to 0x%lx \n", origAddr,
-relocAddr);
+      //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx Registers PC %d scratch %d \n", origAddr, relocAddr, scratchPCReg, scratchReg);
+      if ((scratchPCReg == Null_Register) || (scratchReg == Null_Register)) {
+		//fprintf(stderr, " Creating new stack frame for 0x%lx to 0x%lx \n", origAddr, relocAddr);
 
         newStackFrame = true;
         //create new stack frame
@@ -2999,17 +3004,15 @@ relocAddr);
             // Save GPRs
           stack_size = saveGPRegisters(gen, gen.rs(), gpr_off, 2);
 
-          scratchPCReg = gen.rs()->getScratchRegister(gen, true);
-          assert(scratchPCReg != REG_NULL);
-          excludeReg.clear();
-          excludeReg.push_back(scratchPCReg);
-          scratchReg = gen.rs()->getScratchRegister(gen, excludeReg, true);
-          assert(scratchReg != REG_NULL);
-          // relocaAddr has moved since we added instructions to setup a new stack frame
-          relocAddr = relocAddr + ((stack_size + 1)*(gen.width()));
-              //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx stack size %d
-Registers PC %d scratch %d \n", origAddr, relocAddr, stack_size, scratchPCReg,
-scratchReg);
+	      scratchPCReg = gen.rs()->getScratchRegister(gen, true);
+	      assert(scratchPCReg != Null_Register);
+	      excludeReg.clear();
+	      excludeReg.push_back(scratchPCReg);
+	      scratchReg = gen.rs()->getScratchRegister(gen, excludeReg, true);
+	      assert(scratchReg != Null_Register);
+	      // relocaAddr has moved since we added instructions to setup a new stack frame
+	      relocAddr = relocAddr + ((stack_size + 1)*(gen.width()));
+              //fprintf(stderr, " emitPIC origAddr 0x%lx reloc 0x%lx stack size %d Registers PC %d scratch %d \n", origAddr, relocAddr, stack_size, scratchPCReg, scratchReg);
 
     }
     emitMovePCToReg(scratchPCReg, gen);
@@ -3031,26 +3034,322 @@ bool EmitterPOWER64Stat::emitPIC(codeGen& gen, Address origAddr, Address relocAd
 }
 bool EmitterPOWERDyn::emitPIC(codeGen &gen, Address origAddr, Address relocAddr) {
 
-    Address origRet = origAddr + 4;
-    Register scratch = gen.rs()->getScratchRegister(gen, true);
-    assert(scratch != REG_NULL);
-    instruction::loadImmIntoReg(gen, scratch, origRet);
-    insnCodeGen::generateMoveToLR(gen, scratch);
-    return true;
+	Address origRet = origAddr + 4;
+	Register scratch = gen.rs()->getScratchRegister(gen, true);
+	assert(scratch != Null_Register);
+	instruction::loadImmIntoReg(gen, scratch, origRet);
+	insnCodeGen::generateMoveToLR(gen, scratch);
+	return true;
 
 }
 */
 
 // It seems like we should be able to do a better job...
-bool
-EmitterPOWER32Stat::emitCallInstruction(codeGen& gen, func_instance* callee,
-                                        bool /* setTOC */, Address)
-{
-    // 32 - No TOC
-    // if inter module, gen PIC code
-    if(gen.func()->obj() != callee->obj())
-    {
-        return emitPLTCall(callee, gen);
+bool EmitterPOWER32Stat::emitCallInstruction(codeGen& gen, func_instance* callee, bool /* setTOC */, Address) {
+// 32 - No TOC 
+// if inter module, gen PIC code
+  if (gen.func()->obj() != callee->obj()) {
+    return emitPLTCall(callee, gen);
+  }
+  //fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__); 
+  insnCodeGen::generateCall(gen, gen.currAddr(), callee->addr());
+  return true;
+}
+
+bool EmitterPOWER32Stat::emitPLTCommon(func_instance *callee, bool call, codeGen &gen) {
+  Register scratchReg = gen.rs()->getScratchRegister(gen, true);
+  if (scratchReg == Null_Register) return false;
+
+  Register scratchLR = Null_Register;
+  std::vector<Register> excluded; excluded.push_back(scratchReg);
+  scratchLR = gen.rs()->getScratchRegister(gen, excluded, true);
+  if (scratchLR == Null_Register) {
+    if (scratchReg == registerSpace::r0) return false;
+    // We can use r0 for this, since it's volatile. 
+    scratchLR = registerSpace::r0;
+  }
+
+  if (!call) {
+    // Save the LR in scratchLR
+    insnCodeGen::generateMoveFromLR(gen, scratchLR);
+  }
+
+  // Generate the PLT call
+
+  Address dest = getInterModuleFuncAddr(callee, gen);  
+  Address pcVal = emitMovePCToReg(scratchReg, gen);
+
+  if (!call) {
+    insnCodeGen::generateMoveToLR(gen, scratchLR);
+  }
+
+  // We can now use scratchLR
+
+  Address varOffset = dest - pcVal;
+  emitLoadRelative(scratchLR, varOffset, scratchReg, gen.width(), gen);
+  
+  insnCodeGen::generateMoveToCR(gen, scratchLR);
+
+  if (!call) {
+    instruction br(BCTRraw);
+    insnCodeGen::generate(gen, br);
+  }
+  else {
+    instruction brl(BCTRLraw);
+    insnCodeGen::generate(gen, brl);
+  }
+
+  return true;
+}
+
+
+// TODO 32/64-bit? 
+bool EmitterPOWER32Stat::emitPLTCall(func_instance *callee, codeGen &gen) {
+  return emitPLTCommon(callee, true, gen);
+}
+
+bool EmitterPOWER32Stat::emitPLTJump(func_instance *callee, codeGen &gen) {
+  return emitPLTCommon(callee, false, gen);
+}
+
+bool EmitterPOWER32Stat::emitTOCCall(block_instance *block, codeGen &gen) {
+  return emitTOCCommon(block, true, gen);
+}
+
+bool EmitterPOWER32Stat::emitTOCJump(block_instance *block, codeGen &gen) {
+  return emitTOCCommon(block, false, gen);
+}
+
+
+bool EmitterPOWER32Stat::emitTOCCommon(block_instance *block, bool call, codeGen &gen) {
+  Register scratchReg = gen.rs()->getScratchRegister(gen, true);
+  if (scratchReg == Null_Register) return false;
+
+  Register scratchLR = Null_Register;
+  std::vector<Register> excluded; excluded.push_back(scratchReg);
+  scratchLR = gen.rs()->getScratchRegister(gen, excluded, true);
+  if (scratchLR == Null_Register) {
+    if (scratchReg == registerSpace::r0) return false;
+    // We can use r0 for this, since it's volatile. 
+    scratchReg = registerSpace::r0;
+  }
+
+  if (!call) {
+    // Save the LR in scratchLR
+    insnCodeGen::generateMoveFromLR(gen, scratchLR);
+  }
+
+  // Generate the PLT call
+
+  Address dest = block->llb()->firstInsnOffset();
+  Address pcVal = emitMovePCToReg(scratchReg, gen);
+
+  if (!call) {
+    insnCodeGen::generateMoveToLR(gen, scratchLR);
+  }
+
+  // We can now use scratchLR
+
+  Address varOffset = dest - pcVal;
+  emitLoadRelative(scratchLR, varOffset, scratchReg, gen.width(), gen);
+  
+  insnCodeGen::generateMoveToCR(gen, scratchLR);
+
+  if (!call) {
+    instruction br(BCTRraw);
+    insnCodeGen::generate(gen, br);
+  }
+  else {
+    instruction brl(BCTRLraw);
+    insnCodeGen::generate(gen, brl);
+  }
+
+  return true;
+}
+
+bool EmitterPOWER64Stat::emitPLTCommon(func_instance *callee, bool call, codeGen &gen) {
+/* This function generates code to call/jump to an external function.
+ * The Power ABI v2 specifies that R12 should contain the callee address.
+ *
+ * The steps include:
+ * 1. Save registers
+ * 2. Create/Load the PLT entry for the callee
+ * 3. Make the call
+ * 4. Restore registers
+ * 5. Generate a return for jump case
+ */
+
+  const unsigned TOCreg = 2;
+  const unsigned wordsize = gen.width();
+  assert(wordsize == 8);
+
+  Address func_desc = getInterModuleFuncAddr(callee, gen);
+
+
+  // We need a scratch register and a place to store the LR. 
+  // Because modification can also call this function, there may not
+  // be an instrumentation frame. So, we move down the stack before the
+  // call and move up the stack after the call
+  pushStack(gen);
+
+  unsigned r_tmp = 12; // R12 ; We need to put callee address into R12 
+
+  // Save R12
+  insnCodeGen::generateMemAccess64(gen, STDop, STDxop, r_tmp, REG_SP, 3*wordsize);
+  
+  // Save LR
+  insnCodeGen::generateMoveFromLR(gen, r_tmp);
+  insnCodeGen::generateMemAccess64(gen, STDop, STDxop, r_tmp, REG_SP, 4*wordsize);
+
+  // Save R2
+  insnCodeGen::generateMemAccess64(gen, STDop, STDxop, TOCreg, REG_SP, 5*wordsize);
+
+  // r_tmp := func_desc
+  // We first load PC into R12
+  Address pcVal = emitMovePCToReg(r_tmp, gen);
+
+  Address func_desc_from_cur = func_desc - pcVal;
+
+  // Here we use R2 as a temp register:
+  // We load the offset into R2
+  insnCodeGen::loadImmIntoReg(gen, TOCreg, func_desc_from_cur);
+  
+  // Add the offset to R12, which contains the PC
+  insnCodeGen::generateAddReg(gen, CAXop, r_tmp, r_tmp, TOCreg);
+
+  // r_tmp := *(r_tmp)
+  insnCodeGen::generateMemAccess64(gen, LDop, LDxop, r_tmp, r_tmp, 0);
+  
+  // lr := r_tmp; Loading the call target
+  insnCodeGen::generateMoveToLR(gen, r_tmp);
+
+  // blrl
+  instruction branch_insn(BRLraw);
+  insnCodeGen::generate(gen, branch_insn);
+
+  // Restore LR, R2, and R12
+  insnCodeGen::generateMemAccess64(gen, LDop, LDxop, r_tmp, REG_SP, 4*wordsize);
+  insnCodeGen::generateMoveToLR(gen, r_tmp);
+  insnCodeGen::generateMemAccess64(gen, LDop, LDxop, r_tmp, REG_SP, 3*wordsize);
+  insnCodeGen::generateMemAccess64(gen, LDop, LDxop, TOCreg, REG_SP, 5*wordsize);
+
+  // Move back the stack
+  popStack(gen);
+
+  if (!call) {
+    // We genearte a return here for jump case, 
+    // because Dyninst will relocate the original function.
+    // We do not want to execute the original code
+    // in cases like function replacement and function wrapping.
+    instruction ret(BRraw);
+    insnCodeGen::generate(gen, ret);
+  }
+
+  return true;
+}
+
+bool EmitterPOWER64Dyn::emitTOCCommon(block_instance *block, bool call, codeGen &gen) {
+  // This code is complicated by the need to set the new TOC and restore it
+  // post-(call/branch). That means we can't use a branch if asked, since we won't
+  // regain control. Fun. 
+  //
+  // 1. Move down the stack and save R12 and LR
+  // 2. R2 := TOC of callee
+  // 3. Load callee into R12 (V2 ABI requires the callee address should be in R12)
+  // 4. LR := R12 
+  // 5. Call LR
+  // 6. Restore R12 and LR
+  // 7. R2 := TOC of caller
+  // 8. Move up the stack
+  // IF (!call)
+  //   Return
+  
+  const unsigned TOCreg = 2;
+  const unsigned wordsize = gen.width();
+  assert(wordsize == 8);
+  Address dest = block->start();
+
+  // We need the callee TOC, which we find by function, not by block. 
+  std::vector<func_instance *> funcs;
+  block->getFuncs(std::back_inserter(funcs));
+  Address callee_toc = gen.addrSpace()->getTOCoffsetInfo(funcs[0]);
+  
+  Address caller_toc = 0;
+  if (gen.func()) {
+    caller_toc = gen.addrSpace()->getTOCoffsetInfo(gen.func());
+  }
+  else if (gen.point()) {
+    assert(gen.point()->func());
+    caller_toc = gen.addrSpace()->getTOCoffsetInfo(gen.point()->func());
+  }
+  else {
+    // Don't need it, and this might be an iRPC
+  }
+  unsigned r12 = 12;
+
+  // Move down the stack to create space for saving registers
+  pushStack(gen);
+
+  // Save R12 and LR
+  insnCodeGen::generateMoveFromLR(gen, TOCreg);
+  insnCodeGen::generateMemAccess64(gen, STDop, STDxop, TOCreg, REG_SP, 3*wordsize);
+  insnCodeGen::generateMemAccess64(gen, STDop, STDxop, r12, REG_SP, 4*wordsize);
+				     
+  // Use the R12 to generate the destination address
+  insnCodeGen::loadImmIntoReg(gen, r12, dest);
+  insnCodeGen::generateMoveToLR(gen, r12);
+  
+  // Load the callee TOC
+  insnCodeGen::loadImmIntoReg(gen, TOCreg, callee_toc);
+  
+  instruction branch_insn(BRLraw);
+  insnCodeGen::generate(gen, branch_insn);
+
+  // Restore R12 and LR
+  insnCodeGen::generateMemAccess64(gen, LDop, LDxop, TOCreg, REG_SP, 3*wordsize);
+  insnCodeGen::generateMoveToLR(gen, TOCreg);
+  insnCodeGen::generateMemAccess64(gen, LDop, LDxop, r12, REG_SP, 4*wordsize);
+
+  // Load caller TOC
+  insnCodeGen::loadImmIntoReg(gen, TOCreg, caller_toc);
+
+  // Move up the stack
+  popStack(gen);
+
+  if (!call) {
+    instruction ret(BRraw);
+    insnCodeGen::generate(gen, ret);
+  }
+  
+  return true;
+}
+
+// TODO 32/64-bit? 
+bool EmitterPOWER64Stat::emitPLTCall(func_instance *callee, codeGen &gen) {
+  return emitPLTCommon(callee, true, gen);
+}
+
+bool EmitterPOWER64Stat::emitPLTJump(func_instance *callee, codeGen &gen) {
+  return emitPLTCommon(callee, false, gen);
+}
+
+bool EmitterPOWER64Stat::emitTOCCall(block_instance *block, codeGen &gen) {
+  return emitTOCCommon(block, true, gen);
+}
+
+bool EmitterPOWER64Stat::emitTOCJump(block_instance *block, codeGen &gen) {
+  return emitTOCCommon(block, false, gen);
+}
+
+bool EmitterPOWER64Stat::emitTOCCommon(block_instance *block, bool call, codeGen &gen) {
+  // Right now we can only jump to a block if it's the entry of a function
+  // since it needs a relocation entry, which implies symbols, which implies... a function.
+  // Theoretically, we could create symbols for this block, if anyone ever cares.
+  std::vector<func_instance *> funcs;
+  block->getFuncs(std::back_inserter(funcs));
+  for (unsigned i = 0; i < funcs.size(); ++i) {
+    if (block == funcs[i]->entry()) {
+      return emitPLTCommon(funcs[i], call, gen);
     }
     // fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__);
     insnCodeGen::generateCall(gen, gen.currAddr(), callee->addr());
@@ -3534,17 +3833,136 @@ EmitterPOWER::emitLoadShared(opCode op, Register dest, const image_variable* var
     Address addr;
     int     stackSize = 0;
 
-    if(var == NULL)
-    {
-        addr = offset;
-    }
-    else if(!is_local)
-    {
-        addr = getInterModuleVarAddr(var, gen);
-    }
-    else
-    {
-        addr = (Address) var->getOffset();
+   if(var == NULL) {
+      addr = offset;
+   }
+   else if(!is_local) {
+      addr = getInterModuleVarAddr(var, gen);
+   }
+   else {
+      addr = (Address)var->getOffset();
+   }
+
+   // load register with address from jump slot
+
+   inst_printf("emitLoadShared addr 0x%lx curr adress 0x%lx offset %lu 0x%lx size %d\n", 
+   	addr, gen.currAddr(), addr - gen.currAddr()+4, addr - gen.currAddr()+4, size);
+   Register scratchReg = gen.rs()->getScratchRegister(gen, true);
+
+   if (scratchReg == Null_Register) {
+   	std::vector<Register> freeReg;
+        std::vector<Register> excludeReg;
+   	stackSize = insnCodeGen::createStackFrame(gen, 1, freeReg, excludeReg);
+   	assert (stackSize == 1);
+   	scratchReg = freeReg[0];
+   	inst_printf("emitLoadrelative - after new stack frame - addr 0x%lx curr adress 0x%lx offset %lu 0x%lx size %d\n", 
+		addr, gen.currAddr(), addr - gen.currAddr()+4, addr - gen.currAddr()+4, size);
+   }
+
+   emitMovePCToReg(scratchReg, gen);
+   Address varOffset = addr - gen.currAddr()+4;
+   
+   if (op ==loadOp) {
+   	if(!is_local && (var != NULL)){
+
+	  emitLoadRelative(dest, varOffset, scratchReg, gen.width(), gen);
+	  // Deference the pointer to get the variable
+	  emitLoadRelative(dest, 0, dest, size, gen);
+   	} else {
+
+	  emitLoadRelative(dest, varOffset, scratchReg, size, gen);
+   	}
+   } else { //loadConstop
+     if(!is_local && (var != NULL)){
+
+       emitLoadRelative(dest, varOffset, scratchReg, gen.width(), gen);
+     } else {
+
+       // Move address of the variable into the register - load effective address
+       //dest = effective address of pc+offset ;
+       insnCodeGen::generateImm (gen, CAUop, dest, 0, BOT_HI (varOffset));
+       insnCodeGen::generateImm (gen, ORILop, dest, dest, BOT_LO (varOffset));
+       insnCodeGen::generateAddReg (gen, CAXop, dest, dest, scratchReg);
+     }
+   }
+   
+   if (stackSize > 0)
+   	insnCodeGen::removeStackFrame(gen);
+
+  return;
+}
+
+void EmitterPOWER::emitStoreShared(Register source, const image_variable * var, bool is_local, int size, codeGen & gen)
+{
+   // create or retrieve jump slot
+   Address addr;
+   int stackSize = 0;
+   if(!is_local) {
+      addr = getInterModuleVarAddr(var, gen);
+   }
+   else {
+      addr = (Address)var->getOffset();
+   }
+
+   inst_printf("emitStoreRelative addr 0x%lx curr adress 0x%lx offset %lu 0x%lx size %d\n",
+   		addr, gen.currAddr(), addr - gen.currAddr()+4, addr - gen.currAddr()+4, size);
+
+   // load register with address from jump slot
+   Register scratchReg = gen.rs()->getScratchRegister(gen, true);
+   if (scratchReg == Null_Register) {
+   	std::vector<Register> freeReg;
+        std::vector<Register> excludeReg;
+   	stackSize = insnCodeGen::createStackFrame(gen, 1, freeReg, excludeReg);
+	assert (stackSize == 1);
+	scratchReg = freeReg[0];
+	
+   	inst_printf("emitStoreRelative - after new stack frame- addr 0x%lx curr adress 0x%lx offset %lu 0x%lx size %d\n",
+   		addr, gen.currAddr(), addr - gen.currAddr()+4, addr - gen.currAddr()+4, size);
+   }
+   
+   emitMovePCToReg(scratchReg, gen);
+   Address varOffset = addr - gen.currAddr()+4;
+   
+   if(!is_local) {
+        std::vector<Register> exclude;
+        exclude.push_back(scratchReg);
+   	Register scratchReg1 = gen.rs()->getScratchRegister(gen, exclude, true);
+   	if (scratchReg1 == Null_Register) {
+   		std::vector<Register> freeReg;
+        	std::vector<Register> excludeReg;
+   		stackSize = insnCodeGen::createStackFrame(gen, 1, freeReg, excludeReg);
+		assert (stackSize == 1);
+		scratchReg1 = freeReg[0];
+	
+   		inst_printf("emitStoreRelative - after new stack frame- addr 0x%lx curr adress 0x%lx offset %lu 0x%lx size %d\n",
+   		addr, gen.currAddr(), addr - gen.currAddr()+4, addr - gen.currAddr()+4, size);
+   	}
+     	emitLoadRelative(scratchReg1, varOffset, scratchReg, gen.width(), gen);
+   	emitStoreRelative(source, 0, scratchReg1, size, gen);
+   } else {
+   	emitStoreRelative(source, varOffset, scratchReg, size, gen);
+   }
+   
+   if (stackSize > 0)
+   	insnCodeGen::removeStackFrame(gen);
+  
+  return;
+}
+
+Address Emitter::getInterModuleVarAddr(const image_variable *var, codeGen& gen)
+{
+    AddressSpace *addrSpace = gen.addrSpace();
+    if (!addrSpace)
+        assert(0 && "No AddressSpace associated with codeGen object");
+
+    BinaryEdit *binEdit = addrSpace->edit();
+    Address relocation_address;
+
+    unsigned int jump_slot_size;
+    switch (addrSpace->getAddressWidth()) {
+    case 4: jump_slot_size = 4; break;
+    case 8: jump_slot_size = 8; break;
+    default: assert(0 && "Encountered unknown address width");
     }
 
     // load register with address from jump slot

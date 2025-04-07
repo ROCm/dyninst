@@ -49,11 +49,11 @@
 #include "util.h"
 #include "debug_parse.h"
 #include "IndirectAnalyzer.h"
-
+#include "registers/ppc32_regs.h"
+#include "registers/abstract_regs.h"
 #include <boost/timer/timer.hpp>
 #include <fstream>
-
-#include "tbb/concurrent_vector.h"
+#include "instructionAPI/h/syscalls.h"
 
 using namespace std;
 using namespace Dyninst;
@@ -895,15 +895,7 @@ Parser::finalize(Function* f)
 
             Block* trg_block = e->trg();
 
-            bool            trg_has_call_edge = false;
-            Block::edgelist sources;
-            trg_block->copy_sources(sources);
-            for(auto e2 : sources)
-                if(e2->type() == CALL)
-                {
-                    trg_has_call_edge = true;
-                    break;
-                }
+            bool trg_has_call_edge = trg_block->hasCallSource();
 
             // Rule 1:
             // If an edge is currently not a tail call, but the edge target has a CALL
@@ -934,8 +926,7 @@ Parser::finalize(Function* f)
             // the edge is a tail call.
             // For example, if a jump from .text to .plt (different sections), then
             // no matter what, this edge is a tail call.
-            if(trg_func->region() != b->region())
-                continue;
+            if (trg_func && trg_func->region() != b->region()) continue;
 
             // Rule 2:
             // Find a tail call targeting a block within the same function.
@@ -952,17 +943,9 @@ Parser::finalize(Function* f)
             }
 
             // Rule 3:
-            // If an edge is currently a tail call, but the edge target has only the
-            // current edge as incoming edges, we treat this as not tail call.
-            bool only_incoming = true;
-            for(auto e2 : sources)
-                if(e2 != e)
-                {
-                    only_incoming = false;
-                    break;
-                }
-            if(only_incoming)
-            {
+            // If an edge is currently a tail call, but the edge target has only the current edge as incoming edges,
+            // we treat this as not tail call.        
+            if (trg_block->getOnlyIncomingEdge() == e) {
                 e->_type._interproc = false;
                 parsing_printf("from %lx to %lx, marked as not tail call (single entry), "
                                "re-finalize\n",
@@ -990,15 +973,15 @@ Parser::finalize(Function* f)
         {
             Block::edgelist targets;
             b->copy_targets(targets);
-            for(auto e : targets)
-            {
-                if(!e->interproc() && (e->type() == INDIRECT || e->type() == DIRECT))
-                {
+            for (auto e : targets) {
+                if (!e->interproc() && (e->type() == INDIRECT || e->type() == DIRECT)) {
+		  if (b->last() != e->trg()->start()) { // if not an instruction that branches to itself
                     e->_type._interproc = true;
                     parsing_printf("from %lx to %lx, marked as tail call (jump at "
                                    "entry), re-finalize\n",
                                    b->last(), e->trg()->start());
                     return false;
+		  }
                 }
             }
         }
@@ -1093,9 +1076,23 @@ Parser::finalize()
         finalize_funcs(discover_funcs);
         clean_bogus_funcs(discover_funcs);
 
-        for(auto it = hint_funcs.begin(); it != hint_funcs.end(); ++it)
-            if(deleted_func.find(*it) == deleted_func.end())
-            {
+        // We need to redo finalization one more time to get correct
+        // function boundaries. This is intended to handle tail call
+        // correction. Suppose function A contains function B, and
+        // function B tail calls C.
+        // Further, we assume that parseAPI fails to identify the tail call
+        // in B. Then during finalizaiton, we can correct the tail call
+        // either when we finalize A or B, but not both. Therefore,
+        // after finalization, either A or B would have incorrect function
+        // boundary. Therefore, we recompute function boundary.
+        // In addition, there is no need for a loop to redo finalization
+        // as there would be no more tail call correction.
+        // We only need to get correct function boundaries.
+        finalize_funcs(hint_funcs);
+        finalize_funcs(discover_funcs);
+
+        for (auto it = hint_funcs.begin(); it != hint_funcs.end(); ++it)
+            if (deleted_func.find(*it) == deleted_func.end()) {
                 sorted_funcs.insert(*it);
                 funcs_to_ranges.push_back(*it);
             }
@@ -1649,8 +1646,7 @@ Parser::parse_frame_one_iteration(ParseFrame& frame, bool recursive)
                 InstructionAPI::Instruction prevInsn  = prev->second;
                 bool                        is_nonret = false;
 
-                if(prevInsn.getOperation().getID() == e_syscall)
-                {
+                if (Dyninst::InstructionAPI::isSystemCall(prevInsn)) {
                     Address src = edge->src()->lastInsnAddr();
 
                     // Need to determine if system call is non-returning
@@ -1964,9 +1960,15 @@ Parser::parse_frame_one_iteration(ParseFrame& frame, bool recursive)
             {
                 // this is special treatment for non-returning instruction
                 // examples are amdgpu_op_s_endpgm and amddgpu_op_s_endpgm_saved
-                // cout << "calling endblock for non-returning instruction " << std::hex
-                // <<ah->getAddr() << endl;
-                end_block(cur, ahPtr);
+                //cout << "calling endblock for non-returning instruction " << std::hex <<ah->getAddr() << endl; 
+                //
+
+
+                parsing_printf("[%s:%d] gpu exit insn 0x%lx: %s \n",
+                        FILE__,__LINE__,curAddr, ah->getInstruction().format().c_str() );
+
+
+                end_block(cur,ahPtr);
                 break;
             }
             // per-instruction callback notification
@@ -2058,31 +2060,8 @@ Parser::parse_frame_one_iteration(ParseFrame& frame, bool recursive)
                     break;
                 link_addr(ahPtr->getAddr(), _sink, DIRECT, true, func);
                 break;
-            }
-            else if(ah->isInterruptOrSyscall())
-            {
-                // 5. Raising instructions
-                end_block(cur, ahPtr);
-                if(!set_edge_parsing_status(frame, cur->last(), cur))
-                    break;
-                ParseAPI::Edge* newedge = link_tempsink(cur, FALLTHROUGH);
-                parsing_printf("[%s:%d] pushing %lx onto worklist\n", FILE__, __LINE__,
-                               curAddr);
-                frame.pushWork(frame.mkWork(NULL, newedge, ahPtr->getAddr(),
-                                            ahPtr->getNextAddr(), true, false));
-                if(unlikely(func->obj()->defensiveMode()))
-                {
-                    fprintf(stderr,
-                            "parsed bluepill insn sysenter or syscall "
-                            "in defensive mode at %lx\n",
-                            curAddr);
-                }
-                break;
-            }
-            else if(unlikely(func->obj()->defensiveMode()))
-            {
-                if(!_pcb.hasWeirdInsns(func) && ah->isGarbageInsn())
-                {
+            } else if (unlikely(func->obj()->defensiveMode())) {
+                if (!_pcb.hasWeirdInsns(func) && ah->isGarbageInsn()) {
                     // add instrumentation at this addr so we can
                     // extend the function if this really executes
                     ParseCallback::default_details det(

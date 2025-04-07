@@ -30,7 +30,7 @@
 
 #include "PCWidget.h"
 #include "instructionAPI/h/Instruction.h"
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 #include "../CFG/RelocBlock.h"
 #include "../CodeBuffer.h"
 #include "../CodeTracker.h"
@@ -90,11 +90,22 @@ PCWidget::PCtoReturnAddr(const codeGen& templ, const RelocBlock* t, CodeBuffer& 
         }
         buffer.addPIC(gen, tracker(t));
     }
-    else
-    {
-        IPPatch* newPatch =
-            new IPPatch(IPPatch::Push, addr_, insn_, t->block(), t->func());
-        buffer.addPatch(newPatch, tracker(t));
+    assert(point);  
+    
+    registerSpace *rs = registerSpace::actualRegSpace(point);
+    gen.setRegisterSpace(rs);
+    int stackSize = 0;
+    std::vector<Register> freeReg;
+    std::vector<Register> excludeReg;  
+    
+    Address origRet = addr() + insn_.size();
+    Register scratch = gen.rs()->getScratchRegister(gen, true);
+    bool createFrame = false;
+    if (scratch == Null_Register) {
+      stackSize = insnCodeGen::createStackFrame(gen, 1, freeReg, excludeReg);
+      assert(stackSize == 1);
+      scratch = freeReg[0];
+      createFrame = true;
     }
     return true;
 }
@@ -141,8 +152,43 @@ IPPatch::apply(codeGen& gen, CodeBuffer*)
     }
     assert(point);
 
-    registerSpace* rs = registerSpace::actualRegSpace(point);
-    gen.setRegisterSpace(rs);
+  // Must be in LR
+  if (reg == (Register) -1) reg = registerSpace::lr;
+  assert(reg == registerSpace::lr);
+    
+  int stackSize = 0;
+  std::vector<Register> freeReg;
+  std::vector<Register> excludeReg;
+    
+  Register scratchPCReg = gen.rs()->getScratchRegister(gen, true);
+  excludeReg.push_back(scratchPCReg);
+  Register scratchReg = gen.rs()->getScratchRegister(gen, excludeReg, true);
+    
+  if ((scratchPCReg == Null_Register) && (scratchReg == Null_Register)) {
+    excludeReg.clear();
+    stackSize = insnCodeGen::createStackFrame(gen, 2, freeReg, excludeReg);
+    assert(stackSize == 2);
+    scratchPCReg = freeReg[0];
+    scratchReg = freeReg[1];
+      
+  } else if (scratchReg == Null_Register && scratchPCReg != Null_Register) {
+    stackSize = insnCodeGen::createStackFrame(gen, 1, freeReg, excludeReg);
+    assert(stackSize == 1);
+    scratchReg = freeReg[0];
+  } 
+    
+  //scratchPCReg == NULL && scratchReg != NULL - not a valid case 
+  //since getScratchRegister works in order
+    
+  // relocaAddr may have moved if we added instructions to setup a new stack frame
+  Address newRelocAddr = gen.currAddr();
+    
+  insnCodeGen::generateBranch(gen, gen.currAddr(),  gen.currAddr()+4, true); // blrl
+  insnCodeGen::generateMoveFromLR(gen, scratchPCReg); // mflr
+    
+  Address varOffset = addr - newRelocAddr;
+  gen.emitter()->emitCallRelative(scratchReg, varOffset, scratchPCReg, gen);
+  insnCodeGen::generateMoveToLR(gen, scratchReg);
 
     // Must be in LR
     if(reg == (Register) -1)

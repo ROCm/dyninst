@@ -28,10 +28,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "common/h/SymReader.h"
+#include "SymReader.h"
 #include "Elf_X.h"
-#include "common/src/headers.h"
 
+#include <string>
 #include <map>
 
 namespace Dyninst

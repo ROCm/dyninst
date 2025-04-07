@@ -33,7 +33,11 @@
 #ifndef PATCHAPI_H_ADDRSPACE_H_
 #define PATCHAPI_H_ADDRSPACE_H_
 
+#include <map>
+#include <stddef.h>
+#include <string>
 #include "PatchCommon.h"
+#include "dyntypes.h"
 
 namespace Dyninst
 {
@@ -52,15 +56,17 @@ public:
     virtual ~AddrSpace();
 
     // Write data in mutatee's address space
-    virtual bool write(PatchObject* /*obj*/, Address /*to*/, Address /*from*/,
-                       size_t /*size*/);
+    virtual bool write(PatchObject* /*obj*/, Dyninst::Address /*to*/,
+                                       Dyninst::Address /*from*/, size_t /*size*/);
 
     // Memory allocation / reallocation / deallocation in mutatee's addressSpace
-    virtual Address malloc(PatchObject* /*obj*/, size_t /*size*/, Address /*near*/);
+    virtual Dyninst::Address malloc(PatchObject* /*obj*/, size_t /*size*/,
+                                           Dyninst::Address /*near*/);
 
-    virtual bool realloc(PatchObject* /*obj*/, Address /*orig*/, size_t /*size*/);
+    virtual bool realloc(PatchObject* /*obj*/, Dyninst::Address /*orig*/,
+                                         size_t /*size*/);
 
-    virtual bool free(PatchObject* /*obj*/, Address /*orig*/);
+    virtual bool free(PatchObject* /*obj*/, Dyninst::Address /*orig*/);
 
     // Load a binary oject into the address space
     virtual bool loadObject(PatchObject* obj);
@@ -78,10 +84,10 @@ public:
 
     bool consistency(const PatchMgr* mgr) const;
 
-protected:
-    ObjMap       obj_map_;
-    PatchObject* first_object_;
-    PatchMgrPtr  mgr_;
+  protected:
+    ObjMap obj_map_;
+    PatchObject* first_object_{};
+    PatchMgrPtr mgr_;
 
     bool init(PatchObject*);
     AddrSpace()

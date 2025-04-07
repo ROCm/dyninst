@@ -30,18 +30,10 @@
 #if !defined(RELOC_EDGE_H_)
 #    define RELOC_EDGE_H_
 
-namespace Dyninst
-{
-namespace Relocation
-{
-struct RelocEdge
-{
-    RelocEdge(TargetInt* s, TargetInt* t, edge_instance* e, ParseAPI::EdgeTypeEnum et)
-    : src(s)
-    , trg(t)
-    , edge(e)
-    , type(et)
-    {}
+#include <list>
+
+namespace Dyninst {
+namespace Relocation {
 
     ~RelocEdge();
 

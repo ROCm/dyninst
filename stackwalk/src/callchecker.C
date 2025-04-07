@@ -47,22 +47,24 @@ CallChecker::isPrevInstrACall(Address addr, Address& target)
     bool           result;
     unsigned char  buffer[max_call_length];
 
-    sw_printf("[%s:%u] - isPrevInstrACall on %lx\n", FILE__, __LINE__, addr);
-    Address start = addr - max_call_length;
-    result        = proc->readMem(buffer, start, max_call_length);
-    if(!result)
-    {
-        sw_printf("[%s:%u] - Address 0x%lx is not a call--unreadable\n", FILE__, __LINE__,
-                  addr);
-        return false;
-    }
+   sw_printf("[%s:%d] - isPrevInstrACall on %lx\n", FILE__, __LINE__, addr);
+   Address start = addr - max_call_length;
+   result = proc->readMem(buffer, start, max_call_length);
+   if (!result)
+   {
+      sw_printf("[%s:%d] - Address 0x%lx is not a call--unreadable\n",
+                FILE__, __LINE__, addr);
+      return false;
+   }
 
-    if(buffer[max_call_length - 5] == 0xe8)
-    {
-        int32_t disp = *((int32_t*) (buffer + 1));
-        target       = addr + disp;
-        sw_printf("[%s:%u] - Found call encoded by %x to %lx (addr = %lx, disp = %lx)\n",
-                  FILE__, __LINE__, (int) buffer[0], target, addr, disp);
+   if (buffer[max_call_length - 5] == 0xe8) {
+      int32_t disp = *((int32_t *) (buffer+1));
+      target = addr + disp;
+      sw_printf("[%s:%d] - Found call encoded by %x to %lx (addr = %lx, disp = %dx)\n",
+                FILE__, __LINE__, (int) buffer[0], target, addr, disp);
+                
+      return true;
+   }
 
         return true;
     }
@@ -76,33 +78,14 @@ CallChecker::isPrevInstrACall(Address addr, Address& target)
         if(modrm_reg != 2)
             continue;
 
-        /**
-         * Compute the size of the x86 instruction.
-         **/
-        int      modrm_mod = buffer[i + 1] >> 6;
-        int      modrm_rm  = buffer[i + 1] & 7;
-        unsigned size      = 2;  // Opcode + MOD/RM
-        switch(modrm_mod)
-        {
-            case 0:
-                if(modrm_rm == 5)
-                    size += 4;  // disp32
-                if(modrm_rm == 4)
-                    size += 1;  // SIB
-                break;
-            case 1:
-                size += 1;  // disp8
-                if(modrm_rm == 4)
-                    size += 1;  // SIB
-                break;
-            case 2:
-                size += 4;  // disp32
-                if(modrm_rm == 4)
-                    size += 1;  // SIB
-                break;
-            case 3:
-                break;
-        }
+      if (i + size == max_call_length)
+      {
+         sw_printf("[%s:%d] - Found call of size %u encoded by: ",
+                   FILE__, __LINE__, size);
+         for (unsigned j=i; j<i+size; j++) {
+            sw_printf("%x ", buffer[j]);
+         }
+         sw_printf("\n");
 
         if(i + size == max_call_length)
         {

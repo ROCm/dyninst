@@ -243,7 +243,7 @@ printSysError(unsigned errNo)
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, errNo,
                   MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, 1000, NULL);
 
-    fprintf(stderr, "*** System error [%d]: %s\n", errNo, buf);
+    fprintf(stderr, "*** System error [%u]: %s\n", errNo, buf);
     fflush(stderr);
 }
 
@@ -252,11 +252,11 @@ DYNINSTwriteEvent(void* ev, size_t sz)
 {
     DYNINSTasyncConnect(DYNINST_mutatorPid);
 
-    if(send((SOCKET) async_socket, ev, sz, 0) != sz)
-    {
-        printSysError(WSAGetLastError());
-        printf("DYNINSTwriteTrace: send error %d, %d %d\n", WSAGetLastError(), sz,
-               async_socket);
+  if (send((SOCKET)async_socket, ev, sz, 0) != sz) 
+  {
+    printSysError(WSAGetLastError());
+    printf("DYNINSTwriteTrace: send error %d, %zu %d\n",
+           WSAGetLastError(), sz, async_socket);
 
         if(async_socket == -1)
             return 1;
@@ -501,19 +501,14 @@ DWORD __stdcall DYNINST_FakeTickCount()
     {
         fakeTickCount = tmp;
     }
-    else
-    {
-        fakeTickCount = fakeTickCount + 2;
-        //        fakeTickCount = fakeTickCount + (tmp - fakeTickCount)/1000 + 1;
-    }
-    fprintf(stOut, "0x%lx = DYNINST_FakeTickCount()\n", fakeTickCount);
+    fprintf(stOut,"0x%x = DYNINST_FakeTickCount()\n",fakeTickCount);
     return (DWORD) fakeTickCount;
 }
 
 BOOL __stdcall DYNINST_FakeBlockInput(BOOL blockit)
 {
     BOOL ret = RT_TRUE;
-    fprintf(stOut, "0x%lx = DYNINST_FakeBlockInput(%d)\n", ret, blockit);
+    fprintf(stOut,"0x%x = DYNINST_FakeBlockInput(%d)\n",ret,blockit);
     return ret;
 }
 

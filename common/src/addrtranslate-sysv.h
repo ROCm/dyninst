@@ -31,7 +31,12 @@
 #if !defined(addrtranslate_sysv_h_)
 #    define addrtranslate_sysv_h_
 
-#    include "common/src/addrtranslate.h"
+#include <map>
+#include <string>
+#include <utility>
+#include "common/src/addrtranslate.h"
+
+namespace Dyninst {
 
 namespace Dyninst
 {

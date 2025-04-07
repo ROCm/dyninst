@@ -34,10 +34,31 @@ namespace Dyninst
 {
 namespace InstructionAPI
 {
-class BinaryFunction;
-class Immediate;
-class RegisterAST;
-class Dereference;
+    class BinaryFunction;
+    class Immediate;
+    class RegisterAST;
+    class Dereference;
+    
+    class Visitor
+    {
+        /// A %Visitor performs postfix-order traversal of the AST represented by
+        /// an %Expression.  The %Visitor class specifies the interface from which
+        /// users may derive %Visitors that perform specific tasks.
+        ///
+        /// The %visit method must be overridden for each type of %Expression node
+        /// (%BinaryFunction, %Immediate, %RegisterAST, and %Dereference).  Any state that
+        /// the %Visitor needs to preserve between nodes must be kept within the class.
+        /// %Visitors are invoked by calling %Expression::apply(%Visitor* v); the %visit method
+        /// should not be invoked by user code ordinarily.
+       
+        public:
+            virtual ~Visitor() = default;
+            Visitor& operator=(const Visitor&) = default;
+            virtual void visit(BinaryFunction* b) = 0;
+            virtual void visit(Immediate* i) = 0;
+            virtual void visit(RegisterAST* r) = 0;
+            virtual void visit(Dereference* d) = 0;
+    };
 
 class Visitor
 {

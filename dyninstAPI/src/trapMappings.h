@@ -34,27 +34,26 @@
 #    define MIN_TRAP_TABLE_SIZE 256
 #    define INDEX_INVALID UINT_MAX
 
-#    include <vector>
-#    include <set>
+#include <vector>
+#include <set>
+#include "dyntypes.h"
 
 class AddressSpace;
 class int_variable;
 
-class trampTrapMappings
-{
-public:
-    typedef struct
-    {
-        Address  from_addr;
-        Address  to_addr;
-        bool     written;
-        bool     mutatee_side;
-        unsigned cur_index;
-    } tramp_mapping_t;
+class trampTrapMappings {
+ public:
+   typedef struct {
+      Dyninst::Address from_addr;
+      Dyninst::Address to_addr;
+      bool written;
+      bool mutatee_side;
+      unsigned cur_index;
+   } tramp_mapping_t;
+ private:
 
-private:
-    dyn_hash_map<Address, tramp_mapping_t> mapping;
-    std::set<tramp_mapping_t*>             updated_mappings;
+   dyn_hash_map<Dyninst::Address, tramp_mapping_t> mapping;
+   std::set<tramp_mapping_t *> updated_mappings;
 
     static void arrange_mapping(tramp_mapping_t& m, bool should_sort,
                                 std::vector<tramp_mapping_t*>& mappings_to_add,
@@ -71,18 +70,26 @@ private:
     void writeToBuffer(unsigned char* buffer, unsigned long val, unsigned addr_width);
     void writeTrampVariable(const int_variable* var, unsigned long val);
 
-    unsigned long table_version;
-    unsigned long table_used;
-    unsigned long table_allocated;
-    unsigned long table_mutatee_size;
-    Address       current_table;
-    Address       table_header;
-    bool          blockFlushes;
+   unsigned long table_version;
+   unsigned long table_used;
+   unsigned long table_allocated;
+   unsigned long table_mutatee_size;
+   Dyninst::Address current_table;
+   Dyninst::Address table_header;
+   bool blockFlushes;
+   
+ public:
+   trampTrapMappings(AddressSpace *a);
+   void copyTrapMappings(trampTrapMappings *parent);
+   void clearTrapMappings();
 
-public:
-    trampTrapMappings(AddressSpace* a);
-    void copyTrapMappings(trampTrapMappings* parent);
-    void clearTrapMappings();
+   void addTrapMapping(Dyninst::Address from, Dyninst::Address to, bool write_to_mutatee = false);
+   Dyninst::Address getTrapMapping(Dyninst::Address from);
+   bool definesTrapMapping(Dyninst::Address from);
+   bool needsUpdating();
+   void flush();
+   void allocateTable();
+   void shouldBlockFlushes(bool b) { blockFlushes = b; }
 
     void    addTrapMapping(Address from, Address to, bool write_to_mutatee = false);
     Address getTrapMapping(Address from);

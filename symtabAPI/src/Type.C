@@ -351,44 +351,16 @@ Type::isCompatible(Type* /*oType*/)
 /*
  * ENUM
  */
-typeEnum::typeEnum(int ID, std::string name)
-: Type(name, ID, dataEnum)
-{
-    size_ = sizeof(int);
+typeEnum::typeEnum(boost::shared_ptr<Type> underlying_type, std::string name, typeId_t ID) :
+		derivedType(name, ID, underlying_type->getSize(), dataEnum) {
+	baseType_ = underlying_type;
 }
+typeEnum::typeEnum(boost::shared_ptr<Type> underlying_type, std::string name) :
+		typeEnum(underlying_type, std::move(name), ::getUniqueTypeId()) {}
 
-typeEnum::typeEnum(std::string name)
-: Type(name, ::getUniqueTypeId(), dataEnum)
+dyn_c_vector<std::pair<std::string, int> > &typeEnum::getConstants()
 {
-    size_ = sizeof(int);
-}
-
-typeEnum*
-typeEnum::create(std::string& name, dyn_c_vector<std::pair<std::string, int>*>& constants,
-                 Symtab* obj)
-{
-    typeEnum* typ = new typeEnum(name);
-    for(unsigned i = 0; i < constants.size(); i++)
-        typ->addConstant(constants[i]->first, constants[i]->second);
-
-    if(obj)
-        obj->addType(typ);
-    // obj->addType(typ); TODO: declare a static container if obj is NULL and add to it.
-    // Symtab::noObjTypes->push_back(typ); ??
-    return typ;
-}
-
-typeEnum*
-typeEnum::create(std::string& name, dyn_c_vector<std::string>& constNames, Symtab* obj)
-{
-    typeEnum* typ = new typeEnum(name);
-    for(unsigned i = 0; i < constNames.size(); i++)
-        typ->addConstant(constNames[i], i);
-    if(obj)
-        obj->addType(typ);
-    // obj->addType(typ); TODO: declare a static container if obj is NULL and add to it.
-    // Symtab::noObjTypes->push_back(typ); ??
-    return typ;
+   return consts;
 }
 
 dyn_c_vector<std::pair<std::string, int>>&
@@ -1908,27 +1880,12 @@ CBlock::getFunctions()
     return &functions;
 }
 
-Type::Type()
-: ID_(0)
-, name_(std::string("unnamedType"))
-, size_(0)
-, type_(dataUnknownType)
-, updatingSize(false)
-{}
-fieldListType::fieldListType()
-: derivedFieldList(NULL)
-{}
-rangedType::rangedType()
-: low_(0)
-, hi_(0)
-{}
-derivedType::derivedType()
-: baseType_(NULL)
-{}
-typeEnum::typeEnum() {}
-typeFunction::typeFunction()
-: retType_(NULL)
-{}
+Type::Type() : ID_(0), name_(std::string("unnamedType")), size_(0),
+               type_(dataUnknownType), updatingSize(false) {}
+fieldListType::fieldListType() : derivedFieldList(NULL) {}
+rangedType::rangedType() : low_(0), hi_(0) {}
+derivedType::derivedType() : baseType_(NULL) {}
+typeFunction::typeFunction() : retType_(NULL) {}
 typeCommon::typeCommon() {}
 typeStruct::typeStruct() {}
 typeUnion::typeUnion() {}

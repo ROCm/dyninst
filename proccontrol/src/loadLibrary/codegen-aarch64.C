@@ -8,6 +8,8 @@
 
 #include "common/src/arch-aarch64.h"
 
+#include "unaligned_memory_access.h"
+
 using namespace Dyninst;
 using namespace NS_aarch64;
 using namespace ProcControlAPI;
@@ -77,9 +79,8 @@ Codegen::generateCallAARCH64(Address addr, const std::vector<Address>& args)
         {
             BYTE_ASSGN(_buf, i, (uint16_t)(val >> (i * 4)))
             SWAP4BYTE(_buf, i)
-            retAddr = copyInt(*(unsigned int*) (_buf + i) + regIndex);
-            pthrd_printf("0x%8lx: 0x%8x\n", retAddr,
-                         *(unsigned int*) (_buf + i) + regIndex);
+            retAddr = copyInt( Dyninst::read_memory_as<uint32_t>(_buf+i) + regIndex);
+            pthrd_printf("0x%8lx: 0x%8x\n", retAddr, Dyninst::read_memory_as<uint32_t>(_buf+i) + regIndex);
         }
         regIndex++;
     }
@@ -90,8 +91,8 @@ Codegen::generateCallAARCH64(Address addr, const std::vector<Address>& args)
     {
         BYTE_ASSGN(_buf, i, (uint16_t)(addr >> (i * 4)))
         SWAP4BYTE(_buf, i)
-        retAddr = copyInt(*(unsigned int*) (_buf + i) + X8);  // x8 = 8
-        pthrd_printf("0x%8lx: 0x%8x\n", retAddr, *(unsigned int*) (_buf + i) + X8);
+        retAddr = copyInt( Dyninst::read_memory_as<uint32_t>(_buf+i) + X8); //x8 = 8
+        pthrd_printf("0x%8lx: 0x%8x\n", retAddr, Dyninst::read_memory_as<uint32_t>(_buf+i) + X8);
     }
 
     // blr x8

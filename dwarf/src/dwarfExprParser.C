@@ -30,13 +30,13 @@
 
 #include <stack>
 #include <stdio.h>
-#include "dyn_regs.h"
+#include "Architecture.h"
+#include "registers/MachRegister.h"
 #include "dwarfExprParser.h"
 #include "dwarfResult.h"
 #include "debug_common.h"
 #include "VariableLocation.h"
 #include "ProcReader.h"
-#include "Types.h"
 #include "compiler_annotations.h"
 
 using namespace std;

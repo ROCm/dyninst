@@ -87,7 +87,7 @@ printSysError(unsigned errNo)
         fprintf(stderr, "Couldn't print error message\n");
         printSysError(GetLastError());
     }
-    fprintf(stderr, "*** System error [%d]: %s\n", errNo, buf);
+    fprintf(stderr, "*** System error [%u]: %s\n", errNo, buf);
     fflush(stderr);
 }
 
@@ -161,35 +161,29 @@ Object::Module::FindFile(std::string name)
 }
 
 void
-Object::File::DefineSymbols(dyn_hash_map<std::string, std::vector<Symbol*>>& allSyms,
-                            map<Symbol*, std::string>&                       symsToMods,
-                            const std::string& modName) const
+Object::File::DefineSymbols( dyn_hash_map<std::string, std::vector< Symbol *> >& allSyms,
+                             const std::string& modName ) const
 {
-    for(std::vector<Object::intSymbol*>::const_iterator iter = syms.begin();
-        iter != syms.end(); iter++)
-    {
-        const Object::intSymbol* curSym = *iter;
-        assert(curSym != NULL);
-        curSym->DefineSymbol(allSyms, symsToMods, modName);
+    for( std::vector<Object::intSymbol*>::const_iterator iter = syms.begin(); iter != syms.end(); iter++ ) {
+        const Object::intSymbol* curSym = * iter;
+	assert( curSym != NULL );
+	curSym->DefineSymbol( allSyms, modName );
     }
 }
 
 void
-Object::intSymbol::DefineSymbol(dyn_hash_map<std::string, std::vector<Symbol*>>& allSyms,
-                                map<Symbol*, std::string>& symsToMods,
-                                const std::string&         modName) const
+Object::intSymbol::DefineSymbol(dyn_hash_map<std::string,std::vector<Symbol *> >&allSyms,
+                                const std::string& modName ) const
 {
     Symbol* sym = new Symbol(GetName(), (Symbol::SymbolType) GetType(),
                              (Symbol::SymbolLinkage) GetLinkage(), Symbol::SV_UNKNOWN,
                              (Offset) GetAddr(), NULL, GetRegion(), GetSize());
     allSyms[GetName()].push_back(sym);
-    symsToMods[sym] = modName;
 }
 
 void
-Object::Module::DefineSymbols(const Object*                                    obj,
-                              dyn_hash_map<std::string, std::vector<Symbol*>>& syms,
-                              map<Symbol*, std::string>& symsToMods) const
+Object::Module::DefineSymbols( const Object* obj,
+                               dyn_hash_map<std::string, std::vector< Symbol *> > & syms) const
 {
     // define Paradyn/dyninst modules and symbols
     if(!isDll)
@@ -212,9 +206,8 @@ Object::Module::DefineSymbols(const Object*                                    o
             // TODO also pass size
             // add symbols for each of the file's symbols
             syms[curFile->GetName()].push_back(sym);
-            symsToMods[sym] = curFile->GetName();
 
-            curFile->DefineSymbols(syms, symsToMods, curFile->GetName());
+            curFile->DefineSymbols( syms, curFile->GetName() );
         }
     }
     else
@@ -237,7 +230,7 @@ Object::Module::DefineSymbols(const Object*                                    o
             const File* curFile = *iter;
             assert(curFile != NULL);
             // add symbols for each of the file's symbols
-            curFile->DefineSymbols(syms, symsToMods, name);
+            curFile->DefineSymbols( syms, name );
         }
     }
 }
@@ -571,14 +564,14 @@ Object::ParseSymbolInfo(bool alloc_syms)
         // printSysError(lasterr);
     }
 
-    // We have a module object, with one or more files,
-    // each with one or more symbols.  However, the symbols
-    // are not necessarily in order, nor do they necessarily have valid sizes.
-    assert(curModule != NULL);
-    curModule->BuildSymbolMap(this);
-    if(alloc_syms)
-        curModule->DefineSymbols(this, symbols_, symsToModules_);
-    no_of_symbols_ = symbols_.size();
+   // We have a module object, with one or more files,
+   // each with one or more symbols.  However, the symbols
+   // are not necessarily in order, nor do they necessarily have valid sizes.
+   assert( curModule != NULL );
+   curModule->BuildSymbolMap( this );
+   if (alloc_syms)
+      curModule->DefineSymbols( this, symbols_);
+   no_of_symbols_ = symbols_.size();
 
     // fprintf(stderr, "%s[%d]:  removed call to parseFileLineInfo here\n", FILE__,
     // __LINE__);
@@ -627,36 +620,41 @@ Object::AddTLSFunctions()
     IMAGE_TLS_DIRECTORY* tlsDir =
         (IMAGE_TLS_DIRECTORY*) (tlsDiskOff + (Offset) mf->base_addr());
 
-    // calculate the address of the TLS callback array and make sure it's valid
-    secn            = findEnclosingRegion(tlsDir->AddressOfCallBacks - imgBase);
-    Offset cbOffSec = tlsDir->AddressOfCallBacks - secn->getMemOffset() - imgBase;
-    if(!secn || cbOffSec > secn->getDiskSize())
-    {
-        return;
-    }
-    Offset               cbOffDisk = cbOffSec + secn->getDiskOffset();
-    PIMAGE_TLS_CALLBACK* tlsCBs =
-        (PIMAGE_TLS_CALLBACK*) (cbOffDisk + (Offset) mf->base_addr());
-    unsigned maxCBs = (secn->getDiskSize() - cbOffSec) / sizeof(PIMAGE_TLS_CALLBACK);
+   // calculate the address of the TLS callback array and make sure it's valid
+   secn = findEnclosingRegion(tlsDir->AddressOfCallBacks - imgBase);
+   if (!secn) {
+      return;
+   }
+   Offset cbOffSec = tlsDir->AddressOfCallBacks 
+      - secn->getMemOffset() 
+      - imgBase;
+   if (cbOffSec > secn->getDiskSize()) {
+      return;
+   }
+   Offset cbOffDisk = cbOffSec + secn->getDiskOffset();
+   PIMAGE_TLS_CALLBACK *tlsCBs = (PIMAGE_TLS_CALLBACK*) 
+      ( cbOffDisk + (Offset)mf->base_addr() );
+   unsigned maxCBs = (secn->getDiskSize() - cbOffSec) / sizeof(PIMAGE_TLS_CALLBACK);
 
-    // for each TLS callback, add a function symbol
-    for(unsigned tidx = 0; tidx < maxCBs && tlsCBs[tidx] != NULL; tidx++)
-    {
-        Offset funcOff = ((Address) tlsCBs[tidx]) - imgBase;
-        secn           = findEnclosingRegion(funcOff);
-        if(!secn)
-        {
-            continue;
-        }
-        Offset        baseAddr = 0;
-        Object::File* pFile    = curModule->GetDefaultFile();
-        char          funcName[128];
-        snprintf(funcName, 128, "tls_cb_%d", tidx);
-        pFile->AddSymbol(new Object::intSymbol(funcName, funcOff, Symbol::ST_FUNCTION,
-                                               Symbol::SL_GLOBAL,
-                                               0,  // unknown size
-                                               secn));
-    }
+   // for each TLS callback, add a function symbol
+   for (unsigned tidx=0; tidx < maxCBs && tlsCBs[tidx] != NULL ; tidx++) {
+      Offset funcOff = ((Address) tlsCBs[tidx]) - imgBase;
+      secn = findEnclosingRegion(funcOff);
+      if (!secn) {
+         continue;
+      }
+      Offset baseAddr = 0;
+      Object::File *pFile = curModule->GetDefaultFile();
+      char funcName [128];
+      snprintf(funcName, 128, "tls_cb_%u", tidx);
+      pFile->AddSymbol( new Object::intSymbol
+                       ( funcName,
+                         funcOff,
+                         Symbol::ST_FUNCTION,
+                         Symbol::SL_GLOBAL,
+                         0, // unknown size
+                         secn ));
+   }
 }
 
 Region::perm_t
@@ -830,35 +828,47 @@ Object::FindInterestingSections(bool alloc_syms, bool defensive)
                     char* name = (char*) ::ImageRvaToVa(ImageNtHeader(mapAddr), mapAddr,
                                                         funcNamePtrs[i], NULL);
 
-                    if(!strcmp(name, "??_7__non_rtti_object@@6B@") ||
-                       !strcmp(name, "??_7bad_cast@@6B@") ||
-                       !strcmp(name, "??_7bad_typeid@@6B@") ||
-                       !strcmp(name, "??_7exception@@6B@") ||
-                       !strcmp(name, "sys_errlist"))
-                    {
-                        continue;
-                    }
-                    if(!strcmp(name, "??_7__non_rtti_object@std@@6B@") ||
-                       !strcmp(name, "??_7bad_cast@std@@6B@") ||
-                       !strcmp(name, "??_7bad_typeid@std@@6B@") ||
-                       !strcmp(name, "??_7exception@std@@6B@"))
-                    {
-                        continue;
-                    }
-                    int     funcIndx = funcAddrNameMap[i];
-                    Address funcAddr = funcAddrs[funcIndx];
-                    if((funcAddr >= (Address) eT2) && (funcAddr < ((Address) eT2 + size)))
-                        continue;
-                    Symbol* sym = new Symbol(name, Symbol::ST_FUNCTION, Symbol::SL_GLOBAL,
-                                             Symbol::SV_DEFAULT, funcAddr);
-                    sym->setDynamic(
-                        true);  // it's exported, equivalent to ELF dynamic syms
-                    symbols_[name].push_back(sym);
-                    symsToModules_[sym] = curModule->GetName();
-                }
-            }
-        }
-    }
+   //get exported functions
+   // note: there is an error in the PE specification regarding the export 
+   //       table Base.  The spec claims that you are supposed to subtract 
+   //       the Base to get correct ordinal indices into the Export Address 
+   //       table, but this is false, at least in the typical case for which 
+   //       Base=1, I haven't observed any binaries with different bases
+	if (!is_aout_ && peHdr->OptionalHeader.NumberOfRvaAndSizes > IMAGE_DIRECTORY_ENTRY_EXPORT) {
+		assert(sizeof(Offset) == getAddressWidth());
+		unsigned long size;
+		IMAGE_EXPORT_DIRECTORY *eT2 = (IMAGE_EXPORT_DIRECTORY *)::ImageDirectoryEntryToData(mapAddr, false, IMAGE_DIRECTORY_ENTRY_EXPORT, &size);
+		if (eT2) {
+			DWORD *funcNamePtrs = (DWORD *) ::ImageRvaToVa(ImageNtHeader(mapAddr), mapAddr, ULONG(eT2->AddressOfNames), NULL);
+			DWORD *funcAddrs = (DWORD *) ::ImageRvaToVa(ImageNtHeader(mapAddr), mapAddr, ULONG(eT2->AddressOfFunctions), NULL);
+			WORD *funcAddrNameMap = (WORD *) ::ImageRvaToVa(ImageNtHeader(mapAddr), mapAddr, ULONG(eT2->AddressOfNameOrdinals), NULL);
+			if (funcNamePtrs && funcAddrs && funcAddrNameMap) {
+				for (unsigned i = 0; i < eT2->NumberOfNames; ++i) {
+					char *name = (char *) ::ImageRvaToVa(ImageNtHeader(mapAddr), mapAddr, funcNamePtrs[i], NULL);
+					
+					if (!strcmp(name,"??_7__non_rtti_object@@6B@") || !strcmp(name,"??_7bad_cast@@6B@") || !strcmp(name,"??_7bad_typeid@@6B@") || !strcmp(name,"??_7exception@@6B@") || !strcmp(name,"sys_errlist"))
+					{
+					continue;
+					}
+					if (!strcmp(name,"??_7__non_rtti_object@std@@6B@") || !strcmp(name,"??_7bad_cast@std@@6B@") || !strcmp(name,"??_7bad_typeid@std@@6B@") || !strcmp(name,"??_7exception@std@@6B@"))
+					{
+					continue;
+					}
+					int funcIndx = funcAddrNameMap[i];
+					Address funcAddr = funcAddrs[funcIndx];
+					if ((funcAddr >= (Address) eT2) &&
+						(funcAddr < ((Address) eT2 + size))) continue;
+					Symbol *sym = new Symbol(name,
+						Symbol::ST_FUNCTION, 
+				        Symbol::SL_GLOBAL, 
+			            Symbol::SV_DEFAULT,
+				        funcAddr);
+					sym->setDynamic(true); // it's exported, equivalent to ELF dynamic syms
+					symbols_[name].push_back(sym);
+				}
+			}
+		}
+	}
 
     SecAlignment           = peHdr->OptionalHeader.SectionAlignment;
     unsigned int nSections = peHdr->FileHeader.NumberOfSections;
@@ -1243,11 +1253,10 @@ Object::parseFileLineInfo()
     store_line_info(associated_symtab, &inf);
 }
 
-typedef struct localsStruct
-{
-    Function*               func;
-    Offset                  base;
-    HANDLE                  p;
+typedef struct localsStruct {
+    Function *func{};
+    Offset base{};
+    HANDLE p{};
     map<unsigned, unsigned> foundSyms;
     localsStruct()
     : foundSyms()
@@ -1341,13 +1350,29 @@ enumLocalSymbols(PSYMBOL_INFO pSymInfo, unsigned long symSize, void* userContext
         storageName = "Absolute";
     }
 
-    VariableLocation loc;
-    loc.stClass     = storage;
-    loc.refClass    = storageNoRef;
-    loc.frameOffset = frameOffset;
-    loc.lowPC       = 0;
-    loc.hiPC        = (Address) -1;
-    loc.mr_reg      = reg;
+    //Store the variable as a local or parameter appropriately
+   if (pSymInfo->Flags & IMAGEHLP_SYMBOL_INFO_PARAMETER) {
+      assert(func);
+      if (!func->addParam(newvar)) {
+         fprintf(stderr, "%s[%d]:  addParam failed\n", FILE__, __LINE__);
+         return false;
+      }
+      paramType = "parameter";
+   }
+   else if (pSymInfo->Flags & IMAGEHLP_SYMBOL_INFO_LOCAL) {
+	  assert(func);
+      if (!func->addLocalVar(newvar)) {
+         fprintf(stderr, "%s[%d]:  addLocalVar failed\n", FILE__, __LINE__);
+         return false;
+      }
+      paramType = "local";
+   }
+   else {
+	   
+      fprintf(stderr, "[%s:%d] - Local variable of unknown type.  %s in %s\n",
+              __FILE__, __LINE__, pSymInfo->Name, func->pretty_names_begin()->c_str());
+      paramType = "unknown";
+   }
 
     std::string vName = convertCharToString(pSymInfo->Name);
     std::string fName = convertCharToString(func->getModule()->fileName().c_str());
@@ -1618,9 +1643,8 @@ getPointerType(HANDLE p, Offset base, int typeIndex, Module* mod)
     typePointer* newType;
 
     result = SymGetTypeInfo(p, base, typeIndex, TI_GET_TYPEID, &baseTypeIndex);
-    if(!result)
-    {
-        fprintf(stderr, "[%s:%u] - TI_GET_TYPEID failed\n", __FILE__, __LINE__);
+    if (!result) {
+        fprintf(stderr, "[%s:%d] - TI_GET_TYPEID failed\n", __FILE__, __LINE__);
         return NULL;
     }
 
@@ -1633,9 +1657,8 @@ getPointerType(HANDLE p, Offset base, int typeIndex, Module* mod)
     addTypeToCollection(newType, mod);
 
     baseType = getType(p, base, baseTypeIndex, mod);
-    if(!baseType)
-    {
-        fprintf(stderr, "[%s:%u] - getType failed\n", __FILE__, __LINE__);
+    if (!baseType) {
+        fprintf(stderr, "[%s:%d] - getType failed\n", __FILE__, __LINE__);
         return NULL;
     }
 
@@ -1655,18 +1678,17 @@ getArrayType(HANDLE p, Offset base, int typeIndex, Module* mod)
 
     // Get the index type (usually an int of some kind).  Currently not used.
     result = SymGetTypeInfo(p, base, typeIndex, TI_GET_ARRAYINDEXTYPEID, &index);
-    if(!result)
-    {
-        fprintf(stderr, "[%s:%u] - TI_GET_ARRAYINDEXTYPEID failed\n", __FILE__, __LINE__);
+    if (!result) {
+        fprintf(stderr, "[%s:%d] - TI_GET_ARRAYINDEXTYPEID failed\n",
+                __FILE__, __LINE__);
         return NULL;
     }
     indexType = getType(p, base, index, mod);
 
     // Get the base type (the type of the elements in the array)
     result = SymGetTypeInfo(p, base, typeIndex, TI_GET_TYPEID, &baseIndex);
-    if(!result)
-    {
-        fprintf(stderr, "[%s:%u] - TI_GET_TYPEID failed\n", __FILE__, __LINE__);
+    if (!result) {
+        fprintf(stderr, "[%s:%d] - TI_GET_TYPEID failed\n", __FILE__, __LINE__);
         return NULL;
     }
     baseType = getType(p, base, baseIndex, mod);
@@ -1701,9 +1723,8 @@ getTypedefType(HANDLE p, Offset base, int typeIndex, Module* mod)
     char* name;
 
     result = SymGetTypeInfo(p, base, typeIndex, TI_GET_TYPEID, &baseTypeIndex);
-    if(!result)
-    {
-        fprintf(stderr, "[%s:%u] - TI_GET_TYPEID failed\n", __FILE__, __LINE__);
+    if (!result) {
+        fprintf(stderr, "[%s:%d] - TI_GET_TYPEID failed\n", __FILE__, __LINE__);
         return NULL;
     }
     baseType = getType(p, base, baseTypeIndex, mod);
@@ -1872,9 +1893,8 @@ getFunctionType(HANDLE p, Offset base, int typeIndex, Module* mod)
     addTypeToCollection(newType, mod);
 
     result = SymGetTypeInfo(p, base, typeIndex, TI_GET_TYPEID, &retTypeIndex);
-    if(!result)
-    {
-        fprintf(stderr, "[%s:%u] - Couldn't TI_GET_TYPEID\n", __FILE__, __LINE__);
+    if (!result) {
+        fprintf(stderr, "[%s:%d] - Couldn't TI_GET_TYPEID\n", __FILE__, __LINE__);
         return NULL;
     }
 

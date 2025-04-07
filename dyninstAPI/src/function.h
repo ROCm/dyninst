@@ -34,8 +34,11 @@
 #define FUNCTION_H
 
 #include <string>
-#include "common/src/Types.h"
-#include "common/src/Pair.h"
+#include <list>
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <vector>
 #include "codegen.h"
 #include "codeRange.h"
 #include "util.h"

@@ -35,7 +35,7 @@
 
 #include "instructionAPI/h/Instruction.h"
 
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 
 #include "../CodeTracker.h"
 #include "../CodeBuffer.h"
@@ -311,16 +311,4 @@ CFPatch::handleTOCUpdate(codeGen& gen)
         assert(0);
         return false;
     }
-}
-
-bool
-CFWidget::generateAddressTranslator(CodeBuffer& /*buffer*/, const codeGen& /*templ*/,
-                                    Register& /*reg*/, const RelocBlock* /*trace*/)
-{
-#if !defined(cap_mem_emulation)
-    return true;
-#else
-    assert(0);
-    return false;
-#endif
 }

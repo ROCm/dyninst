@@ -95,12 +95,9 @@ char main_function_names[NUMBER_OF_MAIN_POSSIBILITIES][20] = {
     "_WinMain", "wWinMain",        "_wWinMain", "tls_cb_0"
 };
 
-fileDescriptor::fileDescriptor()
-: code_(0)
-, data_(0)
-, pid_(0)
-, length_(0)
-, rawPtr_(NULL)
+fileDescriptor::fileDescriptor():
+        code_(0), data_(0),
+        pid_(0), length_(0)
 {
     // This shouldn't be called... must be public for std::vector, though
 }
@@ -170,7 +167,7 @@ extern unsigned enable_pd_sharedobj_debug;
 
 int codeBytesSeen = 0;
 
-#if defined(ppc32_linux) || defined(ppc64_linux)
+#if defined(ppc64_linux)
 
 #    include <dataflowAPI/h/slicing.h>
 #    include <dataflowAPI/h/SymEval.h>
@@ -492,7 +489,7 @@ public:
 int
 image::findMain()
 {
-#if defined(ppc32_linux) || defined(ppc64_linux)
+#if defined(ppc64_linux)
     using namespace Dyninst::InstructionAPI;
 
     // Only look for main in executables, but do allow position-independent
@@ -1055,40 +1052,30 @@ image::findModule(const string& name, bool wildcard)
     // cerr << "image::findModule " << name << " , " << find_if_excluded
     //     << " called" << endl;
 
-    if(!wildcard)
-    {
-        if(modsByFileName.find(name) != modsByFileName.end())
-        {
-            // cerr << " (image::findModule) found module in modsByFileName" << endl;
-            found = modsByFileName[name];
-        }
-        else if(modsByFullName.find(name) != modsByFullName.end())
-        {
-            // cerr << " (image::findModule) found module in modsByFullName" << endl;
-            found = modsByFullName[name];
-        }
-    }
-    else
-    {
-        //  if we want a substring, have to iterate over all module names
-        //  this is ok b/c there are not usually more than a handful or so
-        //
-        dyn_hash_map<string, pdmodule*>::iterator mi;
-        string                                    str;
-        pdmodule*                                 mod;
-        std::string                               pds = name.c_str();
+   if (!wildcard) {
+      if (modsByFileName.find(name) != modsByFileName.end()) {
+         //cerr << " (image::findModule) found module in modsByFileName" << endl;
+         found = modsByFileName[name];
+      }
+   }
+   else {
+      //  if we want a substring, have to iterate over all module names
+      //  this is ok b/c there are not usually more than a handful or so
+      //
+      dyn_hash_map <string, pdmodule *>::iterator mi;
+      string str; pdmodule *mod;
+      std::string pds = name.c_str();
 
-        for(mi = modsByFileName.begin(); mi != modsByFileName.end(); mi++)
-        {
-            str = mi->first;
-            mod = mi->second;
-            if(wildcardEquiv(pds, mod->fileName()) || wildcardEquiv(pds, mod->fullName()))
-            {
-                found = mod;
-                break;
-            }
-        }
-    }
+      for(mi = modsByFileName.begin(); mi != modsByFileName.end() ; mi++)
+      {
+         str = mi->first;
+         mod = mi->second;
+         if (wildcardEquiv(pds, mod->fileName())) {
+            found = mod; 
+            break;
+         }
+      }
+   }
 
     // cerr << " (image::findModule) did not find module, returning NULL" << endl;
     if(found)
@@ -1583,13 +1570,11 @@ obj_(NULL)
     // Initialize ParseAPI
     filt = NULL;
 
-    /** Optionally eliminate some hints in which Dyninst is not
-        interested **/
-    struct filt_heap : SymtabCodeSource::hint_filt
-    {
-        bool operator()(SymtabAPI::Function* f)
-        {
-            return f && f->getModule() && f->getModule()->fullName() == "DYNINSTheap";
+   /** Optionally eliminate some hints in which Dyninst is not
+       interested **/
+   struct filt_heap : SymtabCodeSource::hint_filt {
+        bool operator()(SymtabAPI::Function * f) {
+            return f && f->getModule() && f->getModule()->fileName() == "DYNINSTheap";
         }
     } nuke_heap;
     filt = &nuke_heap;
@@ -1802,8 +1787,9 @@ image::addFunction(Address functionEntryAddr, const char* fName)
     }
     region = *(regions.begin());  // XXX pick one, throwing up hands.
 
-    std::set<Module*> st_mod;
-    linkedFile->findModuleByOffset(st_mod, functionEntryAddr);
+     auto *m = linkedFile->getContainingModule(functionEntryAddr);
+     
+     pdmodule *mod = getOrCreateModule(m);
 
     pdmodule* mod = getOrCreateModule(*(st_mod.begin()));
 
@@ -1867,13 +1853,7 @@ pdmodule::fileName() const
     return mod_->fileName();
 }
 
-const string&
-pdmodule::fullName() const
-{
-    return mod_->fullName();
-}
-
-SymtabAPI::supportedLanguages
+SymtabAPI::supportedLanguages 
 pdmodule::language() const
 {
     return mod_->language();
@@ -1907,8 +1887,7 @@ image::getOrCreateModule(Module* mod)
 
     mods_[mod]                        = pdmod;
     modsByFileName[pdmod->fileName()] = pdmod;
-    modsByFullName[pdmod->fullName()] = pdmod;
-
+    
     return pdmod;
 }
 

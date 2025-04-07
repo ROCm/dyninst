@@ -165,60 +165,53 @@ typeCollection::doDeferredLookups(typeCollection* primary_tc)
             if(t && (t->getDataClass() != ldc))
                 t = NULL;
 
-            if(!t)
-            {
-                if(Symtab::builtInTypes())
-                {
-                    t = Symtab::builtInTypes()->findBuiltInType(iter->first, Type::share);
-                    if(t && (t->getDataClass() != ldc))
-                        t = NULL;
-                }
-            }
-            if(!t)
-            {
-                if(Symtab::stdTypes())
-                {
-                    t = Symtab::stdTypes()->findType(iter->first, Type::share);
-                    if(t && (t->getDataClass() != ldc))
-                        t = NULL;
-                }
-            }
-            if(!t)
-            {
-                int                                              nfound = 0;
-                dyn_c_hash_map<void*, typeCollection*>::iterator tciter;
-                for(tciter = fileToTypesMap.begin(); tciter != fileToTypesMap.end();
-                    tciter++)
-                {
-                    if(tciter->second == primary_tc)
-                        continue;
-                    boost::shared_ptr<Type> localt =
-                        tciter->second->findType(iter->first, Type::share);
-                    if(localt)
-                    {
-                        if(localt->getDataClass() != ldc)
-                            continue;
-                        nfound++;
-                        t = localt;
-                    }
-                    // if (t) break;
-                }
-            }
-            if(t)
-            {
-                *th = t;
-            }
-            if(!t)
-            {
-                create_printf("%s[%d]:  FIXME:  cannot find type id %d\n", FILE__,
-                              __LINE__, iter->first);
-                err = true;
-                continue;
-            }
-        }
-    }
-    deferred_lookups.clear();
-    return (!err);
+			if (!t)
+			{
+				if (Symtab::builtInTypes())
+				{
+					t = Symtab::builtInTypes()->findBuiltInType(iter->first, Type::share);
+					if (t && (t->getDataClass() != ldc)) t = NULL;
+				}
+			}
+			if (!t)
+			{
+				if (Symtab::stdTypes())
+				{
+					t = Symtab::stdTypes()->findType(iter->first, Type::share);
+					if (t && (t->getDataClass() != ldc)) t = NULL;
+				}
+			}
+			if (!t)
+			{
+				dyn_c_hash_map<void *, typeCollection *>::iterator tciter;
+				for (tciter = fileToTypesMap.begin(); tciter != fileToTypesMap.end(); tciter++)
+				{
+					if (tciter->second == primary_tc) continue;
+					boost::shared_ptr<Type> localt = tciter->second->findType(iter->first, Type::share);
+					if (localt)
+					{
+						if (localt->getDataClass() != ldc)
+							continue;
+						t = localt;
+					}
+					//if (t) break;
+				}
+			}
+			if (t)
+			{
+				*th = t;
+			}
+			if (!t)
+			{
+                           create_printf("%s[%d]:  FIXME:  cannot find type id %d\n",
+                                         FILE__, __LINE__, iter->first);
+                           err = true;
+                           continue;
+			}
+		}
+	}
+	deferred_lookups.clear();
+	return (!err);
 }
 
 /*

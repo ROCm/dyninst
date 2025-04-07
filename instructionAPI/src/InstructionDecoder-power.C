@@ -32,6 +32,10 @@
 #include <boost/assign/list_of.hpp>
 #include "../../common/src/singleton_object_pool.h"
 #include <mutex>
+#include "unaligned_memory_access.h"
+#include "registers/ppc32_regs.h"
+#include "registers/ppc64_regs.h"
+
 namespace Dyninst
 {
 namespace InstructionAPI
@@ -366,20 +370,21 @@ InstructionDecoder_power::decodeOperands(const Instruction* insn_to_complete)
     }
     if(current->op == power_op_bcctr)
     {
-        insn_in_progress->addSuccessor(makeRegisterExpression(ppc32::ctr),
-                                       field<31, 31>(insn) == 1, true, bcIsConditional,
-                                       false);
-        if(bcIsConditional)
-        {
-            insn_in_progress->addSuccessor(makeFallThroughExpr(), false, false, false,
-                                           true);
-        }
-    }
-    if(current->op == power_op_addic_rc || current->op == power_op_andi_rc ||
-       current->op == power_op_andis_rc || current->op == power_op_stwcx_rc ||
-       current->op == power_op_stdcx_rc)
-    {
-        insn_in_progress->appendOperand(makeCR0Expr(), false, true);
+      if(b.start > b.end) return Instruction();
+      isRAWritten = false;
+      isFPInsn = false;
+      bcIsConditional = false;
+      insn = Dyninst::read_memory_as<uint32_t>(b.start);
+#if defined(DEBUG_RAW_INSN)        
+        cout.width(0);
+        cout << "0x";
+        cout.width(8);
+        cout.fill('0');
+        cout << hex << insn << "\t";
+#endif
+        mainDecode();
+        b.start += 4;
+        return *(insn_in_progress.get());
     }
 
     return true;
@@ -450,23 +455,68 @@ void
 InstructionDecoder_power::LK()
 {}
 
-Expression::Ptr
-InstructionDecoder_power::makeMemRefIndex(Result_Type size)
-{
-    return makeDereferenceExpression(
-        makeAddExpression(makeRAorZeroExpr(), makeRBExpr(), s32), size);
-}
-Expression::Ptr
-InstructionDecoder_power::makeDSExpr()
-{
-    return Immediate::makeImmediate(
-        Result(s32, sign_extend<14>(field<16, 29>(insn)) << 2));
-}
-Expression::Ptr
-InstructionDecoder_power::makeMemRefNonIndex(Result_Type size)
-{
-    if(field<0, 5>(insn) == 31 &&
-       (field<21, 30>(insn) == 597 || field<21, 30>(insn) == 725))
+			   **	There are 2 XX1 instructions, the last bit of the extended opcodes are ignored (30th bit, which are both 0).
+				*/
+
+        isRAWritten = false;
+        isFPInsn = false;
+        bcIsConditional = false;
+        insn = insn_to_complete->m_RawInsn.small_insn;
+        const power_entry* current = &power_entry::main_opcode_table[field<0,5>(insn)];
+        while(current->next_table)
+        {
+            current = &(std::mem_fn(current->next_table)(this));
+        }
+	if (findRAAndRS(current)) {
+	    isRAWritten = true;
+	}
+        if(current->op == power_op_b ||
+           current->op == power_op_bc ||
+           current->op == power_op_bclr ||
+           current->op == power_op_bcctr)
+        {
+            insn_in_progress->appendOperand(makeRegisterExpression(ppc32::pc), false, true);
+        }
+        
+        for(operandSpec::const_iterator curFn = current->operands.begin();
+            curFn != current->operands.end();
+            ++curFn)
+        {
+            std::mem_fn(*curFn)(this);
+        }
+        if(current->op == power_op_bclr)
+        {
+	  // blrl is in practice a return-and-link, not a call-through-LR
+	  // so we'll treat it as such
+            insn_in_progress->addSuccessor(makeRegisterExpression(ppc32::lr),
+                                           /*field<31,31>(insn) == 1*/ false, true, 
+					   bcIsConditional, false);
+            if(bcIsConditional)
+            {
+                insn_in_progress->addSuccessor(makeFallThroughExpr(), false, false, false, true);
+            }
+        }
+        if(current->op == power_op_bcctr)
+        {
+            insn_in_progress->addSuccessor(makeRegisterExpression(ppc32::ctr),
+                                           field<31,31>(insn) == 1, true, bcIsConditional, false);
+            if(bcIsConditional)
+            {
+                insn_in_progress->addSuccessor(makeFallThroughExpr(), false, false, false, true);
+            }
+        }
+        if(current->op == power_op_addic_rc ||
+           current->op == power_op_andi_rc ||
+           current->op == power_op_andis_rc ||
+           current->op == power_op_stwcx_rc ||
+           current->op == power_op_stdcx_rc)
+        {
+            insn_in_progress->appendOperand(makeCR0Expr(), false, true);
+        }
+
+        return true;
+    }
+    void InstructionDecoder_power::OE()
     {
         return makeDereferenceExpression(makeRAorZeroExpr(), size);
     }
@@ -1079,7 +1129,498 @@ InstructionDecoder_power::extended_op_0()
         power_entry::extended_op_0.find(field<21, 30>(insn));
     if(entry_it == power_entry::extended_op_0.end())
         return invalid_entry;
-    return entry_it->second;
+    }
+
+    const power_entry & InstructionDecoder_power::extended_op_4_1409() {
+
+        const power_table::const_iterator entry_it = power_entry::extended_op_4_1409.find(field<11, 15>(insn));
+        if (entry_it != power_entry::extended_op_4_1409.end())
+            return entry_it->second;    
+        return invalid_entry;
+
+    }
+    const power_entry & InstructionDecoder_power::extended_op_4_1538() {
+        const power_table::const_iterator entry_it = power_entry::extended_op_4_1538.find(field<11, 15>(insn));
+        if (entry_it != power_entry::extended_op_4_1538.end())
+            return entry_it->second;    
+        return invalid_entry;
+
+    }
+
+    const power_entry & InstructionDecoder_power::extended_op_4_1921() {
+        const power_table::const_iterator entry_it = power_entry::extended_op_4_1921.find(field<11, 15>(insn));
+        if (entry_it != power_entry::extended_op_4_1921.end())
+            return entry_it->second;    
+        return invalid_entry;
+    }
+
+    const power_entry& InstructionDecoder_power::extended_op_19()
+    {
+        const power_table::const_iterator entry_it = power_entry::extended_op_19.find(field<21, 30>(insn));
+        if (entry_it == power_entry::extended_op_19.end())
+            return invalid_entry;
+        return entry_it->second;
+    }
+    const power_entry& InstructionDecoder_power::extended_op_30()
+    {
+	
+        power_table::const_iterator entry_it;
+	if (field<27,27>(insn) == 0)
+	   entry_it = power_entry::extended_op_30.find(field<27, 29>(insn));
+	else
+	   entry_it = power_entry::extended_op_30.find(field<27, 30>(insn));
+        if (entry_it == power_entry::extended_op_30.end())
+            return invalid_entry;
+        return entry_it->second;
+    }
+    const power_entry& InstructionDecoder_power::extended_op_31()
+    {
+        // sradi is a special instruction. Its xop is from 21 to 29 and its xop value is 413
+        if (field<21,29>(insn) == 413) {
+            const power_table::const_iterator entry_it = power_entry::extended_op_31.find(413);
+            if (entry_it == power_entry::extended_op_31.end())
+                return invalid_entry;
+            return entry_it->second;
+        }
+        const power_entry* xoform_entry;
+        const power_table::const_iterator entry_it = power_entry::extended_op_31.find(field<22, 30>(insn));
+        if (entry_it == power_entry::extended_op_31.end())
+            xoform_entry = &invalid_entry;
+        else
+            xoform_entry = &(entry_it->second);
+        if(find(xoform_entry->operands.begin(), xoform_entry->operands.end(), &InstructionDecoder_power::OE)
+           != xoform_entry->operands.end())
+        {
+            return *xoform_entry;
+        }
+        const power_table::const_iterator entry_it2 = power_entry::extended_op_31.find(field<21, 30>(insn));
+        if (entry_it2 == power_entry::extended_op_31.end())
+            return invalid_entry;
+        return entry_it2->second;
+    }
+    // extended_op_57 needs revisiting
+    const power_entry& InstructionDecoder_power::extended_op_57()
+    {
+        return power_entry::extended_op_57[field<30, 31>(insn)];
+    }
+    const power_entry& InstructionDecoder_power::extended_op_58()
+    {
+        const power_table::const_iterator entry_it = power_entry::extended_op_58.find(field<30, 31>(insn));
+        if (entry_it == power_entry::extended_op_58.end())
+            return invalid_entry;
+        return entry_it->second;
+    }
+    const power_entry& InstructionDecoder_power::extended_op_59()
+    {
+        const power_table::const_iterator entry_it = power_entry::extended_op_59.find(field<21, 30>(insn));
+        if (entry_it == power_entry::extended_op_59.end())
+            return invalid_entry;
+        return entry_it->second;
+    }
+    // extended_op_60 needs revisiting
+    const power_entry& InstructionDecoder_power::extended_op_60_specials_check() {
+	// If the power decoder is ever redone. Use masking to determine the instructions for 60.
+	// Otherwise we are forced to do this fun hack....
+	
+	// Check for xxsel
+	if (field<26,27>(insn) == 3)
+		return power_entry::extended_op_60_specials[2];
+	
+	// xscmpexpdp
+	if (field<21,28>(insn) == 59)
+		return power_entry::extended_op_60_specials[5];
+	// xscvuxddp	
+	if (field<21,28>(insn) == 360)
+		return power_entry::extended_op_60_specials[6];
+	// xvdivsp
+//	if (field<21,28>(insn) == 88) 
+//		return extended_op_60_specials[1];
+
+	// xvnmaddasp
+	if (field<21,28>(insn) == 193) 
+		return power_entry::extended_op_60_specials[4];
+	// xvtdivsp
+	if (field<21,28>(insn) == 93)
+		return power_entry::extended_op_60_specials[1];
+
+	// xxpermdi
+	if (field<21,21>(insn) == 0 && field<24,28>(insn) == 10)
+		return power_entry::extended_op_60_specials[0];
+
+	if (field<21,21>(insn) == 0 && field<24,28>(insn) == 2)
+		return power_entry::extended_op_60_specials[3];
+	return invalid_entry;
+    }
+    const power_entry& InstructionDecoder_power::extended_op_60()
+    {
+	if (extended_op_60_specials_check().op != power_op_INVALID)
+		return extended_op_60_specials_check();
+        switch (field<21, 29>(insn)) {
+            case 347:
+                return extended_op_60_347();
+            case 475:
+                return extended_op_60_475();
+            default:
+                break;
+        }
+
+        const power_table::const_iterator entry_it = power_entry::extended_op_60.find(field<21, 29>(insn));
+        if (entry_it == power_entry::extended_op_60.end())
+            return invalid_entry;
+        return entry_it->second;        
+    }
+
+    const power_entry& InstructionDecoder_power::extended_op_60_347() {
+        const power_table::const_iterator entry_it = power_entry::extended_op_60_347.find(field<11, 15>(insn));
+        if (entry_it == power_entry::extended_op_60_347.end())
+            return invalid_entry;
+        return entry_it->second;    
+
+    }
+    const power_entry& InstructionDecoder_power::extended_op_60_475() {
+        const power_table::const_iterator entry_it = power_entry::extended_op_60_475.find(field<11, 15>(insn));
+        if (entry_it == power_entry::extended_op_60_475.end())
+            return invalid_entry;
+        return entry_it->second;    
+    }
+
+
+    // extended_op_61 needs revisiting
+    const power_entry& InstructionDecoder_power::extended_op_61()
+    {
+        unsigned int xo = field<26, 30>(insn);
+        if(xo <= 31)
+        {
+            power_table::const_iterator found = power_entry::extended_op_61.find(xo);
+            if(found != power_entry::extended_op_61.end())
+                return found->second;
+        }
+        power_table::const_iterator found = power_entry::extended_op_61.find(field<21,30>(insn));
+        if(found != power_entry::extended_op_61.end()) return found->second;
+        return invalid_entry;
+    }
+
+    const power_entry& InstructionDecoder_power::extended_op_63()
+    {
+        switch (field<21, 30>(insn)) {
+            case 583:
+                return extended_op_63_583();
+            case 804:
+                return extended_op_63_804();
+            case 836:
+                return extended_op_63_836();
+            default:
+                break;
+        }
+        unsigned int xo = field<26, 26>(insn);
+        if(xo == 1)
+        {
+            power_table::const_iterator found = power_entry::extended_op_63.find(field<26,30>(insn));
+            if(found != power_entry::extended_op_63.end())
+                return found->second;
+        }
+        const power_table::const_iterator entry_it = power_entry::extended_op_63.find(field<21, 30>(insn));
+        if (entry_it == power_entry::extended_op_63.end())
+            return invalid_entry;
+        return entry_it->second;
+    }
+    const power_entry& InstructionDecoder_power::extended_op_63_583()
+    { 
+        const power_table::const_iterator entry_it = power_entry::extended_op_63_583.find(field<11, 15>(insn));
+        if (entry_it == power_entry::extended_op_63_583.end())
+            return invalid_entry;
+        return entry_it->second;   
+    }
+    const power_entry& InstructionDecoder_power::extended_op_63_804()
+    { 
+        const power_table::const_iterator entry_it = power_entry::extended_op_63_804.find(field<11, 15>(insn));
+        if (entry_it == power_entry::extended_op_63_804.end())
+            return invalid_entry;
+        return entry_it->second;   
+    }
+    const power_entry& InstructionDecoder_power::extended_op_63_836()
+    { 
+        const power_table::const_iterator entry_it = power_entry::extended_op_63_836.find(field<11, 15>(insn));
+        if (entry_it == power_entry::extended_op_63_836.end())
+            return invalid_entry;
+        return entry_it->second;   
+    }    
+    void InstructionDecoder_power::FC() {
+	// Used by lwat/ldat but usage is confusing 
+	// 5 bits located at positions 16-21
+	    
+//        fprintf(stderr, "Unimplemented operand type FC. Please create an issue at https://github.com/dyninst/dyninst/issues\n");
+    }
+    void InstructionDecoder_power::BF()
+    {
+        MachRegister base_reg = isFPInsn ? ppc32::fpscw0 : ppc32::cr0;
+        Expression::Ptr condReg = makeRegisterExpression(makePowerRegID(base_reg, field<6, 10>(insn) >> 2));
+        insn_in_progress->appendOperand(condReg, false, true);
+        return;
+    }
+    void InstructionDecoder_power::QTT()
+    {
+        Expression::Ptr imm = Immediate::makeImmediate(Result(u8, field<21, 24>(insn)));
+        insn_in_progress->appendOperand(imm, true, false);
+        return;
+    }
+    void InstructionDecoder_power::QVD()
+    {
+        Expression::Ptr imm = Immediate::makeImmediate(Result(u8, field<21, 22>(insn)));
+        insn_in_progress->appendOperand(imm, true, false);
+        return;
+    }
+    void InstructionDecoder_power::QGPC()
+    {
+        Expression::Ptr imm = Immediate::makeImmediate(Result(u8, field<11, 22>(insn)));
+        insn_in_progress->appendOperand(imm, true, false);
+        return;
+    }
+    void InstructionDecoder_power::UI()
+    {
+        Expression::Ptr imm = Immediate::makeImmediate(Result(u32, field<16, 31>(insn)));
+        insn_in_progress->appendOperand(imm, true, false);
+        return;
+    }
+    void InstructionDecoder_power::BO()
+    {
+        bcIsConditional = true;
+#if defined(DEBUG_BO_FIELD)        
+        cout << "BO: " << field<6,6>(insn) << field<7,7>(insn) << field<8,8>(insn) << field<9,9>(insn) << field<10,10>(insn)
+                << endl;
+#endif
+        invertBranchCondition = false;
+        if(!field<8, 8>(insn))
+        {
+            Expression::Ptr ctr = makeRegisterExpression(makePowerRegID(ppc32::ctr, 0));
+            if(field<9, 9>(insn))
+            {
+                insn_in_progress->getOperation().mnemonic = "bdz";
+            }
+            else
+            {
+                insn_in_progress->getOperation().mnemonic = "bdn";
+            }
+            insn_in_progress->appendOperand(ctr, true, true);
+        }
+        if(!(field<6, 6>(insn)))
+        {
+            invertBranchCondition = !field<7,7>(insn);
+            if(insn_in_progress->getOperation().mnemonic == "bc")
+            {
+                insn_in_progress->getOperation().mnemonic = "b";            
+            }
+            insn_in_progress->appendOperand(makeBIExpr(), true, false);
+        }
+        if(field<8,8>(insn) && field<6,6>(insn))
+        {
+            size_t found = insn_in_progress->getOperation().mnemonic.rfind("c");
+            if(found != std::string::npos)
+            {
+                insn_in_progress->getOperation().mnemonic.erase(found, 1);
+            }
+            bcIsConditional = false;
+        }
+        else
+        {
+            bool taken = (field<6,6>(insn) && field<8,8>(insn)) || field<16,16>(insn);
+			taken ^= field<10,10>(insn) ? true : false;
+            insn_in_progress->getOperation().mnemonic += (taken ? "+" : "-");
+        }
+#if defined(DEBUG_BO_FIELD)
+        cout << "bcIsConditional = " << (bcIsConditional ? "true" : "false") << endl;
+#endif
+        return;
+    }
+    void InstructionDecoder_power::syscall()
+    {
+        insn_in_progress->appendOperand(makeRegisterExpression(ppc32::msr), true, true);
+        insn_in_progress->appendOperand(makeRegisterExpression(ppc32::srr0), false, true);
+        insn_in_progress->appendOperand(makeRegisterExpression(ppc32::srr1), false, true);
+        insn_in_progress->appendOperand(makeRegisterExpression(ppc32::pc), true, true);
+        insn_in_progress->appendOperand(makeRegisterExpression(ppc32::ivpr), false, true);
+        insn_in_progress->appendOperand(makeRegisterExpression(ppc32::ivor8), false, true);
+        return;
+    }
+    void InstructionDecoder_power::LL()
+    {
+        LI();
+        return;
+    }
+    void InstructionDecoder_power::SH()
+    {
+        insn_in_progress->appendOperand(makeSHExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::Rc()
+    {
+        if(field<31, 31>(insn))
+        {
+            if(isFPInsn)
+            {
+                insn_in_progress->appendOperand(makeRegisterExpression(ppc32::fpscw), false, true, true);
+            }
+            else
+            {
+                insn_in_progress->appendOperand(makeCR0Expr(), false, true);
+            }
+            insn_in_progress->getOperation().mnemonic += ".";
+        }
+        return;
+    }
+    void InstructionDecoder_power::RB()
+    {
+        if(insn_in_progress->getOperation().getID() == power_op_or)
+        {
+            if(field<16,20>(insn) == field<6,10>(insn))
+            {
+                insn_in_progress->getOperation().mnemonic = "mr";
+            }
+        }
+        else if(insn_in_progress->getOperation().getID() == power_op_nor)
+        {
+            if(field<16,20>(insn) == field<6,10>(insn))
+            {
+                insn_in_progress->getOperation().mnemonic = "not";
+            }
+        }
+        insn_in_progress->appendOperand(makeRBExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::FRA()
+    {
+        insn_in_progress->appendOperand(makeFRAExpr(), !isRAWritten, isRAWritten);
+        return;
+    }
+    void InstructionDecoder_power::QFRA()
+    {
+        insn_in_progress->appendOperand(makeQFRAExpr(), !isRAWritten, isRAWritten);
+        return;
+    }
+    void InstructionDecoder_power::FRB()
+    {
+        insn_in_progress->appendOperand(makeFRBExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::FRC()
+    {
+        insn_in_progress->appendOperand(makeFRCExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::QFRC()
+    {
+        insn_in_progress->appendOperand(makeQFRCExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::BI()
+    {
+        return;
+    }
+    void InstructionDecoder_power::ME()
+    {
+        insn_in_progress->appendOperand(makeMEExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::MB()
+    {
+        insn_in_progress->appendOperand(makeMBExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::BFA()
+    {
+        Expression::Ptr condReg = makeRegisterExpression(makePowerRegID(ppc32::cr0, field<11, 15>(insn) >> 2));
+        insn_in_progress->appendOperand(condReg, true, false);
+        return;
+    }
+    void InstructionDecoder_power::BT()
+    {
+        insn_in_progress->appendOperand(makeBTExpr(), false, true);
+        return;
+    }
+    void InstructionDecoder_power::BA()
+    {
+        insn_in_progress->appendOperand(makeBAExpr(), true, false);
+        return;
+    }
+    void InstructionDecoder_power::BB()
+    {
+        insn_in_progress->appendOperand(makeBBExpr(), true, false);
+        return;
+    }
+
+    void InstructionDecoder_power::FXM()
+    {
+        (translateBitFieldToCR<12, 19, ppc32::icr0, 7>(*this))();
+        return;
+    }
+    void InstructionDecoder_power::spr()
+    {
+        insn_in_progress->appendOperand(makeSPRExpr(), !isRAWritten, isRAWritten);
+        return;
+    }
+    void InstructionDecoder_power::SR()
+    {
+        insn_in_progress->appendOperand(makeRegisterExpression(makePowerRegID(ppc32::seg0, field<11, 15>(insn) >> 2)),
+                                        true, true);
+        return;
+    }
+    void InstructionDecoder_power::NB()
+    {
+        insn_in_progress->appendOperand(Immediate::makeImmediate(Result(u8, field<16, 20>(insn))), true, false);
+        return;
+    }
+    void InstructionDecoder_power::U()
+    {
+        insn_in_progress->appendOperand(Immediate::makeImmediate(Result(u8, field<16, 20>(insn) >> 1)), true, false);
+        return;
+    }
+    void InstructionDecoder_power::FLM()
+    {
+        isRAWritten = true;
+        (translateBitFieldToCR<7, 14, ppc32::ifpscw0, 7>(*this))();
+        return;
+    }
+     void InstructionDecoder_power::WC()
+    {
+        insn_in_progress->appendOperand(Immediate::makeImmediate(Result(u8, field<9, 10>(insn))), true, false);
+        return;
+    }
+   
+    bool InstructionDecoder_power::findRAAndRS(const power_entry* cur) {
+        bool findRA = false;
+	bool findRS = false;
+	for (auto oit = cur->operands.begin(); oit != cur->operands.end(); ++oit) {
+	    if ((*oit) == &InstructionDecoder_power::RA) findRA = true;
+	    if ((*oit) == &InstructionDecoder_power::RS) findRS = true;
+	}
+	return findRA && findRS;
+    }
+
+    void InstructionDecoder_power::mainDecode()
+    {
+        const power_entry* current = &power_entry::main_opcode_table[field<0,5>(insn)];
+        while(current->next_table)
+        {
+            current = &(std::mem_fn(current->next_table)(this));
+        }
+        insn_in_progress = makeInstruction(current->op, current->mnemonic, 4, reinterpret_cast<unsigned char*>(&insn));
+        if(current->op == power_op_b ||
+          current->op == power_op_bc ||
+          current->op == power_op_bclr ||
+          current->op == power_op_bcctr)
+        {
+            // decode control-flow operands immediately; we're all but guaranteed to need them
+            decodeOperands(insn_in_progress.get());
+        }
+	// FIXME in parsing
+        insn_in_progress->arch_decoded_from = m_Arch;
+        //insn_in_progress->arch_decoded_from = Arch_ppc32;
+        if(field<0,5>(insn) == 0x04) {
+            insn_in_progress->m_InsnOp.isVectorInsn = true;
+        }
+        return;
+    }
+  }
 }
 
 const power_entry&

@@ -37,9 +37,10 @@
 #    include "common/src/dthread.h"
 #    include "util.h"
 
-#    include <set>
-#    include <map>
-#    include <string>
+#include <set>
+#include <map>
+#include <string>
+#include <vector>
 
 struct GeneratorMTInternals;
 class int_process;

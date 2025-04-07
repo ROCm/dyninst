@@ -48,10 +48,6 @@
 #include <cassert>
 #include <iostream>
 
-#ifdef _MSC_VER
-#    pragma warning(disable : 4477)
-#endif
-
 using namespace std;
 unsigned long int_iRPC::next_id;
 
@@ -154,11 +150,12 @@ int_iRPC::setBinarySize(unsigned long s)
 void
 int_iRPC::copyBinaryBlob(void* b, unsigned long s)
 {
-    binary_blob = malloc(s);
-    assert(binary_blob);
-    binary_size = s;
-    memcpy(binary_blob, b, s);
-    freeBinaryBlob = true;
+   if(binary_blob && freeBinaryBlob) free(binary_blob);
+   binary_blob = malloc(s);
+   assert(binary_blob);
+   binary_size = s;
+   memcpy(binary_blob, b, s);
+   freeBinaryBlob = true;
 }
 
 void

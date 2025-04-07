@@ -31,11 +31,8 @@
 #if !defined(INSTRUCTION_DECODER_H)
 #    define INSTRUCTION_DECODER_H
 
-#    include "Instruction.h"
-
-#    if defined(_MSC_VER)
-#        pragma warning(disable : 4251)
-#    endif
+#include "Instruction.h"
+#include <stddef.h>
 
 namespace Dyninst
 {
@@ -81,20 +78,54 @@ public:
     void                      doDelayedDecode(const Instruction* insn_to_complete);
     struct INSTRUCTION_EXPORT buffer
     {
-        const unsigned char* start;
-        const unsigned char* end;
-        buffer(const unsigned char* b, unsigned int len)
-        : start(b)
-        , end(b + len)
-        {}
-        buffer(const void* b, unsigned int len)
-        : start(reinterpret_cast<const unsigned char*>(b))
-        , end(start + len)
-        {}
-        buffer(const unsigned char* b, const unsigned char* e)
-        : start(b)
-        , end(e)
-        {}
+      friend class Instruction;
+        public:
+        static const unsigned int maxInstructionLength = 16;
+      /// Construct an %InstructionDecoder object that decodes \c arch from \c buffer, up to \c size bytes.
+      /// Valid values for \c arch are \c Arch_x86, \c Arch_x86_64, \c Arch_ppc32, and \c Arch_ppc64.
+      InstructionDecoder(const unsigned char* buffer, size_t size, Architecture arch);
+      InstructionDecoder(const void* buffer, size_t size, Architecture arch);
+
+      INSTRUCTION_EXPORT ~InstructionDecoder() = default;
+      INSTRUCTION_EXPORT InstructionDecoder(const InstructionDecoder& o) = default;
+      INSTRUCTION_EXPORT InstructionDecoder& operator=(const InstructionDecoder  & o) = default;
+      /// Decode the current instruction in this %InstructionDecoder object's buffer, interpreting it as
+      /// machine language of the type understood by this %InstructionDecoder.
+      /// If the buffer does not contain a valid instruction stream, a null %Instruction pointer
+      /// will be returned.  The %Instruction's \c size field will contain the size of the instruction decoded.
+      Instruction decode();
+      /// Decode the instruction at \c buffer, interpreting it as machine language of the type
+      /// understood by this %InstructionDecoder.  If the buffer does not contain a valid instruction stream,
+      /// a null %Instruction pointer will be returned.  The %Instruction's \c size field will contain
+      /// the size of the instruction decoded.
+      Instruction decode(const unsigned char *buffer);
+      void doDelayedDecode(const Instruction* insn_to_complete);
+      struct INSTRUCTION_EXPORT buffer
+      {
+          const unsigned char* start;
+          const unsigned char* end;
+          buffer(const unsigned char* b, unsigned int len) :
+                  start(b), end(b+len) {}
+          buffer(const void* b, unsigned int len) :
+	start(reinterpret_cast<const unsigned char*>(b)), end(start+len) {}
+          buffer(const unsigned char* b, const unsigned char* e) :
+                  start(b), end(e) {}
+      };
+
+      // This interface allows registering a callback function to be invoked
+      // when the InstructionDecoder encounters a byte sequence it is not able
+      // to successfully convert into a known instruction
+      struct unknown_instruction {
+		  using callback_t = Instruction(*)(buffer);
+		  static void register_callback(callback_t);
+		  static callback_t unregister_callback();
+		  unknown_instruction() = delete;
+		  ~unknown_instruction() = delete;
+      };
+
+        private:
+            buffer m_buf;
+      boost::shared_ptr<InstructionDecoderImpl> m_Impl;
     };
 
 private:

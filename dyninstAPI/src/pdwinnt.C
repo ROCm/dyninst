@@ -28,7 +28,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "common/src/std_namesp.h"
 #include <iomanip>
 #include <string>
 #include "common/src/headers.h"
@@ -36,7 +35,6 @@
 #include "dyninstAPI/src/addressSpace.h"
 #include "binaryEdit.h"
 #include "common/src/stats.h"
-#include "common/src/Types.h"
 #include "dyninstAPI/src/debug.h"
 #include "dyninstAPI/src/instPoint.h"
 #include "common/src/ntHeaders.h"
@@ -46,7 +44,6 @@
 #include "dyninstAPI/src/inst-x86.h"
 #include "dyninstAPI/src/registerSpace.h"
 #include "image.h"
-#include "MemoryEmulator/memEmulator.h"
 #include <boost/tuple/tuple.hpp>
 
 #include "dyninstAPI/src/ast.h"
@@ -81,7 +78,7 @@ printSysError(unsigned errNo)
         fprintf(stderr, "Couldn't print error message\n");
         printSysError(GetLastError());
     }
-    fprintf(stderr, "*** System error [%d]: %s\n", errNo, buf);
+    fprintf(stderr, "*** System error [%u]: %s\n", errNo, buf);
     fflush(stderr);
 }
 
@@ -182,50 +179,18 @@ PCProcess::changeMemoryProtections(Address addr, size_t size, PCMemPerm rights,
     Address pageBase = addr - (addr % pageSize);
     size += (addr % pageSize);
 
-    // Temporary: set on a page-by-page basis to work around problems
-    // with memory deallocation
-    for(Address idx = pageBase, idx_e = pageBase + size; idx < idx_e; idx += pageSize)
-    {
-        mal_printf("setting rights to %s for [%lx %lx)\n", rights.getPermName().c_str(),
-                   idx, idx + pageSize);
-        if(!pcProc_->setMemoryAccessRights(idx, pageSize, rights, oldRights))
-        {
-            mal_printf("ERROR: failed to set access rights "
-                       "for page %lx, %s[%d]\n",
-                       addr, FILE__, __LINE__);
-        }
-        else if(isMemoryEmulated() && setShadow)
-        {
-            Address   shadowAddr = 0;
-            PCMemPerm shadowRights;
-            bool      valid               = false;
-            boost::tie(valid, shadowAddr) = getMemEm()->translate(idx);
-            if(!valid)
-            {
-                mal_printf("WARNING: set access rights on page %lx that has "
-                           "no shadow %s[%d]\n",
-                           addr, FILE__, __LINE__);
-            }
-            else
-            {
-                if(!pcProc_->setMemoryAccessRights(shadowAddr, pageSize, rights,
-                                                   shadowRights))
-                {
-                    mal_printf("ERROR: failed to set access rights "
-                               "for page %lx, %s[%d]\n",
-                               shadowAddr, FILE__, __LINE__);
-                }
-
-                if(shadowRights != oldRights)
-                {
-                    mal_printf("WARNING: shadow page[%lx] rights %s did not "
-                               "match orig-page [%lx] rights %s\n",
-                               shadowAddr, shadowRights.getPermName().c_str(), addr,
-                               oldRights.getPermName().c_str());
-                }
-            }
-        }
-    }
+	// Temporary: set on a page-by-page basis to work around problems
+	// with memory deallocation
+	for (Address idx = pageBase, idx_e = pageBase + size;
+         idx < idx_e; idx += pageSize) {
+        mal_printf("setting rights to %s for [%lx %lx)\n",
+                   rights.getPermName().c_str(), idx , idx + pageSize);
+        if (!pcProc_->setMemoryAccessRights(idx, pageSize,
+                                            rights, oldRights)) {
+			mal_printf("ERROR: failed to set access rights "
+                       "for page %lx, %s[%d]\n", addr, FILE__, __LINE__);
+		}
+	}
 }
 
 bool
@@ -515,96 +480,87 @@ EmitterIA32::emitCallParams(codeGen& gen, const std::vector<AstNodePtr>& operand
                             func_instance* target, std::vector<Register>& extra_saves,
                             bool noCost)
 {
-    callType              call_conven        = target->getCallingConvention();
-    int                   estimatedFrameSize = 0;
-    std::vector<Register> srcs;
-    Register              ecx_target = REG_NULL, edx_target = REG_NULL;
-    Address               unused       = ADDR_NULL;
-    const int             num_operands = operands.size();
+    callType call_conven = target->getCallingConvention();
+    int estimatedFrameSize = 0;
+    std::vector <Register> srcs;
+    Register ecx_target = Null_Register, edx_target = Null_Register;
+    Address unused = ADDR_NULL;
+    const int num_operands = operands.size();
 
     switch(call_conven)
     {
         case unknown_call:
         case cdecl_call:
         case stdcall_call:
-            // Push all registers onto stack
-            for(unsigned u = 0; u < operands.size(); u++)
-            {
-                Register src    = REG_NULL;
-                Address  unused = ADDR_NULL;
-                if(!operands[u]->generateCode_phase2(gen, false, unused, src))
-                    assert(0);
-                assert(src != REG_NULL);
-                srcs.push_back(src);
-            }
-            break;
-        case thiscall_call:
-            // Allocate the ecx register for the 'this' parameter
-            if(num_operands)
-            {
-                // result = gen.rs()->allocateSpecificRegister(gen, REGNUM_ECX, false);
-                // if (!result) {
-                //    emitNeededCallSaves(gen, REGNUM_ECX, extra_saves);
-                //}
-                if(!operands[0]->generateCode_phase2(gen, noCost, unused, ecx_target))
-                    assert(0);
-            }
-            srcs.push_back(Null_Register);
-            // Push other registers onto the stack
-            for(unsigned u = 1; u < operands.size(); u++)
-            {
-                Register src    = REG_NULL;
-                Address  unused = ADDR_NULL;
-                if(!operands[u]->generateCode_phase2(gen, false, unused, src))
-                    assert(0);
-                assert(src != REG_NULL);
-                srcs.push_back(src);
-            }
-            break;
-        case fastcall_call:
-            if(num_operands)
-            {
-                // Allocate the ecx register for the first parameter
-                // ecx_target = gen.rs()->allocateSpecificRegister(gen, REGNUM_ECX,
-                // false); if (!ecx_target) {
-                //    emitNeededCallSaves(gen, REGNUM_ECX, extra_saves);
-                //}
-            }
-            if(num_operands > 1)
-            {
-                // Allocate the edx register for the second parameter
-                // edx_target = gen.rs()->allocateSpecificRegister(gen, REGNUM_EDX,
-                // false); if (!edx_target) {
-                //    emitNeededCallSaves(gen, REGNUM_EDX, extra_saves);
-                //}
-            }
-            if(num_operands)
-            {
-                if(!operands[0]->generateCode_phase2(gen, noCost, unused, ecx_target))
-                    assert(0);
-            }
-            if(num_operands > 1)
-            {
-                if(!operands[1]->generateCode_phase2(gen, noCost, unused, edx_target))
-                    assert(0);
-            }
-            srcs.push_back(Null_Register);
-            srcs.push_back(Null_Register);
+          //Push all registers onto stack
+          for (unsigned u = 0; u < operands.size(); u++) {
+              Register src = Null_Register;
+              Address unused = ADDR_NULL;
+              if (!operands[u]->generateCode_phase2( gen, false, unused, src)) assert(0);
+              assert(src != Null_Register);
+              srcs.push_back(src);
+          }
+          break;
+    case thiscall_call:
+        //Allocate the ecx register for the 'this' parameter
+        if (num_operands) {
+            //result = gen.rs()->allocateSpecificRegister(gen, REGNUM_ECX, false);
+            //if (!result) {
+            //    emitNeededCallSaves(gen, REGNUM_ECX, extra_saves);
+            //}
+            if (!operands[0]->generateCode_phase2(gen, 
+                                                  noCost, 
+                                                  unused, ecx_target)) assert(0);
+        }
+        srcs.push_back(Null_Register);
+        //Push other registers onto the stack
+        for (unsigned u = 1; u < operands.size(); u++) {
+              Register src = Null_Register;
+              Address unused = ADDR_NULL;
+              if (!operands[u]->generateCode_phase2( gen, false, unused, src)) assert(0);
+              assert(src != Null_Register);
+              srcs.push_back(src);
+        }     
+        break;
+    case fastcall_call:
+        if (num_operands) {
+            //Allocate the ecx register for the first parameter
+            //ecx_target = gen.rs()->allocateSpecificRegister(gen, REGNUM_ECX, false);
+            //if (!ecx_target) {
+            //    emitNeededCallSaves(gen, REGNUM_ECX, extra_saves);
+            //}
+        }
+        if (num_operands > 1) {
+            //Allocate the edx register for the second parameter
+            //edx_target = gen.rs()->allocateSpecificRegister(gen, REGNUM_EDX, false);
+            //if (!edx_target) {
+            //    emitNeededCallSaves(gen, REGNUM_EDX, extra_saves);
+            //}
+        }
+        if (num_operands) {
+            if (!operands[0]->generateCode_phase2(gen, 
+                                                  noCost, 
+                                                  unused, ecx_target)) assert(0);
+        }
+        if (num_operands > 1) {
+            if (!operands[1]->generateCode_phase2(gen, 
+                                                  noCost, unused, edx_target)) assert(0);
+        }
+        srcs.push_back(Null_Register);
+        srcs.push_back(Null_Register);
 
-            // Push other registers onto the stack
-            for(unsigned u = 2; u < operands.size(); u++)
-            {
-                Register src    = REG_NULL;
-                Address  unused = ADDR_NULL;
-                if(!operands[u]->generateCode_phase2(gen, false, unused, src))
-                    assert(0);
-                assert(src != REG_NULL);
-                srcs.push_back(src);
-            }
-            break;
-        default:
-            fprintf(stderr, "Internal error.  Unknown calling convention\n");
-            assert(0);
+        //Push other registers onto the stack
+        for (unsigned u = 2; u < operands.size(); u++) {
+              Register src = Null_Register;
+              Address unused = ADDR_NULL;
+              if (!operands[u]->generateCode_phase2( gen, false, unused, src)) assert(0);
+              assert(src != Null_Register);
+              srcs.push_back(src);
+        }
+        break;
+    default:
+        fprintf(stderr, "Internal error.  Unknown calling convention\n");
+        assert(0);
     }
 
     // push arguments in reverse order, last argument first
@@ -620,15 +576,13 @@ EmitterIA32::emitCallParams(codeGen& gen, const std::vector<AstNodePtr>& operand
             gen.rs()->freeRegister(srcs[i]);
     }
 
-    if(ecx_target != REG_NULL)
-    {
-        // Store the parameter in ecx
-        gen.rs()->loadVirtualToSpecific(ecx_target, RealRegister(REGNUM_ECX), gen);
+    if (ecx_target != Null_Register) {
+        //Store the parameter in ecx
+		gen.rs()->loadVirtualToSpecific(ecx_target, RealRegister(REGNUM_ECX), gen);
     }
 
-    if(edx_target != REG_NULL)
-    {
-        gen.rs()->loadVirtualToSpecific(edx_target, RealRegister(REGNUM_EDX), gen);
+    if (edx_target != Null_Register) {
+		gen.rs()->loadVirtualToSpecific(edx_target, RealRegister(REGNUM_EDX), gen);
     }
     return estimatedFrameSize;
 }

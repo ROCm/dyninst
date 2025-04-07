@@ -266,30 +266,29 @@ BooleanVisitor::visit(RoseAST* r)
         newKids.push_back(r->child(i)->accept(this));
     }
 
-    switch(r->val().op)
-    {
-        case ROSEOperation::andOp:
-        case ROSEOperation::orOp:
-            assert(newKids.size() == 2);
-            if(newKids[0]->equals(newKids[1]))
-            {
-                return newKids[0];
-            }
-            break;
-        case ROSEOperation::ifOp:
-            // Our "true" is a constAST of 1
-            if(newKids[0]->getID() == AST::V_ConstantAST)
-            {
-                ConstantAST::Ptr c = ConstantAST::convert(newKids[0]);
-                // cerr << "\t 0 was const, val " << c->val() << endl;
-                if(c->val().val != 0)
-                {
-                    return newKids[1];
-                }
-            }
-            break;
-        default:
-            break;
+    return RoseAST::create(r->val(), newKids);
+  }
+  case ROSEOperation::extractOp: {
+    if (newKids[0]->getID() == AST::V_ConstantAST) {
+      assert(newKids[1]->getID() == AST::V_ConstantAST);
+      assert(newKids[2]->getID() == AST::V_ConstantAST);
+      
+      // Let's fix this...
+      // newKids[1] is the "from", and newKids[2] is the "to". As in "mask from 0 to 16".
+      ConstantAST::Ptr from = ConstantAST::convert(newKids[1]);
+      ConstantAST::Ptr to = ConstantAST::convert(newKids[2]);
+      ConstantAST::Ptr val = ConstantAST::convert(newKids[0]);
+      
+
+      auto lowBitPos{from->val().val};
+      auto highBitPos{to->val().val};
+      uint64_t newValue{val->val().val};
+      if(highBitPos < 64)
+        newValue &= ((1ULL << highBitPos) - 1);  // zero highBitPos and higher
+      newValue >>= lowBitPos;                  // shift to bit 0, eliminating unwanted low bits
+
+      return ConstantAST::create(Constant(newValue, highBitPos - lowBitPos));
+
     }
     return RoseAST::create(r->val(), newKids);
 }

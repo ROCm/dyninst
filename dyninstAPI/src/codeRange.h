@@ -40,8 +40,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <vector>
-#include "common/src/Types.h"
-#include "common/src/std_namesp.h"
+#include "dyntypes.h"
 #include "dyninstAPI/src/patch.h"
 
 /** template class for codeRangeTree. The implementation is based on red black
@@ -62,18 +61,13 @@ class replacedFunctionCall;
 class inferiorRPCinProgress;
 class parse_block;
 
-class codeRange : public patchTarget
-{
-public:
-    // These are now inherited from relocTarget
-    // virtual Address get_address() const = 0;
-    // virtual unsigned get_size() const = 0;
+class codeRange : public patchTarget {
+  public:
+    //These are now inherited from relocTarget
+    //virtual Dyninst::Address get_address() const = 0;
+    //virtual unsigned get_size() const = 0;
 
-    virtual void* getPtrToInstruction(Address) const
-    {
-        assert(0);
-        return NULL;
-    }
+    virtual void *getPtrToInstruction(Dyninst::Address) const { assert(0); return NULL; }
 
     // This returns a local pointer to the "beginning" of the
     // code range - as opposed to get_address, which returns
@@ -103,10 +97,12 @@ public:
     signal_handler_location* is_signal_handler_location();
     inferiorRPCinProgress*   is_inferior_rpc();
 
-    // Prints codeRange info to stderr.
-    void print_range(Address addr = 0);
+    //Prints codeRange info to stderr.  
+    void print_range(Dyninst::Address addr = 0);
 
-    friend ostream& operator<<(ostream& s, const codeRange& c);
+    codeRange() = default;
+    codeRange(const codeRange&) = default;
+    virtual ~codeRange() = default;
 };
 
 class codeRangeTree
@@ -118,14 +114,13 @@ class codeRangeTree
     } color_t;
 
     /** tree implementation structure. Used to implement the RB tree */
-    typedef struct entry
-    {
-        Address       key;
-        codeRange*    value;
-        color_t       color;  /* color of the node */
-        struct entry* left;   /* left child */
-        struct entry* right;  /* right child */
-        struct entry* parent; /* parent of the node */
+    typedef struct entry {
+	Dyninst::Address key;
+	codeRange *value;
+	color_t color;	/* color of the node */
+	struct entry* left; /* left child */
+	struct entry* right; /* right child */
+	struct entry* parent; /* parent of the node */
 
         /** constructor for structure */
         entry()
@@ -149,18 +144,13 @@ class codeRangeTree
         , parent(NULL)
         {}
 
-        /** constructor
-         * @param d data element
-         * @param e nill entry
-         */
-        entry(Address key_, codeRange* value_, entry* e)
-        : key(key_)
-        , value(value_)
-        , color(TREE_RED)
-        , left(e)
-        , right(e)
-        , parent(NULL)
-        {}
+	/** constructor
+	 * @param d data element
+	 * @param e nill entry 
+	 */
+	entry(Dyninst::Address key_, codeRange *value_, entry* e)
+	    : key(key_), value(value_), color(TREE_RED), left(e),
+	    right(e), parent(NULL) {}
 
         /** constructor
          * @param e the entry structure that will be copied
@@ -201,7 +191,7 @@ class codeRangeTree
 
     // insertion to a binary search tree. It returns the new element pointer
     // that is inserted. If element is already there it returns NULL
-    entry* treeInsert(Address, codeRange*);
+    entry* treeInsert(Dyninst::Address, codeRange *);
 
     // finds the elemnts in the tree that will be replaced with the element
     // being deleted in the  deletion. That is the element with the largest
@@ -209,8 +199,8 @@ class codeRangeTree
     entry* treeSuccessor(entry*) const;
 
     // method that returns the entry pointer for the element that is searched
-    // for. If the entry is not found then it retuns NULL
-    entry* find_internal(Address) const;
+    //for. If the entry is not found then it retuns NULL
+    entry* find_internal(Dyninst::Address) const;
 
     // infix traverse of the RB tree. It traverses the tree in ascending order
     void traverse(codeRange**, entry*, int&) const;
@@ -255,22 +245,22 @@ public:
     /** removes the element in the tree
      * @param 1 element that will be removed
      */
-    void remove(Address);
+    void remove(Dyninst::Address);
 
     /** returns true if the argument is member of the codeRangeTree
      * @param e the element that will be searched for
      */
-    bool find(Address, codeRange*&) const;
+    bool find(Dyninst::Address, codeRange *&) const;
 
     /** Returns the largest value less than or equal to the
      * key given
      */
-    bool precessor(Address, codeRange*&) const;
+    bool precessor(Dyninst::Address, codeRange *&) const;
 
     /** Returns the smallest value greater than or equal to the
      * key given
      */
-    bool successor(Address, codeRange*&) const;
+    bool successor(Dyninst::Address, codeRange *&) const;
 
     /** fill an buffer array with the sorted
      * elements of the codeRangeTree in ascending order according to comparison function

@@ -28,12 +28,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #if !defined(IA_POWER__H)
-#    define IA_POWER__H
-#    include "common/h/DynAST.h"
-#    include "dataflowAPI/h/Absloc.h"
-#    include "dataflowAPI/h/SymEval.h"
-#    include "dataflowAPI/h/slicing.h"
-#    include "IA_IAPI.h"
+#define IA_POWER__H
+#include <string>
+#include "common/h/DynAST.h"
+#include "dataflowAPI/h/Absloc.h"
+#include "dataflowAPI/h/SymEval.h"
+#include "dataflowAPI/h/slicing.h"
+#include "IA_IAPI.h"
 
 namespace Dyninst
 {

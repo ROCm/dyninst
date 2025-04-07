@@ -3,7 +3,8 @@
 #if !defined(_INJECTOR_H_)
 #    define _INJECTOR_H_
 
-#    include "PCProcess.h"
+#include <string>
+#include "PCProcess.h"
 
 namespace Dyninst
 {

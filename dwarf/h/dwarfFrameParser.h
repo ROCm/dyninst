@@ -31,15 +31,20 @@
 #if !defined(DWARF_SW_H_)
 #    define DWARF_SW_H_
 
-#    include <stack>
-#    include <vector>
-#    include "dyntypes.h"
-#    include "dyn_regs.h"
-#    include "ProcReader.h"
-#    include "elfutils/libdw.h"
-#    include "util.h"
-#    include <boost/thread/once.hpp>
-#    include "concurrent.h"
+#include <map>
+#include <utility>
+#include <stack>
+#include <vector>
+#include "dyntypes.h"
+#include "Architecture.h"
+#include "registers/MachRegister.h"
+#include "ProcReader.h"
+#include "elfutils/libdw.h"
+#include "util.h"
+#include <boost/thread/once.hpp>
+#include "concurrent.h"
+
+namespace Dyninst {
 
 namespace Dyninst
 {

@@ -29,6 +29,7 @@
  */
 
 #include "InstructionDecoder-aarch64.h"
+#include "registers/aarch64_regs.h"
 
 namespace Dyninst
 {
@@ -667,14 +668,17 @@ InstructionDecoder_aarch64::makeRdExpr()
         {
             switch(size)
             {
-                case 0x1:
-                    reg = aarch64::s0;
-                    break;
-                case 0x2:
-                    reg = aarch64::d0;
-                    break;
-                default:
-                    isValid = false;
+                int sizeVal = field<30, 31>(insn);
+
+                if (field<23, 23>(insn) == 1)
+                    sizeVal = 4;
+
+                unsigned extend = sField * sizeVal;
+                int extendSize = 31;
+                while (extendSize >= 0 && ((extend << (31 - extendSize)) & 0x80000000) == 0)
+                    extendSize--;
+
+                //above values need to be used in a dereference expression
             }
         }
         else if(IS_INSN_SCALAR_INDEX(insn))
@@ -2178,6 +2182,108 @@ InstructionDecoder_aarch64::makeRmExpr()
                 }
             }
             else
+                insn_in_progress->m_Operands.reverse();
+        }
+
+        void InstructionDecoder_aarch64::processAlphabetImm() {
+            if (op == 1 && cmode == 0xE) {
+                uint64_t imm = 0;
+
+                for (int imm_index = 0; imm_index < 8; imm_index++)
+                    imm |= (simdAlphabetImm & (1 << imm_index)) ? (0xFFULL << (imm_index * 8)) : 0;
+
+                insn_in_progress->appendOperand(Immediate::makeImmediate(Result(u64, imm)), true, false);
+            }
+            else if (cmode == 0xF) {
+                //fmov (vector, immediate)
+                //TODO: check with Bill if this is fine
+                insn_in_progress->appendOperand(Immediate::makeImmediate(Result(u8, simdAlphabetImm)), true, false);
+            }
+            else {
+                int shiftAmt = 0;
+
+                //16-bit shifted immediate
+                if ((cmode & 0xC) == 0x8)
+                    shiftAmt = ((cmode & 0x2) >> 1) * 8;
+                    //32-bit shifted immediate
+                else if ((cmode & 0x8) == 0x0)
+                    shiftAmt = ((cmode & 0x6) >> 1) * 8;
+                    //32-bit shifting ones
+                else if ((cmode & 0xE) == 0xC)
+                    shiftAmt = ((cmode & 0x0) + 1) * 8;
+
+                Expression::Ptr lhs = Immediate::makeImmediate(Result(u32, unsign_extend32(8, simdAlphabetImm)));
+                Expression::Ptr rhs = Immediate::makeImmediate(Result(u32, unsign_extend32(5, shiftAmt)));
+                Expression::Ptr imm = makeLeftShiftExpression(lhs, rhs, u64);
+
+                insn_in_progress->appendOperand(imm, true, false);
+            }
+        }
+
+#include "aarch64_opcode_tables.C"
+
+        void InstructionDecoder_aarch64::doDelayedDecode(const Instruction *insn_to_complete) {
+            InstructionDecoder::buffer b(insn_to_complete->ptr(), insn_to_complete->size());
+            //insn_to_complete->m_Operands.reserve(4);
+            decode(b);
+            decodeOperands(insn_in_progress.get());
+
+            Instruction* iptr = const_cast<Instruction*>(insn_to_complete);
+            *iptr = *(insn_in_progress.get());
+        }
+
+        bool InstructionDecoder_aarch64::pre_process_checks(const aarch64_insn_entry &entry) {
+            bool ret = false;
+            entryID insnID = entry.op;
+            const string& mnemonic = entry.mnemonic;
+
+            vector<entryID> simdCompareRegInsns = {aarch64_op_cmeq_advsimd_reg, aarch64_op_cmge_advsimd_reg, aarch64_op_cmgt_advsimd_reg, aarch64_op_cmhi_advsimd, aarch64_op_cmhs_advsimd, aarch64_op_cmtst_advsimd},
+                            simdCompareZeroInsns = {aarch64_op_cmeq_advsimd_zero, aarch64_op_cmge_advsimd_zero, aarch64_op_cmgt_advsimd_zero, aarch64_op_cmle_advsimd, aarch64_op_cmlt_advsimd};
+            vector<entryID> fpCompareRegInsns = {aarch64_op_fcmeq_advsimd_reg, aarch64_op_fcmge_advsimd_reg, aarch64_op_fcmgt_advsimd_reg},
+                            fpCompareZeroInsns = {aarch64_op_fcmeq_advsimd_zero, aarch64_op_fcmge_advsimd_zero, aarch64_op_fcmgt_advsimd_zero, aarch64_op_fcmle_advsimd, aarch64_op_fcmlt_advsimd};
+
+            if(insnID == aarch64_op_sqshl_advsimd_imm) {
+                if(!IS_INSN_SIMD_SHIFT_IMM(insn) && !IS_INSN_SCALAR_SHIFT_IMM(insn))
+                    ret = true;
+                else if(((insn >> 11) & 0x1) != 0)
+                    ret = true;
+            } else if((find(simdCompareRegInsns.begin(), simdCompareRegInsns.end(), insnID) != simdCompareRegInsns.end() ||
+                      (find(fpCompareRegInsns.begin(), fpCompareRegInsns.end(), insnID) != fpCompareRegInsns.end()))
+                      && !(IS_INSN_SCALAR_3SAME(insn) || IS_INSN_SIMD_3SAME(insn))) {
+                ret = true;
+            } else if((find(simdCompareZeroInsns.begin(), simdCompareZeroInsns.end(), insnID) != simdCompareZeroInsns.end() ||
+                       find(fpCompareZeroInsns.begin(), fpCompareZeroInsns.end(), insnID) != fpCompareZeroInsns.end() ||
+                       insnID == aarch64_op_rev64_advsimd)
+                      && !(IS_INSN_SIMD_2REG_MISC(insn) || IS_INSN_SCALAR_2REG_MISC(insn))) {
+                ret = true;
+            } else if((mnemonic.find("sha1") != string::npos || mnemonic.find("sha2") != string::npos)
+                      && !(IS_INSN_CRYPT_2REG_SHA(insn) || IS_INSN_CRYPT_3REG_SHA(insn))) {
+                ret = true;
+            }
+
+            return ret;
+        }
+
+        bool InstructionDecoder_aarch64::decodeOperands(const Instruction *insn_to_complete) {
+            int insn_table_index = findInsnTableIndex(0);
+            isValid = !pre_process_checks(aarch64_insn_entry::main_insn_table[insn_table_index]);
+            const auto& insn_table_entry = isValid
+                ? aarch64_insn_entry::main_insn_table[insn_table_index]
+                : aarch64_insn_entry::main_insn_table[0];
+
+            insn = insn_to_complete->m_RawInsn.small_insn;
+
+            if (IS_INSN_LDST_REG(insn) ||
+                IS_INSN_ADDSUB_EXT(insn) ||
+                IS_INSN_ADDSUB_SHIFT(insn) ||
+                IS_INSN_LOGICAL_SHIFT(insn))
+                skipRm = true;
+
+            for (std::size_t i = 0; i < insn_table_entry.operandCnt; i++) {
+                std::mem_fn(insn_table_entry.operands[i])(this);
+            }
+
+            if (insn_table_index == 0)
                 isValid = false;
         }
         else

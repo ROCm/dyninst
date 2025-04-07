@@ -30,10 +30,11 @@
 #if !defined SYM_READER_H_
 #    define SYM_READER_H_
 
-#    include "dyntypes.h"
-#    include "util.h"
-#    include "dyn_regs.h"
-#    include <string>
+#include "dyntypes.h"
+#include "util.h"
+#include <string>
+#include <stddef.h>
+#include "Architecture.h"
 
 namespace Dyninst
 {

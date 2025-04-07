@@ -35,6 +35,7 @@
 #    define DYN_DETAIL_BOOST_NO_INTRINSIC_WCHAR_T 1
 #endif
 #include "dyntypes.h"
+#include <stddef.h>
 #include <vector>
 #include <map>
 #include <typeinfo>
@@ -352,10 +353,8 @@ public:
         size_t operator()(const void* a) const noexcept { return (size_t) a; }
     };
 
-#if defined(_MSC_VER)
-    typedef dyn_hash_map<void*, void*> annos_by_type_t;
-#    pragma warning(push)
-#    pragma warning(disable : 4251)
+#if defined (_MSC_VER)
+      typedef dyn_hash_map<void *, void *> annos_by_type_t;
 #else
     typedef dyn_hash_map<void*, void*, void_ptr_hasher> annos_by_type_t;
 #endif
@@ -391,12 +390,10 @@ private:
         //  set up to minimize search time, not deletion time.  It could
         //  be changed if this becomes a significant time drain.
 
-        unsigned int n = 0;
-        for(unsigned int i = 0; i < getAnnos()->size(); ++i)
-        {
-            annos_by_type_t* abt = (*getAnnos())[i];
-            if(!abt)
-                continue;
+		  for (unsigned int i = 0; i < getAnnos()->size(); ++i)
+		  {
+			  annos_by_type_t *abt = (*getAnnos())[i];
+			  if (!abt) continue;
 
             annos_by_type_t::iterator iter = abt->find(this);
             if(iter != abt->end())
@@ -413,8 +410,7 @@ private:
                             i);
                 }
 
-                abt->erase(iter);
-                n++;
+				  abt->erase(iter);
 
                 //  get rid of this check...  just making sure that erase is behaving as
                 //  expected...
@@ -757,9 +753,5 @@ public:
 };
 
 }  // namespace Dyninst
-
-#ifdef _MSC_VER
-#    pragma warning(pop)
-#endif
 
 #endif

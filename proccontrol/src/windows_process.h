@@ -31,15 +31,18 @@
 #if !defined(WINDOWS_PROCESS_H)
 #    define WINDOWS_PROCESS_H
 
-#    include "x86_process.h"
-#    include "common/src/IntervalTree.h"
+#include <assert.h>
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <vector>
+#include "x86_process.h"
+#include "common/src/IntervalTree.h"
 
 class windows_thread;
 
-#    pragma warning(disable : 4250)
-class windows_process
-: virtual public x86_process
-, virtual public hybrid_lwp_control_process
+class windows_process : virtual public x86_process, virtual public hybrid_lwp_control_process
 {
 public:
     windows_process(Dyninst::PID p, std::string e, std::vector<std::string> a,

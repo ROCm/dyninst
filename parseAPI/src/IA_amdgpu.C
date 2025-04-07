@@ -29,7 +29,6 @@
  */
 
 #include "IA_amdgpu.h"
-#include "Register.h"
 #include "Dereference.h"
 #include "Immediate.h"
 #include "BinaryFunction.h"
@@ -44,6 +43,7 @@
 #include <functional>
 #include <algorithm>
 #include <set>
+#include "Register.h"
 
 using namespace Dyninst;
 using namespace InstructionAPI;
@@ -71,7 +71,9 @@ bool
 IA_amdgpu::isNop() const
 {
     Instruction ci = curInsn();
-    if(ci.getOperation().getID() == amdgpu_op_s_nop)
+    auto id = ci.getOperation().getID();
+    if(id == amdgpu_gfx908_op_S_NOP || 
+        id == amdgpu_gfx90a_op_S_NOP || id == amdgpu_gfx940_op_S_NOP)
         return true;
     return false;
 }

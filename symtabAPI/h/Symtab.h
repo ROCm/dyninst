@@ -31,39 +31,28 @@
 #ifndef __SYMTAB_H__
 #define __SYMTAB_H__
 
+#include <iosfwd>
+#include <map>
+#include <stddef.h>
+#include <utility>
+#include <string>
+#include <vector>
 #include <set>
+#include <memory>
 
 #include "Symbol.h"
 #include "Module.h"
 #include "Region.h"
-
+#include "Function.h"
 #include "Annotatable.h"
 #include "ProcReader.h"
-#include "IBSTree.h"
 #include "Type.h"
-
+#include "compiler_annotations.h"
+#include "relocationEntry.h"
+#include "ExceptionBlock.h"
 #include "dyninstversion.h"
 
-#include "concurrent.h"
-
 #include "boost/shared_ptr.hpp"
-#include "boost/multi_index_container.hpp"
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/mem_fun.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/identity.hpp>
-#include <boost/multi_index/random_access_index.hpp>
-using boost::multi_index_container;
-using boost::multi_index::hashed_non_unique;
-using boost::multi_index::indexed_by;
-using boost::multi_index::ordered_non_unique;
-using boost::multi_index::ordered_unique;
-
-using boost::multi_index::const_mem_fun;
-using boost::multi_index::identity;
-using boost::multi_index::member;
-using boost::multi_index::tag;
 
 class MappedFile;
 
@@ -80,289 +69,291 @@ namespace SymtabAPI
 class Archive;
 class builtInTypeCollection;
 
-class ExceptionBlock;
 class Object;
 class localVar;
-class relocationEntry;
 class Type;
-class FunctionBase;
-class FuncRange;
+struct symtab_impl;
 
-typedef IBSTree<ModRange>      ModRangeLookup;
-typedef IBSTree<FuncRange>     FuncRangeLookup;
 typedef Dyninst::ProcessReader MemRegReader;
 
 class SYMTAB_EXPORT Symtab
 : public LookupInterface
 , public AnnotatableSparse
 {
-    friend class Archive;
-    friend class Symbol;
-    friend class Function;
-    friend class Variable;
-    friend class Module;
-    friend class Region;
-    friend class emitElfStatic;
-    friend class emitWin;
-    friend class Aggregate;
-    friend class relocationEntry;
+   friend class Archive;
+   friend class Symbol;
+   friend class Function;
+   friend class Variable;
+   friend class Module;
+   friend class Region;
+   friend class emitElfStatic;
+   friend class emitWin;
+   friend class Aggregate;
+   friend class relocationEntry;
+   friend class Object;
 
-public:
-    /***** Public Member Functions *****/
-public:
-    static void version(int& major, int& minor, int& maintenance);
-    Symtab(MappedFile*);
+   // Hide implementation details that are complex or add large dependencies
+   const std::unique_ptr<symtab_impl> impl;
 
-    Symtab();
+ public:
 
-    Symtab(const Symtab& obj);
-    Symtab(unsigned char* mem_image, size_t image_size, const std::string& name,
-           bool defensive_binary, bool& err);
 
-    typedef enum
-    {
-        NotDefensive,
-        Defensive
-    } def_t;
+   /***** Public Member Functions *****/
+   public:
+   static void version(int& major, int& minor, int& maintenance);
 
-    static bool    openFile(Symtab*& obj, std::string filename,
-                            def_t defensive_binary = NotDefensive);
-    static bool    openFile(Symtab*& obj, void* mem_image, size_t size, std::string name,
-                            def_t defensive_binary = NotDefensive);
-    static Symtab* findOpenSymtab(std::string filename);
-    static bool    closeSymtab(Symtab*);
+   Symtab();
 
-    bool           exportXML(std::string filename);
-    bool           exportBin(std::string filename);
-    static Symtab* importBin(std::string filename);
-    bool           getRegValueAtFrame(Address pc, Dyninst::MachRegister reg,
-                                      Dyninst::MachRegisterVal& reg_result, MemRegReader* reader);
-    bool           hasStackwalkDebugInfo();
+   Symtab(unsigned char *mem_image, size_t image_size, 
+                        const std::string &name, bool defensive_binary, bool &err);
 
-    /**************************************
-     *** LOOKUP FUNCTIONS *****************
-     **************************************/
+   ~Symtab();
 
-    // Symbol
+   Symtab(Symtab const&) = delete;
+   Symtab& operator=(Symtab const&) = delete;
+   Symtab(Symtab&&) = delete;
+   Symtab& operator=(Symtab&&) = delete;
 
-    virtual bool findSymbol(std::vector<Symbol*>& ret, const std::string& name,
-                            Symbol::SymbolType sType = Symbol::ST_UNKNOWN,
-                            NameType nameType = anyName, bool isRegex = false,
-                            bool checkCase = false, bool includeUndefined = false);
+   typedef enum {
+      NotDefensive,
+      Defensive} def_t; 
 
-    virtual bool getAllSymbols(std::vector<Symbol*>& ret);
-    virtual bool getAllSymbolsByType(std::vector<Symbol*>& ret, Symbol::SymbolType sType);
+   static bool openFile(Symtab *&obj, std::string filename, 
+                                      def_t defensive_binary = NotDefensive);
+   static bool openFile(Symtab *&obj, void *mem_image, size_t size, 
+                                      std::string name, def_t defensive_binary = NotDefensive);
+   static Symtab *findOpenSymtab(std::string filename);
+   static bool closeSymtab(Symtab *);
 
-    std::vector<Symbol*> findSymbolByOffset(Offset);
+   bool getRegValueAtFrame(Address pc, 
+                                     Dyninst::MachRegister reg, 
+                                     Dyninst::MachRegisterVal &reg_result,
+                                     MemRegReader *reader);
+   bool hasStackwalkDebugInfo();
 
-    // Return all undefined symbols in the binary. Currently used for finding
-    // the .o's in a static archive that have definitions of these symbols
-    bool getAllUndefinedSymbols(std::vector<Symbol*>& ret);
+   /**************************************
+    *** LOOKUP FUNCTIONS *****************
+    **************************************/
 
-    // Inversely, return all non-undefined symbols in the binary
-    bool getAllDefinedSymbols(std::vector<Symbol*>& ret);
+   // Symbol
 
-    // Function
+   virtual bool findSymbol(std::vector<Symbol *> &ret, 
+                                         const std::string& name,
+                                         Symbol::SymbolType sType = Symbol::ST_UNKNOWN,
+                                         NameType nameType = anyName,
+                                         bool isRegex = false, 
+                                         bool checkCase = false,
+                                         bool includeUndefined = false);
 
-    bool findFuncByEntryOffset(Function*& ret, const Offset offset);
-    bool findFunctionsByName(std::vector<Function*>& ret, const std::string name,
-                             NameType nameType = anyName, bool isRegex = false,
-                             bool checkCase = true);
-    bool getAllFunctions(std::vector<Function*>& ret);
-    const std::vector<Function*>& getAllFunctionsRef() const { return everyFunction; }
+   virtual bool getAllSymbols(std::vector<Symbol *> &ret);
+   virtual bool getAllSymbolsByType(std::vector<Symbol *> &ret, 
+         Symbol::SymbolType sType);
 
-    // Searches for functions without returning inlined instances
-    bool getContainingFunction(Offset offset, Function*& func);
-    // Searches for functions and returns inlined instances
-    bool getContainingInlinedFunction(Offset offset, FunctionBase*& func);
+   std::vector<Symbol *> findSymbolByOffset(Offset);
 
-    // Variable
-    bool findVariablesByOffset(std::vector<Variable*>& ret, const Offset offset);
-    bool findVariablesByName(std::vector<Variable*>& ret, const std::string name,
-                             NameType nameType = anyName, bool isRegex = false,
-                             bool checkCase = true);
-    bool getAllVariables(std::vector<Variable*>& ret);
+   // Return all undefined symbols in the binary. Currently used for finding
+   // the .o's in a static archive that have definitions of these symbols
+   bool getAllUndefinedSymbols(std::vector<Symbol *> &ret);
 
-    // Module
+   // Inversely, return all non-undefined symbols in the binary
+   bool getAllDefinedSymbols(std::vector<Symbol *> &ret);
 
-    bool    getAllModules(std::vector<Module*>& ret);
-    bool    findModuleByOffset(std::set<Module*>& ret, Offset off);
-    bool    findModuleByOffset(Module*& ret, Offset off);
-    bool    findModuleByName(Module*& ret, const std::string name);
-    Module* getDefaultModule();
+   // Function
 
-    // Region
+   bool findFuncByEntryOffset(Function *&ret, const Offset offset);
+   bool findFunctionsByName(std::vector<Function *> &ret, const std::string name,
+                                          NameType nameType = anyName, 
+                                          bool isRegex = false,
+                                          bool checkCase = true);
+   bool getAllFunctions(std::vector<Function *>&ret);
+   const std::vector<Function*>& getAllFunctionsRef() const { return everyFunction; }
 
-    bool getCodeRegions(std::vector<Region*>& ret);
-    bool getDataRegions(std::vector<Region*>& ret);
-    bool getAllRegions(std::vector<Region*>& ret);
-    bool getAllNewRegions(std::vector<Region*>& ret);
-    //  change me to use a hash
-    bool    findRegion(Region*& ret, std::string regname);
-    bool    findRegion(Region*& ret, const Offset addr, const unsigned long size);
-    bool    findRegionByEntry(Region*& ret, const Offset offset);
-    Region* findEnclosingRegion(const Offset offset);
+   //Searches for functions without returning inlined instances
+   bool getContainingFunction(Offset offset, Function* &func);
+   //Searches for functions and returns inlined instances
+   bool getContainingInlinedFunction(Offset offset, FunctionBase* &func);
 
-    // Exceptions
-    bool findException(ExceptionBlock& excp, Offset addr);
-    bool getAllExceptions(std::vector<ExceptionBlock*>& exceptions);
-    bool findCatchBlock(ExceptionBlock& excp, Offset addr, unsigned size = 0);
+   // Variable
+   bool findVariablesByOffset(std::vector<Variable *> &ret, const Offset offset);
+   bool findVariablesByName(std::vector<Variable *> &ret, const std::string name,
+                                          NameType nameType = anyName, 
+                                          bool isRegex = false, 
+                                          bool checkCase = true);
+   bool getAllVariables(std::vector<Variable *> &ret);
 
-    // Relocation entries
-    bool getFuncBindingTable(std::vector<relocationEntry>& fbt) const;
-    bool updateFuncBindingTable(Offset stub_addr, Offset plt_addr);
+   // Module
 
-    /**************************************
-     *** SYMBOL ADDING FUNCS **************
-     **************************************/
+   bool getAllModules(std::vector<Module *>&ret);
+   DYNINST_DEPRECATED("Use findModulesByOffset(Offset)") bool findModuleByOffset(Module *& ret, Offset off);
+   Module* findModuleByOffset(Offset offset) const;
+   std::vector<Module*> findModulesByName(std::string const& name) const;
+   Module *getDefaultModule() const;
+   Module* getContainingModule(Offset offset) const;
 
-    bool      addSymbol(Symbol* newsym);
-    bool      addSymbol(Symbol* newSym, Symbol* referringSymbol);
-    Function* createFunction(std::string name, Offset offset, size_t size,
-                             Module* mod = NULL);
-    Variable* createVariable(std::string name, Offset offset, size_t size,
-                             Module* mod = NULL);
+   // Region
 
-    bool deleteFunction(Function* func);
-    bool deleteVariable(Variable* var);
+   bool getCodeRegions(std::vector<Region *>&ret);
+   bool getDataRegions(std::vector<Region *>&ret);
+   bool getAllRegions(std::vector<Region *>&ret);
+   bool getAllNewRegions(std::vector<Region *>&ret);
+   //  change me to use a hash
+   bool findRegion(Region *&ret, std::string regname);
+   bool findRegion(Region *&ret, const Offset addr, const unsigned long size);
+   bool findRegionByEntry(Region *&ret, const Offset offset);
+   Region *findEnclosingRegion(const Offset offset);
 
-    /*****Query Functions*****/
-    bool                  isExec() const;
-    bool                  isExecutable() const;
-    bool                  isSharedLibrary() const;
-    bool                  isStripped();
-    ObjectType            getObjectType() const;
-    Dyninst::Architecture getArchitecture() const;
-    bool                  isCode(const Offset where) const;
-    bool                  isData(const Offset where) const;
-    bool                  isValidOffset(const Offset where) const;
+   // Exceptions
+   bool findException(ExceptionBlock &excp,Offset addr);
+   bool getAllExceptions(std::vector<ExceptionBlock *> &exceptions);
+   bool findCatchBlock(ExceptionBlock &excp, Offset addr, 
+         unsigned size = 0);
 
-    bool getMappedRegions(std::vector<Region*>& mappedRegs) const;
+   // Relocation entries
+   bool getFuncBindingTable(std::vector<relocationEntry> &fbt) const;
+   bool findPltEntryByTarget(Address target_address, relocationEntry &result) const;
+   bool updateFuncBindingTable(Offset stub_addr, Offset plt_addr);
 
-    /***** Line Number Information *****/
-    bool getAddressRanges(std::vector<AddressRange>& ranges, std::string lineSource,
-                          unsigned int LineNo);
-    bool getSourceLines(std::vector<Statement::Ptr>& lines, Offset addressInRange);
-    bool getSourceLines(std::vector<LineNoTuple>& lines, Offset addressInRange);
-    bool addLine(std::string lineSource, unsigned int lineNo, unsigned int lineOffset,
-                 Offset lowInclAddr, Offset highExclAddr);
-    bool addAddressRange(Offset lowInclAddr, Offset highExclAddr, std::string lineSource,
-                         unsigned int lineNo, unsigned int lineOffset = 0);
-    void setTruncateLinePaths(bool value);
-    bool getTruncateLinePaths();
-    void forceFullLineInfoParse();
+   /**************************************
+    *** SYMBOL ADDING FUNCS **************
+    **************************************/
 
-    /***** Type Information *****/
-    virtual bool findType(boost::shared_ptr<Type>& type, std::string name);
-    bool         findType(Type*& t, std::string n)
-    {
-        boost::shared_ptr<Type> tp;
-        auto                    r = findType(tp, n);
-        t                         = tp.get();
-        return r;
-    }
-    virtual boost::shared_ptr<Type> findType(unsigned type_id, Type::do_share_t);
-    Type*        findType(unsigned i) { return findType(i, Type::share).get(); }
-    virtual bool findVariableType(boost::shared_ptr<Type>& type, std::string name);
-    bool         findVariableType(Type*& t, std::string n)
-    {
-        boost::shared_ptr<Type> tp;
-        auto                    r = findVariableType(tp, n);
-        t                         = tp.get();
-        return r;
-    }
+   bool addSymbol(Symbol *newsym);
+   bool addSymbol(Symbol *newSym, Symbol *referringSymbol);
+   Function *createFunction(std::string name, Offset offset, size_t size, Module *mod = NULL);
+   Variable *createVariable(std::string name, Offset offset, size_t size, Module *mod = NULL);
 
-    bool addType(Type* typ);
+   bool deleteFunction(Function *func);
+   bool deleteVariable(Variable *var);
 
-    static boost::shared_ptr<builtInTypeCollection>& builtInTypes();
-    static boost::shared_ptr<typeCollection>&        stdTypes();
 
-    static void                getAllstdTypes(std::vector<boost::shared_ptr<Type>>&);
-    static std::vector<Type*>* getAllstdTypes()
-    {
-        std::vector<boost::shared_ptr<Type>> v;
-        getAllstdTypes(v);
-        auto r = new std::vector<Type*>(v.size());
-        for(std::size_t i = 0; i < v.size(); i++)
-            (*r)[i] = v[i].get();
-        return r;
-    }
-    static void                getAllbuiltInTypes(std::vector<boost::shared_ptr<Type>>&);
-    static std::vector<Type*>* getAllbuiltInTypes()
-    {
-        std::vector<boost::shared_ptr<Type>> v;
-        getAllbuiltInTypes(v);
-        auto r = new std::vector<Type*>(v.size());
-        for(std::size_t i = 0; i < v.size(); i++)
-            (*r)[i] = v[i].get();
-        return r;
-    }
+   /*****Query Functions*****/
+   bool isExec() const;
+   bool isExecutable() const;
+   bool isSharedLibrary() const;
+   bool isStripped();
+   ObjectType getObjectType() const;
+   Dyninst::Architecture getArchitecture() const;
+   bool isCode(const Offset where) const;
+   bool isData(const Offset where) const;
+   bool isValidOffset(const Offset where) const;
 
-    void parseTypesNow();
+   bool getMappedRegions(std::vector<Region *> &mappedRegs) const;
 
-    /***** Local Variable Information *****/
-    bool findLocalVariable(std::vector<localVar*>& vars, std::string name);
+   /***** Line Number Information *****/
+   bool getAddressRanges(std::vector<AddressRange> &ranges,
+                         std::string lineSource, unsigned int LineNo);
+   bool getSourceLines(std::vector<Statement::Ptr> &lines,
+                       Offset addressInRange);
+   bool getSourceLines(std::vector<LineNoTuple> &lines,
+                                     Offset addressInRange);
+   void setTruncateLinePaths(bool value);
+   bool getTruncateLinePaths();
+   
+   /***** Type Information *****/
+   virtual bool findType(boost::shared_ptr<Type>& type, std::string name);
+   bool findType(Type*& t, std::string n) {
+     boost::shared_ptr<Type> tp;
+     auto r = findType(tp, n);
+     t = tp.get();
+     return r;
+   }
+   virtual boost::shared_ptr<Type> findType(unsigned type_id, Type::do_share_t);
+   Type* findType(unsigned i) { return findType(i, Type::share).get(); }
+   virtual bool findVariableType(boost::shared_ptr<Type>& type, std::string name);
+   bool findVariableType(Type*& t, std::string n) {
+     boost::shared_ptr<Type> tp;
+     auto r = findVariableType(tp, n);
+     t = tp.get();
+     return r;
+   }
 
-    /***** Relocation Sections *****/
-    bool hasRel() const;
-    bool hasRela() const;
-    bool hasReldyn() const;
-    bool hasReladyn() const;
-    bool hasRelplt() const;
-    bool hasRelaplt() const;
+   bool addType(Type *typ);
 
-    bool isStaticBinary() const;
+   static boost::shared_ptr<builtInTypeCollection>& builtInTypes();
+   static boost::shared_ptr<typeCollection>& stdTypes();
 
-    /***** Write Back binary functions *****/
-    bool emitSymbols(Object* linkedFile, std::string filename, unsigned flag = 0);
-    bool addRegion(Offset vaddr, void* data, unsigned int dataSize, std::string name,
-                   Region::RegionType rType_, bool loadable = false,
-                   unsigned long memAlign = sizeof(unsigned), bool tls = false);
-    bool addRegion(Region* newreg);
-    bool emit(std::string filename, unsigned flag = 0);
+   static void getAllstdTypes(std::vector<boost::shared_ptr<Type>>&);
+   static std::vector<Type*>* getAllstdTypes() {
+     std::vector<boost::shared_ptr<Type>> v;
+     getAllstdTypes(v);
+     auto r = new std::vector<Type*>(v.size());
+     for(std::size_t i = 0; i < v.size(); i++) (*r)[i] = v[i].get();
+     return r;
+   }
+   static void getAllbuiltInTypes(std::vector<boost::shared_ptr<Type>>&);
+   static std::vector<Type*>* getAllbuiltInTypes() {
+     std::vector<boost::shared_ptr<Type>> v;
+     getAllbuiltInTypes(v);
+     auto r = new std::vector<Type*>(v.size());
+     for(std::size_t i = 0; i < v.size(); i++) (*r)[i] = v[i].get();
+     return r;
+   }
 
-    void        addDynLibSubstitution(std::string oldName, std::string newName);
-    std::string getDynLibSubstitution(std::string name);
+   void parseTypesNow();
 
-    bool getSegments(std::vector<Segment>& segs) const;
+   /***** Local Variable Information *****/
+   bool findLocalVariable(std::vector<localVar *>&vars, std::string name);
 
-    void   fixup_code_and_data(Offset newImageOffset, Offset newImageLength,
-                               Offset newDataOffset, Offset newDataLength);
-    bool   fixup_RegionAddr(const char* name, Offset memOffset, long memSize);
-    bool   fixup_SymbolAddr(const char* name, Offset newOffset);
-    bool   updateRegion(const char* name, void* buffer, unsigned size);
-    bool   updateCode(void* buffer, unsigned size);
-    bool   updateData(void* buffer, unsigned size);
-    Offset getFreeOffset(unsigned size);
+   /***** Relocation Sections *****/
+   bool hasRel() const;
+   bool hasRela() const;
+   bool hasReldyn() const;
+   bool hasReladyn() const;
+   bool hasRelplt() const;
+   bool hasRelaplt() const;
+   
+   bool isStaticBinary() const;
 
-    bool addLibraryPrereq(std::string libname);
-    bool addSysVDynamic(long name, long value);
+   /***** Write Back binary functions *****/
+   bool emitSymbols(Object *linkedFile, std::string filename, unsigned flag = 0);
+   bool addRegion(Offset vaddr, void *data, unsigned int dataSize, 
+         std::string name, Region::RegionType rType_, bool loadable = false,
+         unsigned long memAlign = sizeof(unsigned), bool tls = false);
+   bool addRegion(Region *newreg);
+   bool emit(std::string filename, unsigned flag = 0);
 
-    bool addLinkingResource(Archive* library);
-    bool getLinkingResources(std::vector<Archive*>& libs);
+   void addDynLibSubstitution(std::string oldName, std::string newName);
+   std::string getDynLibSubstitution(std::string name);
 
-    bool addExternalSymbolReference(Symbol* externalSym, Region* localRegion,
-                                    relocationEntry localRel);
-    bool addTrapHeader_win(Address ptr);
+   bool getSegments(std::vector<Segment> &segs) const;
+   
+   void fixup_code_and_data(Offset newImageOffset,
+                                          Offset newImageLength,
+                                          Offset newDataOffset,
+                                          Offset newDataLength);
+   bool fixup_RegionAddr(const char* name, Offset memOffset, long memSize);
+   bool updateRegion(const char* name, void *buffer, unsigned size);
+   bool updateCode(void *buffer, unsigned size);
+   bool updateData(void *buffer, unsigned size);
+   Offset getFreeOffset(unsigned size);
 
-    bool updateRelocations(Address start, Address end, Symbol* oldsym, Symbol* newsym);
+   bool addLibraryPrereq(std::string libname);
+   bool addSysVDynamic(long name, long value);
 
-    /***** Data Member Access *****/
-    std::string file() const;
-    std::string name() const;
-    std::string memberName() const;
+   bool addLinkingResource(Archive *library);
+   bool getLinkingResources(std::vector<Archive *> &libs);
 
-    char* mem_image() const;
+   bool addExternalSymbolReference(Symbol *externalSym, Region *localRegion, relocationEntry localRel);
+   bool addTrapHeader_win(Address ptr);
 
-    Offset preferedBase() const;
-    Offset imageOffset() const;
-    Offset dataOffset() const;
-    Offset dataLength() const;
-    Offset imageLength() const;
-    //   char*  image_ptr ()  const;
-    //   char*  data_ptr ()  const;
-    Offset getInitOffset();
-    Offset getFiniOffset();
+   bool updateRelocations(Address start, Address end, Symbol *oldsym, Symbol *newsym);
+
+   /***** Data Member Access *****/
+   std::string file() const;
+   std::string name() const;
+   std::string memberName() const;
+
+   char *mem_image() const;
+
+   Offset preferedBase() const;
+   Offset imageOffset() const;
+   Offset dataOffset() const;
+   Offset dataLength() const;
+   Offset imageLength() const;
+   //   char*  image_ptr ()  const;
+   //   char*  data_ptr ()  const;
+   Offset getInitOffset();
+   Offset getFiniOffset();
 
     const char* getInterpreterName() const;
 
@@ -397,16 +388,11 @@ public:
 
     ~Symtab();
 
-    bool delSymbol(Symbol* sym) { return deleteSymbol(sym); }
-    bool deleteSymbol(Symbol* sym);
+   bool delSymbol(Symbol *sym) { return deleteSymbol(sym); }
+   bool deleteSymbol(Symbol *sym); 
 
-    Symbol* getSymbolByIndex(unsigned);
-
-    /***** Private Member Functions *****/
-private:
-    Symtab(std::string filename, bool defensive_bin, bool& err);
-
-    bool extractInfo(Object* linkedFile);
+   /***** Private Member Functions *****/
+   private:
 
     // Parsing code
 
@@ -426,8 +412,10 @@ private:
 
     void setModuleLanguages(dyn_hash_map<std::string, supportedLanguages>* mod_langs);
 
-    // Change the type of a symbol after the fact
-    bool changeType(Symbol* sym, Symbol::SymbolType oldType);
+   bool fixSymModule(Symbol *&sym);
+   bool addSymbolToIndices(Symbol *&sym, bool undefined);
+   bool addSymbolToAggregates(const Symbol *sym);
+   bool doNotAggregate(const Symbol *sym);
 
     bool changeSymbolOffset(Symbol* sym, Offset newOffset);
     bool deleteSymbolFromIndices(Symbol* sym);
@@ -437,11 +425,7 @@ private:
 
     bool addFunctionRange(FunctionBase* fbase, Dyninst::Offset next_start);
 
-    // Used by binaryEdit.C...
-public:
-    bool    canBeShared();
-    Module* getOrCreateModule(const std::string& modName, const Offset modAddr);
-    bool    parseFunctionRanges();
+   bool deleteSymbolFromIndices(Symbol *sym);
 
     // Only valid on ELF formats
     Offset getElfDynamicOffset();
@@ -452,332 +436,141 @@ public:
 private:
     void createDefaultModule();
 
-    Module* newModule(const std::string& name, const Offset addr,
-                      supportedLanguages lang);
+   // Used by binaryEdit.C...
+ public:
 
-    // bool buildFunctionLists(std::vector <Symbol *> &raw_funcs);
-    // void enterFunctionInTables(Symbol *func, bool wasSymtab);
 
-    bool addSymtabVariables();
+   bool canBeShared();
+   DYNINST_DEPRECATED("Use getContainingModule")
+   Module *getOrCreateModule(const std::string &modName, const Offset modAddr);
+   bool parseFunctionRanges();
 
-    void checkPPC64DescriptorSymbols(Object* linkedFile);
+   //Only valid on ELF formats
+   Offset getElfDynamicOffset();
+   // SymReader interface
+   void getSegmentsSymReader(std::vector<SymSegment> &segs);
+   void rebase(Offset offset);
 
-    void parseLineInformation();
+ private:
+   void createDefaultModule();
+   void addModule(Module *m);
+   
+   //bool buildFunctionLists(std::vector <Symbol *> &raw_funcs);
+   //void enterFunctionInTables(Symbol *func, bool wasSymtab);
 
-    void parseTypes();
-    bool setDefaultNamespacePrefix(std::string& str);
 
-    bool addUserRegion(Region* newreg);
-    bool addUserType(Type* newtypeg);
+   bool addSymtabVariables();
 
-    void setTOCOffset(Offset offset);
-    /***** Private Data Members *****/
-private:
-    static boost::shared_ptr<typeCollection>        setupStdTypes();
-    static boost::shared_ptr<builtInTypeCollection> setupBuiltinTypes();
-    dyn_rwlock                                      symbols_rwlock;
-    // boost::mutex symbols_mutex;
 
-    std::string member_name_;
-    Offset      member_offset_;
-    Archive*    parentArchive_;
-    MappedFile* mf;
-    MappedFile* mfForDebugInfo;
+   void parseLineInformation();
+   
+   void parseTypes();
+   bool setDefaultNamespacePrefix(std::string &str);
 
-    Offset   preferedBase_;
-    Offset   imageOffset_;
-    unsigned imageLen_;
-    Offset   dataOffset_;
-    unsigned dataLen_;
+   bool addUserRegion(Region *newreg);
+   bool addUserType(Type *newtypeg);
 
-    bool   is_a_out;
-    Offset main_call_addr_;  // address of call to main()
+   void setTOCOffset(Offset offset);
+   /***** Private Data Members *****/
+   private:
 
-    unsigned             address_width_;
-    char*                code_ptr_;
-    char*                data_ptr_;
-    std::string          interpreter_name_;
-    Offset               entry_address_;
-    Offset               base_address_;
-    Offset               load_address_;
-    ObjectType           object_type_;
-    bool                 is_eel_;
-    std::vector<Segment> segments_;
-    //  make sure is_a_out is set before calling symbolsToFunctions
+   static boost::shared_ptr<typeCollection> setupStdTypes();
+   static boost::shared_ptr<builtInTypeCollection> setupBuiltinTypes();
+   dyn_rwlock symbols_rwlock{};
+   // boost::mutex symbols_mutex;
 
-    // A std::vector of all Symtabs. Used to avoid duplicating
-    // a Symtab that already exists.
-    static std::vector<Symtab*> allSymtabs;
-    std::string                 defaultNamespacePrefix;
+   std::string member_name_{};
+   Offset member_offset_{};
+   Archive * parentArchive_{};
+   MappedFile *mf{};
 
-    // sections
-    unsigned                      no_of_sections;
-    std::vector<Region*>          regions_;
-    std::vector<Region*>          codeRegions_;
-    std::vector<Region*>          dataRegions_;
-    dyn_hash_map<Offset, Region*> regionsByEntryAddr;
+   Offset preferedBase_{};
+   Offset imageOffset_{};
+   unsigned imageLen_{};
+   Offset dataOffset_{};
+   unsigned dataLen_{};
 
-    // Point where new loadable sections will be inserted
-    unsigned newSectionInsertPoint;
+   bool is_a_out{false};
+   Offset main_call_addr_{}; // address of call to main()
 
-    // symbols
-    unsigned no_of_symbols;
+   unsigned address_width_{sizeof(int)};
+   std::string interpreter_name_{};
+   Offset entry_address_{};
+   Offset base_address_{};
+   Offset load_address_{};
+   ObjectType object_type_{obj_Unknown};
+   bool is_eel_{false};
+   std::vector<Segment> segments_{};
 
-    struct indexed_symbols
-    {
-        typedef dyn_c_hash_map<Symbol*, Offset>       master_t;
-        typedef std::vector<Symbol*>                  symvec_t;
-        typedef dyn_c_hash_map<Offset, symvec_t>      by_offset_t;
-        typedef dyn_c_hash_map<std::string, symvec_t> by_name_t;
+   //  make sure is_a_out is set before calling symbolsToFunctions
 
-        master_t    master;
-        by_offset_t by_offset;
-        by_name_t   by_mangled;
-        by_name_t   by_pretty;
-        by_name_t   by_typed;
+   // A std::vector of all Symtabs. Used to avoid duplicating
+   // a Symtab that already exists.
+   static std::vector<Symtab *> allSymtabs;
+   std::string defaultNamespacePrefix{};
 
-        // Only inserts if not present. Returns whether it inserted.
-        bool insert(Symbol* s);
+   //sections
+   unsigned no_of_sections{};
+   std::vector<Region *> regions_{};
+   std::vector<Region *> codeRegions_{};
+   std::vector<Region *> dataRegions_{};
+   dyn_hash_map <Offset, Region *> regionsByEntryAddr{};
 
-        // Clears the table. Do not use in parallel.
-        void clear();
+   //Point where new loadable sections will be inserted
+   unsigned newSectionInsertPoint{};
 
-        // Erases symbols from the table. Do not use in parallel.
-        void erase(Symbol* s);
+   //symbols
+   unsigned no_of_symbols{};
+   
+   // We also need per-Aggregate indices
+   bool sorted_everyFunction{false};
+   std::vector<Function *> everyFunction{};
 
-        // Iterator for the symbols. Do not use in parallel.
-        class iterator : public std::iterator<std::forward_iterator_tag, Symbol*>
-        {
-            master_t::iterator m;
+   // Similar for Variables
+   std::vector<Variable *> everyVariable{};
 
-        public:
-            iterator(master_t::iterator i)
-            : m(i)
-            {}
-            bool           operator==(const iterator& x) { return m == x.m; }
-            bool           operator!=(const iterator& x) { return !operator==(x); }
-            Symbol* const& operator*() const { return m->first; }
-            Symbol* const* operator->() const { return &operator*(); }
-            iterator&      operator++()
-            {
-                ++m;
-                return *this;
-            }
-            iterator operator++(int)
-            {
-                iterator old(m);
-                         operator++();
-                return old;
-            }
-        };
+   std::vector<relocationEntry > relocation_table_{};
+   std::vector<ExceptionBlock *> excpBlocks{};
 
-        iterator begin() { return iterator(master.begin()); }
-        iterator end() { return iterator(master.end()); }
-    };
+   std::vector<std::string> deps_{};
 
-    indexed_symbols everyDefinedSymbol;
-    indexed_symbols undefDynSyms;
+   // This set is used during static linking to satisfy dependencies
+   std::vector<Archive *> linkingResources_{};
 
-    // We also need per-Aggregate indices
-    bool                   sorted_everyFunction;
-    std::vector<Function*> everyFunction;
-    // Since Functions are unique by address we require this structure to
-    // efficiently track them.
-    dyn_c_hash_map<Offset, Function*> funcsByOffset;
+   // This set represents Symtabs referenced by a new external Symbol
+   bool getExplicitSymtabRefs(std::set<Symtab *> &refs);
+   std::set<Symtab *> explicitSymtabRefs_{};
 
-    // Similar for Variables
-    std::vector<Variable*> everyVariable;
-    using VarsByOffsetMap = dyn_c_hash_map<Offset, std::vector<Variable*>>;
-    VarsByOffsetMap varsByOffset;
+   //Relocation sections
+   bool hasRel_{false};
+   bool hasRela_{false};
+   bool hasReldyn_{false};
+   bool hasReladyn_{false};
+   bool hasRelplt_{false};
+   bool hasRelaplt_{false};
 
-    dyn_mutex im_lock;
-    boost::multi_index_container<
-        Module*,
-        boost::multi_index::indexed_by<
-            boost::multi_index::random_access<>,
-            boost::multi_index::ordered_unique<boost::multi_index::identity<Module*>>,
-            boost::multi_index::ordered_non_unique<boost::multi_index::const_mem_fun<
-                Module, const std::string&, &Module::fileName>>,
-            boost::multi_index::ordered_non_unique<boost::multi_index::const_mem_fun<
-                Module, const std::string&, &Module::fullName>>>>
-        indexed_modules;
+   bool isStaticBinary_{false};
+   bool isDefensiveBinary_{false};
 
-    std::vector<relocationEntry> relocation_table_;
-    std::vector<ExceptionBlock*> excpBlocks;
+   //Don't use obj_private, use getObject() instead.
+ public:
+   Object *getObject();
+   const Object *getObject() const;
+   void dumpModRanges();
+   void dumpFuncRanges();
 
-    std::vector<std::string> deps_;
+ private:
+   Object *obj_private{};
 
-    // This set is used during static linking to satisfy dependencies
-    std::vector<Archive*> linkingResources_;
+   // dynamic library name substitutions
+   std::map <std::string, std::string> dynLibSubs{};
 
-    // This set represents Symtabs referenced by a new external Symbol
-    bool              getExplicitSymtabRefs(std::set<Symtab*>& refs);
-    std::set<Symtab*> explicitSymtabRefs_;
+   public:
+   static boost::shared_ptr<Type>& type_Error();
+   static boost::shared_ptr<Type>& type_Untyped();
 
-    // type info valid flag
-    bool isTypeInfoValid_;
-
-    int           nlines_;
-    unsigned long fdptr_;
-    char*         lines_;
-    char*         stabstr_;
-    int           nstabs_;
-    void*         stabs_;
-    char*         stringpool_;
-
-    // Relocation sections
-    bool hasRel_;
-    bool hasRela_;
-    bool hasReldyn_;
-    bool hasReladyn_;
-    bool hasRelplt_;
-    bool hasRelaplt_;
-
-    bool isStaticBinary_;
-    bool isDefensiveBinary_;
-
-    FuncRangeLookup* func_lookup;
-    ModRangeLookup*  mod_lookup_;
-
-    // Don't use obj_private, use getObject() instead.
-public:
-    Object*         getObject();
-    const Object*   getObject() const;
-    ModRangeLookup* mod_lookup();
-    void            dumpModRanges();
-    void            dumpFuncRanges();
-
-private:
-    Object* obj_private;
-
-    // dynamic library name substitutions
-    std::map<std::string, std::string> dynLibSubs;
-
-public:
-    static boost::shared_ptr<Type>& type_Error();
-    static boost::shared_ptr<Type>& type_Untyped();
-
-private:
-    unsigned _ref_cnt;
-};
-
-/**
- * Used to represent something like a C++ try/catch block.
- * Currently only used on Linux
- **/
-SYMTAB_EXPORT std::ostream&
-              operator<<(std::ostream& os, const ExceptionBlock& q);
-
-class SYMTAB_EXPORT ExceptionBlock : public AnnotatableSparse
-{
-    // Accessors provide consistent access to the *original* offsets.
-    // We allow this to be updated (e.g. to account for relocated code
-public:
-    ExceptionBlock(Offset tStart, unsigned tSize, Offset cStart);
-    ExceptionBlock(Offset cStart);
-    SYMTAB_EXPORT ExceptionBlock(const ExceptionBlock& eb) = default;
-    SYMTAB_EXPORT ~ExceptionBlock()                        = default;
-    SYMTAB_EXPORT ExceptionBlock()                         = default;
-
-    bool   hasTry() const;
-    Offset tryStart() const;
-    Offset tryEnd() const;
-    Offset trySize() const;
-    Offset catchStart() const;
-    bool   contains(Offset a) const;
-    void   setTryStart(Offset ts) { tryStart_ptr = ts; }
-    void   setTryEnd(Offset te) { tryEnd_ptr = te; }
-
-    void setCatchStart(Offset cs) { catchStart_ptr = cs; }
-
-    void setFdeStart(Offset fs) { fdeStart_ptr = fs; }
-
-    void setFdeEnd(Offset fe) { fdeEnd_ptr = fe; }
-
-    friend SYMTAB_EXPORT std::ostream& operator<<(std::ostream&         os,
-                                                  const ExceptionBlock& q);
-
-private:
-    Offset   tryStart_;
-    unsigned trySize_;
-    Offset   catchStart_;
-    bool     hasTry_;
-    Offset   tryStart_ptr;
-    Offset   tryEnd_ptr;
-    Offset   catchStart_ptr;
-    Offset   fdeStart_ptr;
-    Offset   fdeEnd_ptr;
-};
-
-// relocation information for calls to functions not in this image
-SYMTAB_EXPORT std::ostream&
-              operator<<(std::ostream& os, const relocationEntry& q);
-
-class SYMTAB_EXPORT relocationEntry : public AnnotatableSparse
-{
-public:
-    relocationEntry();
-    relocationEntry(Offset ta, Offset ra, Offset add, std::string n,
-                    Symbol* dynref = NULL, unsigned long relType = 0);
-    relocationEntry(Offset ta, Offset ra, std::string n, Symbol* dynref = NULL,
-                    unsigned long relType = 0);
-    relocationEntry(Offset ra, std::string n, Symbol* dynref = NULL,
-                    unsigned long relType = 0, Region::RegionType rtype = Region::RT_REL);
-    relocationEntry(Offset ta, Offset ra, Offset add, std::string n,
-                    Symbol* dynref = NULL, unsigned long relType = 0,
-                    Region::RegionType rtype = Region::RT_REL);
-
-    Offset             target_addr() const;
-    Offset             rel_addr() const;
-    Offset             addend() const;
-    Region::RegionType regionType() const;
-    const std::string& name() const;
-    Symbol*            getDynSym() const;
-    bool               addDynSym(Symbol* dynref);
-    unsigned long      getRelType() const;
-
-    void setTargetAddr(const Offset);
-    void setRelAddr(const Offset);
-    void setAddend(const Offset);
-    void setRegionType(const Region::RegionType);
-    void setName(const std::string& newName);
-    void setRelType(unsigned long relType) { relType_ = relType; }
-
-    // dump output.  Currently setup as a debugging aid, not really
-    //  for object persistance....
-    // std::ostream & operator<<(std::ostream &s) const;
-    friend SYMTAB_EXPORT std::ostream& operator<<(std::ostream&          os,
-                                                  const relocationEntry& q);
-
-    enum
-    {
-        pltrel = 1,
-        dynrel = 2
-    };
-    bool operator==(const relocationEntry&) const;
-
-    enum category
-    {
-        relative,
-        jump_slot,
-        absolute
-    };
-
-    // Architecture-specific functions
-    static unsigned long getGlobalRelType(unsigned addressWidth, Symbol* sym = NULL);
-    static const char*   relType2Str(unsigned long r,
-                                     unsigned      addressWidth = sizeof(Address));
-    category             getCategory(unsigned addressWidth);
-
-private:
-    Offset             target_addr_;  // target address of call instruction
-    Offset             rel_addr_;     // address of corresponding relocation entry
-    Offset             addend_;       // addend (from RELA entries)
-    Region::RegionType rtype_;        // RT_REL vs. RT_RELA
-    std::string        name_;
-    Symbol*            dynref_;
-    unsigned long      relType_;
-    Offset             rel_struct_addr_;
+ private:
+    unsigned _ref_cnt{1};
 };
 
 }  // namespace SymtabAPI

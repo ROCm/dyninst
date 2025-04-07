@@ -38,11 +38,11 @@
 #include "stackwalk/src/libstate.h"
 #include "stackwalk/src/sw.h"
 
-#include "common/src/Types.h"
-
 #include "compiler_annotations.h"
 
 #include "common/h/SymReader.h"
+
+#include "unaligned_memory_access.h"
 
 using namespace Dyninst;
 using namespace Stackwalker;
@@ -245,31 +245,37 @@ WandererHelper::isPCInFunc(Address func_entry, Address pc)
     }
     func_entry_offset = func_entry - func_lib.second;
 
-    reader = LibraryWrapper::getLibrary(func_lib.first);
-    if(!reader)
-    {
-        sw_printf("[%s:%d] - Failed to open reader for %s\n", FILE__, __LINE__,
-                  func_lib.first.c_str());
-        goto reader_fail;
-    }
-
-    section = reader->getSectionByAddress(func_entry_offset);
-    if(reader->getSectionName(section) == std::string(".plt"))
-    {
-        sw_printf("[%s:%d] - %lx is a PLT entry, trying to map to real target\n", FILE__,
-                  __LINE__, func_entry);
-        int     got_offset = -1;
-        Address got_abs    = 0x0;
-        if(proc->getAddressWidth() == 4)
-        {
-// 32-bit mode.  Recognize common PLT idioms
-#define MAX_PLT32_IDIOM_SIZE 6
-            unsigned char buffer[MAX_PLT32_IDIOM_SIZE];
-            result = proc->readMem(buffer, func_entry, MAX_PLT32_IDIOM_SIZE);
-            if(buffer[0] == 0xff && buffer[1] == 0xa3)
-            {
-                // Indirect jump off of ebx
-                got_offset = *((int32_t*) (buffer + 2));
+   reader = LibraryWrapper::getLibrary(func_lib.first);
+   if (!reader) {
+      sw_printf("[%s:%d] - Failed to open reader for %s\n", 
+                FILE__, __LINE__, func_lib.first.c_str());
+      goto reader_fail;
+   }
+   
+   section = reader->getSectionByAddress(func_entry_offset);
+   if (reader->getSectionName(section) == std::string(".plt")) {
+      sw_printf("[%s:%d] - %lx is a PLT entry, trying to map to real target\n",
+                FILE__, __LINE__, func_entry);
+      int got_offset = -1;
+      Address got_abs = 0x0;
+      if (proc->getAddressWidth() == 4) {
+         //32-bit mode.  Recognize common PLT idioms
+         #define MAX_PLT32_IDIOM_SIZE 6
+         unsigned char buffer[MAX_PLT32_IDIOM_SIZE];
+         result = proc->readMem(buffer, func_entry, MAX_PLT32_IDIOM_SIZE);
+         if (buffer[0] == 0xff && buffer[1] == 0xa3) {
+            //Indirect jump off of ebx
+            got_offset = Dyninst::read_memory_as<int32_t>(buffer+2);
+         }
+         else if (buffer[0] == 0xff && buffer[1] == 0x25) {
+            //Indirect jump through absolute
+            got_abs = Dyninst::read_memory_as<uint32_t>(buffer+2);
+         }
+         else {
+            sw_printf("[%s:%d] - Unrecognized PLT idiom at %lx: ",
+                      FILE__, __LINE__, func_entry);
+            for (unsigned i=0; i<MAX_PLT32_IDIOM_SIZE; i++) {
+               sw_printf("%x ", buffer[i]);
             }
             else if(buffer[0] == 0xff && buffer[1] == 0x25)
             {
@@ -291,12 +297,17 @@ WandererHelper::isPCInFunc(Address func_entry, Address pc)
         {
             // 32-bit mode.  Recognize common PLT idioms
 #define MAX_PLT64_IDIOM_SIZE 6
-            unsigned char buffer[MAX_PLT64_IDIOM_SIZE];
-            result = proc->readMem(buffer, func_entry, MAX_PLT64_IDIOM_SIZE);
-            if(buffer[0] == 0xff && buffer[1] == 0x25)
-            {
-                // PC Relative jump indirect
-                got_abs = *((int32_t*) (buffer + 2)) + func_entry + 6;
+         unsigned char buffer[MAX_PLT64_IDIOM_SIZE];
+         result = proc->readMem(buffer, func_entry, MAX_PLT64_IDIOM_SIZE);
+         if (buffer[0] == 0xff && buffer[1] == 0x25) {
+            //PC Relative jump indirect
+            got_abs = Dyninst::read_memory_as<int32_t>(buffer+2) + func_entry + 6;
+         }
+         else {
+            sw_printf("[%s:%d] - Unrecognized PLT idiom at %lx: ",
+                      FILE__, __LINE__, func_entry);
+            for (unsigned i=0; i<MAX_PLT32_IDIOM_SIZE; i++) {
+               sw_printf("%x ", buffer[i]);
             }
             else
             {

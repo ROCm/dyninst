@@ -31,9 +31,10 @@
 #if !defined(IRPC_H_)
 #    define IRPC_H_
 
-#    include <map>
-#    include <list>
-#    include <set>
+#include <vector>
+#include <map>
+#include <list>
+#include <set>
 
 #    include "common/h/dyntypes.h"
 #    include "Handler.h"

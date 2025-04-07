@@ -33,8 +33,14 @@
 #if !defined(NODE_ITERATOR_H)
 #    define NODE_ITERATOR_H
 
-#    include "Node.h"
-#    include "Edge.h"
+#include <assert.h>
+#include <deque>
+#include <set>
+#include <unordered_set>
+#include "Node.h"
+#include "Edge.h"
+
+namespace Dyninst {
 
 namespace Dyninst
 {
@@ -393,9 +399,8 @@ public:
         setNext();
         // next is now a matching node. If the start wasn't,
         // then we need to increment...
-        if((cur != end) && !pred->predicate(*cur))
-        {
-            inc();
+        if ((cur != end) && !pred->predicate(*cur)) {
+        	NodeIteratorPredicateObj::inc();
         }
     }
     void setNext()
@@ -467,9 +472,8 @@ public:
         setNext();
         // next is now a matching node. If the start wasn't,
         // then we need to increment...
-        if((cur != end) && !pred(*cur, user_arg))
-        {
-            inc();
+        if ((cur != end) && !pred(*cur, user_arg)) {
+        	NodeIteratorPredicateFunc::inc();
         }
     }
     void setNext()

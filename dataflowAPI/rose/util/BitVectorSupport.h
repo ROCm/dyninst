@@ -8,6 +8,7 @@
 #ifndef Sawyer_BitVectorSupport_H
 #define Sawyer_BitVectorSupport_H
 
+#include <stddef.h>
 #include <boost/cstdint.hpp>
 #include <algorithm>
 #include <boost/foreach.hpp>
@@ -19,6 +20,8 @@
 #include "Sawyer.h"
 #include <string>
 #include <vector>
+
+DYNINST_DIAGNOSTIC_BEGIN_SUPPRESS_VLA_GCC_PRAGMA_BUG
 
 namespace Sawyer {
 namespace Container {
@@ -1051,7 +1054,7 @@ void negate(Word *vec1, const BitRange &range) {
 template<class Word>
 struct AddBits {
     bool carry;
-    AddBits(bool carry): carry(carry) {}
+    AddBits(bool carry_): carry(carry_) {}
     bool operator()(const Word &w1, Word &w2, size_t nbits) {
         Word mask = bitMask<Word>(0, nbits);
         Word addend1(carry ? 1 : 0);
@@ -1449,4 +1452,7 @@ void fromBinary(Word *vec, const BitRange &range, const std::string &input) {
 } // namespace
 } // namespace
 } // namespace
+
+DYNINST_DIAGNOSTIC_END_SUPPRESS_VLA_GCC_PRAGMA_BUG
+
 #endif

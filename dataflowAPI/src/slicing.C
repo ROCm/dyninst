@@ -40,6 +40,8 @@
 #include "dataflowAPI/h/slicing.h"
 #include "ABI.h"
 #include "bitArray.h"
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
 
 #include "common/h/Graph.h"
 #include "instructionAPI/h/Instruction.h"
@@ -174,13 +176,12 @@ Slicer::sliceInternal(Direction dir, Predicates& p)
     // we just need the block, function and assignment
     aP = createNode(Element(b_, f_, a_->out(), a_));
 
-    if(dir == forward)
-    {
-        slicing_printf("Inserting entry node %p/%s\n", aP.get(), aP->format().c_str());
-    }
-    else
-    {
-        slicing_printf("Inserting exit node %p/%s\n", aP.get(), aP->format().c_str());
+    if(dir == forward) {
+        slicing_printf("Inserting entry node %p/%s\n",
+            static_cast<void*>(aP.get()),aP->format().c_str());
+    } else {
+        slicing_printf("Inserting exit node %p/%s\n",
+            static_cast<void*>(aP.get()),aP->format().c_str());
     }
 
     // add to graph
@@ -216,19 +217,17 @@ Slicer::sliceInternalAux(Graph::Ptr g, Direction dir, Predicates& p, SliceFrame&
     vector<SliceFrame> nextCands;
     DefCache&          mydefs = singleCache[cand.addr()];
 
-    slicing_printf("\tslicing from %lx, currently watching %ld regions\n", cand.addr(),
-                   cand.active.size());
+    slicing_printf("\tslicing from %lx, currently watching %lu regions\n",
+        cand.addr(),cand.active.size());
 
     // Find assignments at this point that affect the active
     // region set (if any) and link them into the graph; update
     // the active set. Returns `true' if any changes are made,
     // `false' otherwise.
 
-    if(!skip)
-    {
-        if(!updateAndLink(g, dir, cand, mydefs, p))
-            return;
-        slicing_printf("\t\tfinished udpateAndLink, active.size: %ld\n",
+    if (!skip) {
+        if (!updateAndLink(g,dir,cand, mydefs, p)) return;
+	    slicing_printf("\t\tfinished udpateAndLink, active.size: %lu\n",
                        cand.active.size());
         // If the analysis that uses the slicing can stop for
         // analysis specifc reasons on a path, the cache
@@ -254,8 +253,8 @@ Slicer::sliceInternalAux(Graph::Ptr g, Direction dir, Predicates& p, SliceFrame&
         widenAll(g, dir, cand);
     }
 
-    slicing_printf("\t\tgetNextCandidates returned %ld, success: %d\n", nextCands.size(),
-                   success);
+    slicing_printf("\t\tgetNextCandidates returned %lu, success: %d\n",
+                   nextCands.size(),success);
 
     for(unsigned i = 0; i < nextCands.size(); ++i)
     {
@@ -268,8 +267,8 @@ Slicer::sliceInternalAux(Graph::Ptr g, Direction dir, Predicates& p, SliceFrame&
 
         CacheEdge e(cand.addr(), f.addr());
 
-        slicing_printf("\t\t candidate %d is at %lx, %ld active\n", i, f.addr(),
-                       f.active.size());
+        slicing_printf("\t\t candidate %u is at %lx, %lu active\n",
+                       i,f.addr(),f.active.size());
 
         if(visited.find(e) != visited.end())
         {
@@ -827,23 +826,36 @@ Slicer::getPredecessors(Predicates& p, SliceFrame const& cand,
     {
         SliceFrame* nf = NULL;
 
-        // Slightly more complicated than the forward case; check
-        // a predicate for each active abstract region to see whether
-        // we should continue
-        bool                                  cont = false;
-        SliceFrame::ActiveMap::const_iterator ait  = cand.active.begin();
-        for(; ait != cand.active.end(); ++ait)
-        {
-            bool add = p.addPredecessor((*ait).first);
-            if(add)
-            {
-                if(nf == NULL)
-                {
-                    newCands.emplace_back(cand.loc, cand.con);
-                    nf               = &newCands.back();
-                    nf->loc.rcurrent = prev;
-                }
-                nf->active.insert(*ait);
+      //Slightly more complicated than the forward case; check
+      //a predicate for each active abstract region to see whether
+      //we should continue
+      bool cont = false;
+      for (SliceFrame::ActiveMap::const_iterator ait = cand.active.begin(); ait != cand.active.end(); ++ait) {
+        bool add = p.addPredecessor((*ait).first);
+        if(add) {
+          if (nf == NULL) {
+            newCands.emplace_back(cand.loc, cand.con);
+            nf = &newCands.back();
+            nf->loc.rcurrent = prev;
+          }
+          nf->active.insert(*ait);
+        }
+        cont = cont || add;
+      }
+
+      if(cont) {
+        slicing_printf("\t\t\t\t Adding intra-block predecessor %lx\n",
+          nf->loc.addr());
+        slicing_printf("\t\t\t\t Current regions are:\n");
+        if(df_debug_slicing_on()) {
+          for (SliceFrame::ActiveMap::const_iterator ait = cand.active.begin(); ait != cand.active.end(); ++ait) {
+            slicing_printf("\t\t\t\t%s\n",
+              (*ait).first.format().c_str());
+
+            vector<Element> const& eles = (*ait).second;
+            for(unsigned i=0;i<eles.size();++i) {
+              slicing_printf("\t\t\t\t\t [%s] : %s\n",
+                eles[i].reg.format().c_str(),eles[i].ptr->format().c_str());
             }
             cont = cont || add;
         }
@@ -1145,9 +1157,9 @@ Slicer::handleReturnDetails(SliceFrame& cur)
 
     assert(!cur.con.empty());
 
-    slicing_printf("\t%s, \n",
-                   (cur.con.front().func ? cur.con.front().func->name().c_str() : "NULL"),
-                   cur.con.front().stackDepth);
+    slicing_printf("\t%s (%d), \n",
+        (cur.con.front().func ? cur.con.front().func->name().c_str() : "NULL"),
+        cur.con.front().stackDepth);
 
     // Transform the active abstract regions
     shiftAllAbsRegions(cur, -1 * stack_depth, cur.con.front().func);
@@ -1445,27 +1457,49 @@ getEntryFunc(ParseAPI::Block* block)
 
 // TODO: make this function-less interprocedural. That would throw the
 // stack analysis for a loop, but is generally doable...
-Slicer::Slicer(Assignment::Ptr a, ParseAPI::Block* block, ParseAPI::Function* func,
-               bool cache, bool stackAnalysis)
-: a_(a)
-, b_(block)
-, f_(func)
-, insnCache_(new InsnCache())
-, own_insnCache(true)
-, converter(new AssignmentConverter(cache, stackAnalysis))
-, own_converter(true)
-{}
+Slicer::Slicer(Assignment::Ptr a,
+               ParseAPI::Block *block,
+               ParseAPI::Function *func,
+	       bool cache,
+	       bool stackAnalysis) : 
+  insnCache_(new InsnCache()),
+  own_insnCache(true),
+  a_(a),
+  b_(block),
+  f_(func),
+  converter(new AssignmentConverter(cache, stackAnalysis)),
+  own_converter(true)
+{
+}
 
-Slicer::Slicer(Assignment::Ptr a, ParseAPI::Block* block, ParseAPI::Function* func,
-               AssignmentConverter* ac)
-: a_(a)
-, b_(block)
-, f_(func)
-, insnCache_(new InsnCache())
-, own_insnCache(true)
-, converter(ac)
-, own_converter(false)
-{}
+Slicer::Slicer(Assignment::Ptr a,
+               ParseAPI::Block *block,
+               ParseAPI::Function *func,
+               AssignmentConverter* ac):
+  insnCache_(new InsnCache()),
+  own_insnCache(true),
+  a_(a),
+  b_(block),
+  f_(func),
+  converter(ac),
+  own_converter(false)
+{
+}
+
+Slicer::Slicer(Assignment::Ptr a,
+               ParseAPI::Block *block,
+               ParseAPI::Function *func,
+               AssignmentConverter* ac,
+               InsnCache* c):
+  insnCache_(c),
+  own_insnCache(false),
+  a_(a),
+  b_(block),
+  f_(func),
+  converter(ac),
+  own_converter(false)
+{
+}
 
 Slicer::Slicer(Assignment::Ptr a, ParseAPI::Block* block, ParseAPI::Function* func,
                AssignmentConverter* ac, InsnCache* c)
@@ -1544,7 +1578,7 @@ Slicer::pushContext(Context& context, ParseAPI::Function* callee,
                  << ", " << context.front().stackDepth << endl;
 
     context.push_front(ContextElement(callee, stackDepth));
-};
+}
 
 void
 Slicer::popContext(Context& context)

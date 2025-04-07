@@ -444,16 +444,15 @@ bool
 windows_process::plat_readMem(int_thread* thr, void* local, Dyninst::Address remote,
                               size_t size)
 {
-    int errcode = 0;
-    if(!::ReadProcessMemory(hproc, (unsigned char*) remote, (unsigned char*) local, size,
-                            NULL))
-    {
-        errcode = ::GetLastError();
-        pthrd_printf("ReadProcessMemory() failed to get %d bytes from 0x%x, error %d\n",
-                     size, remote, errcode);
-        return false;
-    }
-    return true;
+	int errcode = 0;
+	if(!::ReadProcessMemory(hproc, (unsigned char*)remote, (unsigned char*)local, size, NULL)) 
+	{
+		errcode = ::GetLastError();
+		pthrd_printf("ReadProcessMemory() failed to get %zu bytes from 0x%lx, error %d\n",
+			size, remote, errcode);
+		return false;
+	}
+	return true;
 }
 
 void
@@ -603,15 +602,11 @@ windows_process::plat_terminate(bool& needs_sync)
 Dyninst::Address
 windows_process::plat_mallocExecMemory(Dyninst::Address min, unsigned size)
 {
-    Dyninst::Address alloc_result = (Dyninst::Address)::VirtualAllocEx(
-        hproc, (LPVOID) min, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    if(alloc_result == 0)
-    {
-        pthrd_printf(
-            "mallocExecMemory failed to VirtualAllocEx %d bytes, error code %d\n", size,
-            ::GetLastError());
-    }
-    return alloc_result;
+	Dyninst::Address alloc_result = (Dyninst::Address)::VirtualAllocEx(hproc, (LPVOID)min, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+	if(alloc_result == 0) {
+		pthrd_printf("mallocExecMemory failed to VirtualAllocEx %u bytes, error code %d\n", size, ::GetLastError());
+	}
+	return alloc_result;
 }
 
 bool
@@ -666,10 +661,17 @@ windows_process::direct_infMalloc(unsigned long size, bool use_addr,
         min_specific_size = (Address) sysinfo.dwAllocationGranularity;
     }
 
-    if(addr)
-    {
-        size = (((size + min_specific_size - 1) / min_specific_size) * min_specific_size);
-    }
+	Dyninst::Address result = (Dyninst::Address)(::VirtualAllocEx(hproc, (LPVOID)addr, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
+	if(result == 0) {
+		pthrd_printf("infMalloc failed to VirtualAllocEx %u bytes, error code %d\n", size, ::GetLastError());
+		fprintf(stderr, "infMalloc failed to VirtualAllocEx %u bytes, error code %d\n", size, ::GetLastError());
+		MEMORY_BASIC_INFORMATION info;
+		memset(&info, 0, sizeof(MEMORY_BASIC_INFORMATION));
+		VirtualQueryEx(hproc, (LPCVOID) (Address) addr,
+						&info,
+						sizeof(MEMORY_BASIC_INFORMATION));
+		cerr << "Mutator side: " << hex << addr << "/" << size << " / " << info.BaseAddress << " / " << info.AllocationBase
+			<< " / " << info.RegionSize << " / " << info.State << dec << endl;
 
     Dyninst::Address result = (Dyninst::Address)(::VirtualAllocEx(
         hproc, (LPVOID) addr, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
@@ -849,8 +851,70 @@ windows_process::findSystemLibs()
     systemLibIntervals_.insert(base, objEnd, insert);
 }
 
-int_thread*
-windows_process::RPCThread()
+int_thread *windows_process::RPCThread() {
+	pthrd_printf("Query for RPC thread: ret %p\n",
+		dummyRPCThread_);
+	return dummyRPCThread_;
+}
+
+int_thread *windows_process::createRPCThread(int_thread* best_candidate) {
+	if(best_candidate) return best_candidate;
+	if (!dummyRPCThread_) {
+		dummyRPCThread_ = static_cast<windows_thread *>(int_thread::createRPCThread(this));
+		pthrd_printf("Creating RPC thread: %p\n", dummyRPCThread_);
+	}
+	else {
+		pthrd_printf("Create RPC thread returning previous copy\n");
+	}
+	return dummyRPCThread_;
+}
+
+
+void windows_process::instantiateRPCThread() {
+	assert(dummyRPCThread_);
+
+	if (!dummyRPCThread_->isRPCpreCreate())
+		return;
+
+	pthrd_printf("Promoting dummy RPC thread %p to a real thread\n", dummyRPCThread_);
+
+	// We want to:
+	// 1) Take the dummy thread
+	// 2) Create a real thread in the mutatee
+	// 3) Fill in the dummy thread's values
+	// 4) Set it as a system thread
+	// 5) Force the generator to consume events 
+
+	// 1)
+	Address dummyStart = dummyRPCThread_->getDummyRPCStart();
+
+	// 2)
+	Dyninst::LWP lwp;
+	HANDLE hthrd = ::CreateRemoteThread(plat_getHandle(), NULL, 0, (LPTHREAD_START_ROUTINE)dummyStart, NULL, 0, (LPDWORD)&lwp); // not create_suspended anymore
+	pthrd_printf("*********************** Created actual thread with lwp %d, hthrd %x for dummy RPC thread, start at 0x%lx\n",
+		(int) lwp, hthrd, dummyStart);
+
+	// 3)
+	dummyRPCThread_->updateThreadHandle((Dyninst::THR_ID) lwp, lwp);
+	dummyRPCThread_->setHandle(hthrd);
+
+	// 4) 
+	dummyRPCThread_->setUser(false);
+	dummyRPCThread_->markRPCRunning();
+
+	getStartupTeardownProcs().inc();
+	// And match whether we're actually suspended
+	dummyRPCThread_->setSuspended(true);
+
+}
+
+void windows_process::destroyRPCThread() {
+	if (!dummyRPCThread_) return;
+	dummyRPCThread_ = NULL;
+}
+
+
+void* windows_process::plat_getDummyThreadHandle() const
 {
     pthrd_printf("Query for RPC thread: ret 0x%lx\n", dummyRPCThread_);
     return dummyRPCThread_;

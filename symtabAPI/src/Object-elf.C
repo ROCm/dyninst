@@ -34,6 +34,8 @@
  ************************************************************************/
 
 #include "common/src/vgannotations.h"
+#include "unaligned_memory_access.h"
+#include <dwarf_cu_info.h>
 
 #include "Type.h"
 #include "Variable.h"
@@ -47,6 +49,8 @@
 
 #include "dwarfWalker.h"
 
+#include "Object-elf.h"
+
 using namespace Dyninst;
 using namespace Dyninst::SymtabAPI;
 using namespace Dyninst::DwarfDyninst;
@@ -58,7 +62,8 @@ using namespace std;
 
 #if defined(cap_dwarf)
 
-#    include "dwarf.h"
+#include "dwarf.h"
+#include <dwarf_names.h>
 
 #endif
 
@@ -84,19 +89,9 @@ using namespace boost::assign;
 
 bool Object::truncateLineFilenames = false;
 
-string    symt_current_func_name;
-string    symt_current_mangled_func_name;
-Function* symt_current_func = NULL;
+std::vector<Symbol *> opdsymbols_;
 
-std::vector<Symbol*> opdsymbols_;
-
-extern void
-print_symbols(std::vector<Symbol*>& allsymbols);
-
-extern void
-print_symbol_map(dyn_hash_map<std::string, std::vector<Symbol*>>* symbols);
-
-void (*dwarf_err_func)(const char*);  // error callback for dwarf errors
+void (*dwarf_err_func)(const char *);   // error callback for dwarf errors
 
 static bool
 pdelf_check_ehdr(Elf_X& elf)
@@ -135,10 +130,8 @@ pdelf_get_shnames(Elf_X* elf)
 //
 // Compare function for use with the Vector<T> sort method.
 //
-struct SectionHeaderSortFunction : public binary_function<Elf_X_Shdr*, Elf_X_Shdr*, bool>
-{
-    bool operator()(Elf_X_Shdr* hdr1, Elf_X_Shdr* hdr2)
-    {
+struct SectionHeaderSortFunction  {
+    bool operator()(Elf_X_Shdr *hdr1, Elf_X_Shdr *hdr2) {
         return (hdr1->sh_addr() < hdr2->sh_addr());
     }
 };
@@ -313,6 +306,7 @@ getRelTypeByElfMachine(Elf_X* localHdr)
         case EM_X86_64:
         case EM_IA_64:
         case EM_AARCH64:
+        case EM_AMDGPU:
             ret = Region::RT_RELA;
             break;
         default:
@@ -322,21 +316,17 @@ getRelTypeByElfMachine(Elf_X* localHdr)
     return ret;
 }
 
-const char* EDITED_TEXT_NAME  = ".edited.text";
-const char* INIT_NAME         = ".init";
-const char* INTERP_NAME       = ".interp";
-const char* FINI_NAME         = ".fini";
-const char* TEXT_NAME         = ".text";
-const char* BSS_NAME          = ".bss";
-const char* SYMTAB_NAME       = ".symtab";
-const char* STRTAB_NAME       = ".strtab";
-const char* SYMTAB_SHNDX_NAME = ".symtab_shndx";
-const char* STAB_NAME         = ".stab";
-const char* STABSTR_NAME      = ".stabstr";
-const char* STAB_INDX_NAME    = ".stab.index";
-const char* STABSTR_INDX_NAME = ".stab.indexstr";
-const char* COMMENT_NAME      = ".comment";
-const char* OPD_NAME          = ".opd";  // PPC64 Official Procedure Descriptors
+const char *EDITED_TEXT_NAME = ".edited.text";
+const char* INIT_NAME        = ".init";
+const char *INTERP_NAME = ".interp";
+const char *FINI_NAME = ".fini";
+const char *TEXT_NAME = ".text";
+const char *BSS_NAME = ".bss";
+const char *SYMTAB_NAME = ".symtab";
+const char *STRTAB_NAME = ".strtab";
+const char *SYMTAB_SHNDX_NAME = ".symtab_shndx";
+const char *COMMENT_NAME = ".comment";
+const char *OPD_NAME = ".opd"; // PPC64 Official Procedure Descriptors
 // sections from dynamic executables and shared objects
 const char* PLT_NAME                      = ".plt";
 const char* REL_PLT_NAME                  = ".rela.plt";  // sparc-solaris
@@ -363,17 +353,16 @@ set<string> debugInfoSections = list_of(string(SYMTAB_NAME))(string(STRTAB_NAME)
 
 // loaded_elf(): populate elf section pointers
 // for EEL rewritten code, also populate "code_*_" members
-bool
-Object::loaded_elf(Offset& txtaddr, Offset& dataddr, Elf_X_Shdr*& bssscnp,
-                   Elf_X_Shdr*& symscnp, Elf_X_Shdr*& strscnp, Elf_X_Shdr*& stabscnp,
-                   Elf_X_Shdr*& stabstrscnp, Elf_X_Shdr*& stabs_indxcnp,
-                   Elf_X_Shdr*& stabstrs_indxcnp, Elf_X_Shdr*& rel_plt_scnp,
-                   Elf_X_Shdr*& plt_scnp, Elf_X_Shdr*& got_scnp, Elf_X_Shdr*& dynsym_scnp,
-                   Elf_X_Shdr*& dynstr_scnp, Elf_X_Shdr*& dynamic_scnp,
-                   Elf_X_Shdr*& eh_frame, Elf_X_Shdr*& gcc_except,
-                   Elf_X_Shdr*& interp_scnp, Elf_X_Shdr*& opd_scnp,
-                   Elf_X_Shdr*& symtab_shndx_scnp, bool)
-{
+bool Object::loaded_elf(Offset &txtaddr, Offset &dataddr,
+                        Elf_X_Shdr *&bssscnp,
+                        Elf_X_Shdr *&symscnp, Elf_X_Shdr *&strscnp,
+                        Elf_X_Shdr *&rel_plt_scnp, Elf_X_Shdr *&plt_scnp,
+                        Elf_X_Shdr *&got_scnp, Elf_X_Shdr *&dynsym_scnp,
+                        Elf_X_Shdr *&dynstr_scnp, Elf_X_Shdr *&dynamic_scnp,
+                        Elf_X_Shdr *&eh_frame, Elf_X_Shdr *&gcc_except,
+                        Elf_X_Shdr *&interp_scnp, Elf_X_Shdr *&opd_scnp,
+                        Elf_X_Shdr *&symtab_shndx_scnp,
+                        bool) {
     std::map<std::string, int> secnNameMap;
     dwarf_err_func = err_func_;
 
@@ -416,37 +405,26 @@ Object::loaded_elf(Offset& txtaddr, Offset& dataddr, Elf_X_Shdr*& bssscnp,
     gnu_hash_addr_ = 0;
 
     dynamic_offset_ = 0;
-    dynamic_addr_   = 0;
-    dynsym_addr_    = 0;
-    dynsym_size_    = 0;
-    dynstr_addr_    = 0;
-    init_addr_      = 0;
-    fini_addr_      = 0;
-    got_addr_       = 0;
-    got_size_       = 0;
-    plt_addr_       = 0;
-    plt_size_       = 0;
-    symtab_addr_    = 0;
-    strtab_addr_    = 0;
-#if defined(ppc32_linux)
-    plt_entry_size_     = 8;
-    rel_plt_entry_size_ = 8;
-#else
-    plt_entry_size_     = 0;
+    dynamic_addr_ = 0;
+    dynsym_addr_ = 0;
+    dynsym_size_ = 0;
+    dynstr_addr_ = 0;
+    init_addr_ = 0;
+    fini_addr_ = 0;
+    got_addr_ = 0;
+    got_size_ = 0;
+    plt_addr_ = 0;
+    plt_size_ = 0;
+    symtab_addr_ = 0;
+    strtab_addr_ = 0;
+    plt_entry_size_ = 0;
     rel_plt_entry_size_ = 0;
-#endif
-    rel_plt_addr_     = 0;
-    rel_plt_size_     = 0;
-    rel_addr_         = 0;
-    rel_size_         = 0;
-    rel_entry_size_   = 0;
-    stab_off_         = 0;
-    stab_size_        = 0;
-    stabstr_off_      = 0;
-    stab_indx_off_    = 0;
-    stab_indx_size_   = 0;
-    stabstr_indx_off_ = 0;
-    dwarvenDebugInfo  = false;
+    rel_plt_addr_ = 0;
+    rel_plt_size_ = 0;
+    rel_addr_ = 0;
+    rel_size_ = 0;
+    rel_entry_size_ = 0;
+    dwarvenDebugInfo = false;
 
     txtaddr = 0;
 
@@ -848,35 +826,11 @@ Object::loaded_elf(Offset& txtaddr, Offset& dataddr, Elf_X_Shdr*& bssscnp,
                 strscnp      = scnp;
                 strtab_addr_ = scn.sh_addr();
             }
-        }
-        else if(strcmp(name, STAB_INDX_NAME) == 0)
-        {
-            stabs_indxcnp   = scnp;
-            stab_indx_off_  = scn.sh_offset();
-            stab_indx_size_ = scn.sh_size();
-        }
-        else if(strcmp(name, STABSTR_INDX_NAME) == 0)
-        {
-            stabstrs_indxcnp  = scnp;
-            stabstr_indx_off_ = scn.sh_offset();
-        }
-        else if(strcmp(name, STAB_NAME) == 0)
-        {
-            stabscnp   = scnp;
-            stab_off_  = scn.sh_offset();
-            stab_size_ = scn.sh_size();
-        }
-        else if(strcmp(name, STABSTR_NAME) == 0)
-        {
-            stabstrscnp  = scnp;
-            stabstr_off_ = scn.sh_offset();
-        }
-        else if((secAddrTagMapping.find(scn.sh_addr()) != secAddrTagMapping.end()) &&
-                secAddrTagMapping[scn.sh_addr()] == DT_JMPREL)
-        {
-            rel_plt_scnp        = scnp;
-            rel_plt_addr_       = scn.sh_addr();
-            rel_plt_size_       = scn.sh_size();
+        } else if ((secAddrTagMapping.find(scn.sh_addr()) != secAddrTagMapping.end()) &&
+                 secAddrTagMapping[scn.sh_addr()] == DT_JMPREL) {
+            rel_plt_scnp = scnp;
+            rel_plt_addr_ = scn.sh_addr();
+            rel_plt_size_ = scn.sh_size();
             rel_plt_entry_size_ = scn.sh_entsize();
         }
         else if(strcmp(name, OPD_NAME) == 0)
@@ -1306,13 +1260,11 @@ Object::get_relocation_entries(Elf_X_Shdr*& rel_plt_scnp, Elf_X_Shdr*& dynsym_sc
                             if(dyn[i].d_tag == DT_LOPROC)
                             {
                                 unsigned int g_o_t = dyn[i].d_un.d_val;
-                                if(got != NULL)
-                                {
-                                    unsigned char* data =
-                                        (unsigned char*) got->getPtrToRawData();
-                                    glink_addr = *(
-                                        unsigned int*) (data + (g_o_t -
-                                                                got->getMemOffset() + 4));
+                                if (got != NULL) {
+                                    unsigned char *data =
+                                            (unsigned char *) got->getPtrToRawData();
+                                    glink_addr = Dyninst::read_memory_as<unsigned int>
+                                            (data + (g_o_t - got->getMemOffset() + 4));
                                     break;
                                 }
                             }
@@ -1320,10 +1272,9 @@ Object::get_relocation_entries(Elf_X_Shdr*& rel_plt_scnp, Elf_X_Shdr*& dynsym_sc
                     }
 
                     // Otherwise, first entry in .plt section holds the glink address
-                    if(glink_addr == 0)
-                    {
-                        unsigned char* data = (unsigned char*) plt->getPtrToRawData();
-                        glink_addr          = *(unsigned int*) (data);
+                    if (glink_addr == 0) {
+                        unsigned char *data = (unsigned char *) plt->getPtrToRawData();
+                        glink_addr = Dyninst::read_memory_as<uint32_t>(data);
                     }
 
                     // Search for region that contains glink address
@@ -1352,9 +1303,9 @@ Object::get_relocation_entries(Elf_X_Shdr*& rel_plt_scnp, Elf_X_Shdr*& dynsym_sc
                     const unsigned int MTCTR_11    = 0x7d6903a6;
                     const unsigned int BCTR        = 0x4e800420;
 
-                    unsigned char* sec_data = (unsigned char*) glink->getPtrToRawData();
-                    unsigned int*  insn =
-                        (unsigned int*) (sec_data + (stub_addr - glink->getMemOffset()));
+                    unsigned char *sec_data = (unsigned char *) glink->getPtrToRawData();
+                    auto insn = alignas_cast<unsigned int>
+                            (sec_data + (stub_addr - glink->getMemOffset()));
 
                     // Keep moving pointer back if more -fPIC stubs are found.
                     while(sec_data < (unsigned char*) insn)
@@ -1704,29 +1655,23 @@ Object::get_relocation_entries(Elf_X_Shdr*& rel_plt_scnp, Elf_X_Shdr*& dynsym_sc
     return false;
 }
 
-void
-Object::load_object(bool alloc_syms)
-{
-    Elf_X_Shdr* bssscnp           = 0;
-    Elf_X_Shdr* symscnp           = 0;
-    Elf_X_Shdr* strscnp           = 0;
-    Elf_X_Shdr* stabscnp          = 0;
-    Elf_X_Shdr* stabstrscnp       = 0;
-    Elf_X_Shdr* stabs_indxcnp     = 0;
-    Elf_X_Shdr* stabstrs_indxcnp  = 0;
-    Offset      txtaddr           = 0;
-    Offset      dataddr           = 0;
-    Elf_X_Shdr* rel_plt_scnp      = 0;
-    Elf_X_Shdr* plt_scnp          = 0;
-    Elf_X_Shdr* got_scnp          = 0;
-    Elf_X_Shdr* dynsym_scnp       = 0;
-    Elf_X_Shdr* dynstr_scnp       = 0;
-    Elf_X_Shdr* dynamic_scnp      = 0;
-    Elf_X_Shdr* eh_frame_scnp     = 0;
-    Elf_X_Shdr* gcc_except        = 0;
-    Elf_X_Shdr* interp_scnp       = 0;
-    Elf_X_Shdr* opd_scnp          = NULL;
-    Elf_X_Shdr* symtab_shndx_scnp = NULL;
+void Object::load_object(bool alloc_syms) {
+    Elf_X_Shdr *bssscnp = 0;
+    Elf_X_Shdr *symscnp = 0;
+    Elf_X_Shdr *strscnp = 0;
+    Offset txtaddr = 0;
+    Offset dataddr = 0;
+    Elf_X_Shdr *rel_plt_scnp = 0;
+    Elf_X_Shdr *plt_scnp = 0;
+    Elf_X_Shdr *got_scnp = 0;
+    Elf_X_Shdr *dynsym_scnp = 0;
+    Elf_X_Shdr *dynstr_scnp = 0;
+    Elf_X_Shdr *dynamic_scnp = 0;
+    Elf_X_Shdr *eh_frame_scnp = 0;
+    Elf_X_Shdr *gcc_except = 0;
+    Elf_X_Shdr *interp_scnp = 0;
+    Elf_X_Shdr *opd_scnp = NULL;
+    Elf_X_Shdr *symtab_shndx_scnp = NULL;
 
     {  // binding contour (for "goto cleanup")
 
@@ -1739,11 +1684,10 @@ Object::load_object(bool alloc_syms)
         // And attempt to parse the ELF data structures in the file....
         // EEL, added one more parameter
 
-        if(!loaded_elf(txtaddr, dataddr, bssscnp, symscnp, strscnp, stabscnp, stabstrscnp,
-                       stabs_indxcnp, stabstrs_indxcnp, rel_plt_scnp, plt_scnp, got_scnp,
-                       dynsym_scnp, dynstr_scnp, dynamic_scnp, eh_frame_scnp, gcc_except,
-                       interp_scnp, opd_scnp, symtab_shndx_scnp, true))
-        {
+        if (!loaded_elf(txtaddr, dataddr, bssscnp, symscnp, strscnp,
+                        rel_plt_scnp, plt_scnp, got_scnp, dynsym_scnp, dynstr_scnp,
+                        dynamic_scnp, eh_frame_scnp, gcc_except, interp_scnp,
+                        opd_scnp, symtab_shndx_scnp, true)) {
             goto cleanup;
         }
 
@@ -1752,14 +1696,6 @@ Object::load_object(bool alloc_syms)
         // find code and data segments....
         find_code_and_data(*elfHdr, txtaddr, dataddr);
 
-        if(elfHdr->e_type() != ET_REL)
-        {
-            if(!code_ptr_ || !code_len_)
-            {
-                // bpfatal( "no text segment\n");
-                goto cleanup;
-            }
-        }
         get_valid_memory_areas(*elfHdr);
 
 #if(defined(os_linux) || defined(os_freebsd))
@@ -1777,8 +1713,7 @@ Object::load_object(bool alloc_syms)
             interpreter_name_ = (char*) interp_scnp->get_data().d_buf();
         }
 
-        // global symbols are put in global_symbols. Later we read the
-        // stab section to find the module to where they belong.
+        // global symbols are put in global_symbols.
         // Experiment : lets try to be a bit more intelligent about
         // how we initially size the global_symbols table.
         // dictionary_lite takes an initial # of bins (2nd param),
@@ -1793,27 +1728,18 @@ Object::load_object(bool alloc_syms)
         if(alloc_syms)
         {
             // find symbol and string data
-            string     module = "DEFAULT_MODULE";
-            string     name   = "DEFAULT_NAME";
             Elf_X_Data symdata, strdata;
 
             if(symscnp && strscnp)
             {
                 symdata = symscnp->get_data();
                 strdata = strscnp->get_data();
-                parse_symbols(symdata, strdata, bssscnp, symscnp, symtab_shndx_scnp,
-                              false, module);
+                parse_symbols(symdata, strdata, bssscnp, symscnp, symtab_shndx_scnp, false);
             }
 
             no_of_symbols_ = nsymbols();
 
             // try to resolve the module names of global symbols
-            // Sun compiler stab.index section
-            fix_global_symbol_modules_static_stab(stabs_indxcnp, stabstrs_indxcnp);
-
-            // STABS format (.stab section)
-            fix_global_symbol_modules_static_stab(stabscnp, stabstrscnp);
-
             // DWARF format (.debug_info section)
             fix_global_symbol_modules_static_dwarf();
 
@@ -1821,7 +1747,7 @@ Object::load_object(bool alloc_syms)
             {
                 symdata = dynsym_scnp->get_data();
                 strdata = dynstr_scnp->get_data();
-                parse_dynamicSymbols(dynamic_scnp, symdata, strdata, false, module);
+                parse_dynamicSymbols(dynamic_scnp, symdata, strdata, false);
             }
 
             // TODO
@@ -2151,11 +2077,11 @@ Object::handle_opd_symbol(Region* opd, Symbol* sym)
 }
 
 // parse_symbols(): populate "allsymbols"
-bool
-Object::parse_symbols(Elf_X_Data& symdata, Elf_X_Data& strdata, Elf_X_Shdr* bssscnp,
-                      Elf_X_Shdr* symscnp, Elf_X_Shdr* symtab_shndx_scnp, bool /*shared*/,
-                      string smodule)
-{
+bool Object::parse_symbols(Elf_X_Data &symdata, Elf_X_Data &strdata,
+                           Elf_X_Shdr *bssscnp,
+                           Elf_X_Shdr *symscnp,
+                           Elf_X_Shdr *symtab_shndx_scnp,
+                           bool /*shared*/) {
 #if defined(TIMED_PARSE)
     struct timeval starttime;
     gettimeofday(&starttime, NULL);
@@ -2166,11 +2092,9 @@ Object::parse_symbols(Elf_X_Data& symdata, Elf_X_Data& strdata, Elf_X_Shdr* bsss
         return false;
     }
 
-    Elf_X_Sym   syms = symdata.get_sym();
-    const char* strs = strdata.get_string();
-    if(syms.isValid())
-    {
-        std::vector<string>  mods(syms.count());
+    Elf_X_Sym syms = symdata.get_sym();
+    const char *strs = strdata.get_string();
+    if (syms.isValid()) {
         std::vector<Symbol*> newsyms(syms.count());
         {
 #pragma omp for schedule(dynamic)
@@ -2206,21 +2130,16 @@ Object::parse_symbols(Elf_X_Data& symdata, Elf_X_Data& strdata, Elf_X_Shdr* bsss
                     secNumber = xndx;
                 }
 
-                Offset soffset;
-                if(symscnp->isFromDebugFile())
-                {
-                    Offset soffset_dbg = syms.st_value(i);
-                    soffset            = soffset_dbg;
-                    if(soffset_dbg)
-                    {
-                        bool result;
-#pragma omp critical
-                        result = convertDebugOffset(soffset_dbg, soffset);
-                        if(!result)
-                        {
-                            // Symbol does not match any section, can't convert
-                            continue;
-                        }
+            Offset soffset;
+            if (symscnp->isFromDebugFile()) {
+                Offset soffset_dbg = syms.st_value(i);
+                soffset = soffset_dbg;
+                if (soffset_dbg) {
+                    bool result;
+                    result = convertDebugOffset(soffset_dbg, soffset);
+                    if (!result) {
+                        //Symbol does not match any section, can't convert
+                        continue;
                     }
                 }
                 else
@@ -2262,11 +2181,20 @@ Object::parse_symbols(Elf_X_Data& symdata, Elf_X_Data& strdata, Elf_X_Shdr* bsss
                 int ind      = int(i);
                 int strindex = syms.st_name(i);
 
-                if(stype == Symbol::ST_SECTION && sec != NULL)
-                {
-                    sname   = sec->getRegionName();
-                    soffset = sec->getDiskOffset();
-                }
+            Symbol *newsym = new Symbol(sname,
+                                        stype,
+                                        slinkage,
+                                        svisibility,
+                                        soffset,
+                                        NULL,
+                                        sec,
+                                        ssize,
+                                        false,
+                                        (secNumber == SHN_ABS),
+                                        ind,
+                                        strindex,
+                                        (secNumber == SHN_COMMON));
+            newsyms[i] = newsym;
 
                 if(stype == Symbol::ST_MODULE)
                 {
@@ -2306,12 +2234,14 @@ Object::parse_symbols(Elf_X_Data& symdata, Elf_X_Data& strdata, Elf_X_Shdr* bsss
                 else
                     smodule = mods[i];
             }
-#pragma omp barrier     // Ensure no threads start running til ready
-#pragma omp for nowait  // nowait to save a barrier
-            for(unsigned i = 0; i < syms.count(); i++)
-                symsToModules_.insert({ newsyms[i], mods[i] });
+            {
+            dyn_c_hash_map<Offset,std::vector<Symbol*>>::accessor a2;
+            if(!symsByOffset_.insert(a2, {newsym->getOffset(), {newsym}}))
+                a2->second.push_back(newsym);
+            }
         }
-    }  // syms.isValid()
+        }
+    } // syms.isValid()
 #if defined(TIMED_PARSE)
     struct timeval endtime;
     gettimeofday(&endtime, NULL);
@@ -2328,10 +2258,10 @@ Object::parse_symbols(Elf_X_Data& symdata, Elf_X_Data& strdata, Elf_X_Shdr* bsss
 // Lazy parsing of dynamic symbol  & string tables
 // Parsing the dynamic symbols lazily would certainly
 // not increase the overhead of the entire parse
-void
-Object::parse_dynamicSymbols(Elf_X_Shdr*& dyn_scnp, Elf_X_Data& symdata,
-                             Elf_X_Data& strdata, bool /*shared*/, std::string smodule)
-{
+void Object::parse_dynamicSymbols(Elf_X_Shdr *&
+dyn_scnp, Elf_X_Data &symdata,
+                                  Elf_X_Data &strdata,
+                                  bool /*shared*/) {
 #if defined(TIMED_PARSE)
     struct timeval starttime;
     gettimeofday(&starttime, NULL);
@@ -2454,15 +2384,19 @@ Object::parse_dynamicSymbols(Elf_X_Shdr*& dyn_scnp, Elf_X_Data& symdata,
             int ind      = int(i);
             int strindex = syms.st_name(i);
 
-            if(stype == Symbol::ST_MODULE)
-            {
-                smodule = sname;
-            }
-
-            Symbol* newsym = new Symbol(
-                sname, stype, slinkage, svisibility, soffset, NULL, sec, ssize,
-                true,  // is dynamic
-                (secNumber == SHN_ABS), ind, strindex, (secNumber == SHN_COMMON));
+            Symbol *newsym = new Symbol(sname,
+                                        stype,
+                                        slinkage,
+                                        svisibility,
+                                        soffset,
+                                        NULL,
+                                        sec,
+                                        ssize,
+                                        true,  // is dynamic
+                                        (secNumber == SHN_ABS),
+                                        ind,
+                                        strindex,
+                                        (secNumber == SHN_COMMON));
 
             if(stype == Symbol::ST_UNKNOWN)
                 newsym->setInternalType(etype);
@@ -2508,7 +2442,6 @@ Object::parse_dynamicSymbols(Elf_X_Shdr*& dyn_scnp, Elf_X_Data& symdata,
                 if(!symsByOffset_.insert(a2, { newsym->getOffset(), { newsym } }))
                     a2->second.push_back(newsym);
             }
-            symsToModules_.insert({ newsym, smodule });
         }
     }
 
@@ -2523,33 +2456,6 @@ Object::parse_dynamicSymbols(Elf_X_Shdr*& dyn_scnp, Elf_X_Data& symdata,
 #endif
 }
 
-#if defined(cap_dwarf)
-
-string
-Object::find_symbol(string name)
-{
-    string name2;
-
-    // pass #1: unmodified
-    name2 = name;
-    if(symbols_.contains(name2))
-        return name2;
-
-    // pass #2: leading underscore (C)
-    name2 = "_" + name;
-    if(symbols_.contains(name2))
-        return name2;
-
-    // pass #3: trailing underscore (Fortran)
-    name2 = name + "_";
-    if(symbols_.contains(name2))
-        return name2;
-
-    return "";
-}
-
-#endif
-
 /********************************************************
  *
  * For object files only....
@@ -2562,87 +2468,14 @@ Object::find_symbol(string name)
 
 #if defined(cap_dwarf)
 
-void
-pd_dwarf_handler()
-{
-    const char* dwarf_msg = dwarf_errmsg(0);
-
-    if(dwarf_msg == NULL)
-        return;
-
-    string str = string("DWARF Error: ") + dwarf_msg;
-    dwarf_err_func(str.c_str());
-
-    // bperr( "DWARF error: %s\n", dwarf_msg);
-}
-
-Dwarf_Sword declFileNo       = 0;
-char**      declFileNoToName = NULL;
-
-bool
-Object::dwarf_parse_aranges(Dwarf* dbg, std::set<Dwarf_Off>& /*dies_seen*/)
-{
-    Dwarf_Aranges* ranges;
-    size_t         num_ranges;
-    int            status = dwarf_getaranges(dbg, &ranges, &num_ranges);
-    if(status != 0)
-        return false;
-    dwarf_printf("dwarf_parse_aranges: Processing %zu DWARF ranges\n", num_ranges);
-    for(size_t i = 0; i < num_ranges; i++)
-    {
-        Dwarf_Arange* range = dwarf_onearange(ranges, i);
-        if(!range)
-            continue;
-
-        Dwarf_Addr start;
-        Dwarf_Word len;
-        Dwarf_Off  some_offset;
-        status = dwarf_getarangeinfo(range, &start, &len, &some_offset);
-        assert(status == 0);
-        if(len == 0)
-            continue;
-
-        Dwarf_Die cu_die, *cu_die_off_p;
-        cu_die_off_p = dwarf_addrdie(dbg, start, &cu_die);
-        assert(cu_die_off_p != NULL);
-        auto off_die = dwarf_dieoffset(&cu_die);
-        // if (dies_seen.find(off_die) != dies_seen.end()) continue;
-
-        std::string modname;
-        if(!DwarfWalker::findDieName(cu_die, modname))
-        {
-            modname = associated_symtab->file();  // default module
-        }
-
-        Offset actual_start, actual_end;
-        convertDebugOffset(start, actual_start);
-        convertDebugOffset(start + len, actual_end);
-        Module* m = associated_symtab->getOrCreateModule(modname, actual_start);
-        m->addRange(actual_start, actual_end);
-        m->addDebugInfo(cu_die);
-        cerr << "File in module " << modname << ", DIE CU " << hex << off_die << dec
-             << endl;
-        DwarfWalker::buildSrcFiles(dbg, cu_die, m->getStrings());
-        // dies_seen.insert(off_die);
-    }
-    dwarf_printf("end of dwarf_parse_aranges\n");
-    return true;
-}
-
-bool
-Object::fix_global_symbol_modules_static_dwarf()
-{
+bool Object::fix_global_symbol_modules_static_dwarf() {
     /* Initialize libdwarf. */
     Dwarf** dbg_ptr = dwarf->type_dbg();
     if(!dbg_ptr)
         return false;
 
     dwarf_printf("At fix_global_symbol_modules_static_dwarf\n");
-    Dwarf*              dbg = *dbg_ptr;
-    std::set<Dwarf_Off> dies_seen;
-    /*if (!dwarf_parse_aranges(dbg, dies_seen)) {
-        return false;
-    }*/
+    Dwarf *dbg = *dbg_ptr;
 
     std::vector<Dwarf_Die> dies;
     size_t                 cu_header_size;
@@ -2654,9 +2487,10 @@ Object::fix_global_symbol_modules_static_dwarf()
         Dwarf_Die cu_die, *cu_die_p;
         cu_die_p = dwarf_offdie(dbg, cu_die_off, &cu_die);
 
-        Dwarf_Half moduleTag = dwarf_tag(&cu_die);
-        if(moduleTag != DW_TAG_compile_unit)
-        {
+        // As of DWARF 5, only full and partial CUs contain debug info for symbols
+        bool const is_partialcu = DwarfDyninst::is_partial_unit(cu_die);
+        bool const is_fullcu = DwarfDyninst::is_full_unit(cu_die);
+        if (!(is_partialcu || is_fullcu)) {
             continue;
         }
 
@@ -2673,44 +2507,27 @@ Object::fix_global_symbol_modules_static_dwarf()
     {
         Dwarf_Die cu_die = dies[i];
 
-        std::string modname;
-        if(!DwarfWalker::findDieName(cu_die, modname))
-        {
-            modname = associated_symtab->file();  // default module
-        }
-        if(modname == "<artificial>")
-        {
-            auto              off_die = dwarf_dieoffset(&cu_die);
-            std::stringstream suffix;
-            suffix << std::hex << off_die;
-            modname = "<artificial>" + suffix.str();
-        }
+        std::string modname = DwarfDyninst::cu_name(cu_die);
 
-        // cerr << "Processing CU DIE for " << modname << " offset: " << next_cu_off <<
-        // endl;
-        Address tempModLow;
-        Address modLow = 0;
-        if(DwarfWalker::findConstant(DW_AT_low_pc, tempModLow, &cu_die, dbg))
-        {
-#    pragma omp critical
-            convertDebugOffset(tempModLow, modLow);
+        auto const loc = dwarf_dieoffset(&cu_die);
+
+        dwarf_printf("Locating ranges for module '%s' at offset 0x%zx\n", modname.c_str(), loc);
+        std::vector<AddressRange> mod_ranges = DwarfWalker::getDieRanges(cu_die);
+        auto *m = associated_symtab->findModuleByOffset(loc);
+        if(!m) {
+          m = new SymtabAPI::Module(lang_Unknown, loc, modname, associated_symtab);
         }
-        std::vector<AddressRange> mod_ranges =
-            DwarfWalker::getDieRanges(dbg, cu_die, modLow);
-        Module* m;
-#    pragma omp critical
-        m = associated_symtab->getOrCreateModule(modname, modLow);
-        for(auto r = mod_ranges.begin(); r != mod_ranges.end(); ++r)
+        dwarf_printf("Adding %zu ranges to '%s'\n", mod_ranges.size(), m->fileName().c_str());
+        for (auto r = mod_ranges.begin(); r != mod_ranges.end(); ++r)
         {
             m->addRange(r->first, r->second);
         }
         if(!m->hasRanges())
         {
-            //            cout << "No ranges for module " << modname << ", need to extract
-            //            from statements\n";
-            Dwarf_Lines* lines;
-            size_t       num_lines;
-            if(dwarf_getsrclines(&cu_die, &lines, &num_lines) == 0)
+            dwarf_printf("No ranges found. Checking source lines\n");
+            Dwarf_Lines *lines;
+            size_t num_lines;
+            if (dwarf_getsrclines(&cu_die, &lines, &num_lines) == 0)
             {
                 Dwarf_Addr low;
                 for(size_t j = 0; j < num_lines; ++j)
@@ -2734,20 +2551,16 @@ Object::fix_global_symbol_modules_static_dwarf()
                                 break;
                             }
                         }
-                        //                        cout << "Adding range [" << hex << low
-                        //                        << ", " << high << ") to " << dec <<
-                        //                             m->fileName() << " based on
-                        //                             statements" << endl;
                         m->addRange(low, high);
                     }
                 }
             }
         }
-#    pragma omp critical
-        m->addDebugInfo(cu_die);
-        // cerr << "Files in module " << modname << endl;
         DwarfWalker::buildSrcFiles(dbg, cu_die, m->getStrings());
         // dies_seen.insert(cu_die_off);
+
+        // 'addModule' finalizes the Module's ranges, so do not add until after they are computed
+        associated_symtab->addModule(m);
     }
 
     return true;
@@ -2763,257 +2576,6 @@ Object::fix_global_symbol_modules_static_dwarf()
 }
 
 #endif  // cap_dwarf
-
-/********************************************************
- *
- * For object files only....
- *  read the .stab section to find the module of global symbols
- *
- ********************************************************/
-
-bool
-Object::fix_global_symbol_modules_static_stab(Elf_X_Shdr* stabscnp,
-                                              Elf_X_Shdr* stabstrscnp)
-{
-    // Read the stab section to find the module of global symbols.
-    // The symbols appear in the stab section by module. A module begins
-    // with a symbol of type N_UNDF and ends with a symbol of type N_ENDM.
-    // All the symbols in between those two symbols belong to the module.
-
-    if(!stabscnp || !stabstrscnp)
-        return false;
-
-    Elf_X_Data  stabdata    = stabscnp->get_data();
-    Elf_X_Data  stabstrdata = stabstrscnp->get_data();
-    stab_entry* stabptr     = NULL;
-
-    if(!stabdata.isValid() || !stabstrdata.isValid())
-        return false;
-
-    switch(addressWidth_nbytes)
-    {
-        case 4:
-            stabptr = new stab_entry_32(stabdata.d_buf(), stabstrdata.get_string(),
-                                        stabscnp->sh_size() / sizeof(stab32));
-            break;
-
-        case 8:
-            stabptr = new stab_entry_64(stabdata.d_buf(), stabstrdata.get_string(),
-                                        stabscnp->sh_size() / sizeof(stab64));
-            break;
-    };
-
-    const char* next_stabstr = stabptr->getStringBase();
-    string      module       = "DEFAULT_MODULE";
-
-    // the stabstr contains one string table for each module.
-    // stabstr_offset gives the offset from the begining of stabstr of the
-    // string table for the current module.
-
-    bool is_fortran = false;  // is the current module fortran code?
-
-    for(unsigned i = 0; i < stabptr->count(); i++)
-    {
-        switch(stabptr->type(i))
-        {
-            case N_UNDF: /* start of object file */
-                stabptr->setStringBase(next_stabstr);
-                next_stabstr = stabptr->getStringBase() + stabptr->val(i);
-                break;
-
-            case N_ENDM: /* end of object file */
-                is_fortran = false;
-                module     = "DEFAULT_MODULE";
-                break;
-
-            case N_SO: /* compilation source or file name */
-                if((stabptr->desc(i) == N_SO_FORTRAN) || (stabptr->desc(i) == N_SO_F90))
-                    is_fortran = true;
-
-                module = string(stabptr->name(i));
-                break;
-
-            case N_ENTRY: /* fortran alternate subroutine entry point */
-            case N_GSYM:  /* global symbol */
-                // the name string of a function or object appears in the stab
-                // string table as <symbol name>:<symbol descriptor><other stuff>
-                // where <symbol descriptor> is a one char code.
-                // we must extract the name and descriptor from the string
-                {
-                    const char* p = stabptr->name(i);
-                    // bperr("got %d type, str = %s\n", stabptr->type(i), p);
-                    // if (stabptr->type(i) == N_FUN && strlen(p) == 0) {
-
-                    if(strlen(p) == 0)
-                    {
-                        // GNU CC 2.8 and higher associate a null-named function
-                        // entry with the end of a function.  Just skip it.
-                        break;
-                    }
-
-                    const char* q = strchr(p, ':');
-                    unsigned    len;
-
-                    if(q)
-                    {
-                        len = q - p;
-                    }
-                    else
-                    {
-                        len = strlen(p);
-                    }
-
-                    if(len == 0)
-                    {
-                        // symbol name is empty.Skip it.- 02/12/07 -Giri
-                        break;
-                    }
-
-                    char* sname = new char[len + 1];
-                    strncpy(sname, p, len);
-                    sname[len] = 0;
-
-                    string SymName = string(sname);
-
-                    // q points to the ':' in the name string, so
-                    // q[1] is the symbol descriptor. We must check the symbol descriptor
-                    // here to skip things we are not interested in, such as prototypes.
-
-                    bool res = symbols_.contains(SymName);
-
-                    if(!res && is_fortran)
-                    {
-                        // Fortran symbols usually appear with an '_' appended in .symtab,
-                        // but not on .stab
-                        SymName += "_";
-                        res = symbols_.contains(SymName);
-                    }
-
-                    if(res && (q == 0 || q[1] != SD_PROTOTYPE))
-                    {
-                        unsigned int count = 0;
-                        dyn_c_hash_map<std::string, std::vector<Symbol*>>::const_accessor
-                            ca;
-                        if(!symbols_.find(ca, SymName))
-                        {
-                            assert(!"symbols_.find(ca, SymName)");
-                        }
-                        const std::vector<Symbol*>& syms = ca->second;
-
-                        /* If there's only one, apply regardless. */
-                        if(syms.size() == 1)
-                        {
-                            // TODO: set module
-                            //		    symbols_[SymName][0]->setModuleName(module);
-                        }
-                        else
-                        {
-                            for(unsigned int j = 0; j < syms.size(); j++)
-                            {
-                                if(syms[j]->getLinkage() == Symbol::SL_GLOBAL)
-                                {
-                                    // TODO: set module
-                                    //			    symbols_[SymName][j]->setModuleName(module);
-                                    count++;
-                                }
-                            }
-                        }
-                    }
-                    break;
-                }
-            case N_FUN:
-                /* function */
-                {
-                    const char* p = stabptr->name(i);
-
-                    if(strlen(p) == 0)
-                    {
-                        // Rumours are that GNU CC 2.8 and higher associate a
-                        // null-named function entry with the end of a
-                        // function. Just skip it.
-                        break;
-                    }
-
-                    const char* q = strchr(p, ':');
-
-                    if(q == 0)
-                    {
-                        // bperr( "Unrecognized stab format: %s\n", p);
-                        // Happens with the Solaris native compiler (.xstabs entries?)
-                        break;
-                    }
-
-                    if(q[1] == SD_PROTOTYPE)
-                    {
-                        // We see a prototype, skip it
-                        break;
-                    }
-
-                    unsigned long entryAddr = stabptr->val(i);
-
-                    if(entryAddr == 0)
-                    {
-                        // The function stab doesn't contain a function address
-                        // (happens with the Solaris native compiler). We have to
-                        // look up the symbol by its name. That's unfortunate, since
-                        // names may not be unique and we may end up assigning a wrong
-                        // module name to the symbol.
-                        unsigned len = q - p;
-                        if(len == 0)
-                        {
-                            // symbol name is empty.Skip it.- 02/12/07 -Giri
-                            break;
-                        }
-
-                        char* sname = new char[len + 1];
-                        strncpy(sname, p, len);
-                        sname[len]          = 0;
-                        string nameFromStab = string(sname);
-                        delete[] sname;
-
-                        dyn_c_hash_map<std::string, std::vector<Symbol*>>::const_accessor
-                            ca;
-                        if(!symbols_.find(ca, nameFromStab))
-                        {
-                            assert(!"symbols_.find(ca, nameFromStab)");
-                        }
-                        for(unsigned j = 0; j < ca->second.size(); j++)
-                        {
-                            symsToModules_.insert({ ca->second[j], module });
-                        }
-                    }
-                    else
-                    {
-                        if(!symsByOffset_.contains(entryAddr))
-                        {
-                            // bperr( "fix_global_symbol_modules_static_stab "
-                            //	   "can't find address 0x%lx of STABS entry %s\n",
-                            // entryAddr, p);
-                            break;
-                        }
-                        dyn_c_hash_map<Offset, std::vector<Symbol*>>::const_accessor ca;
-                        if(!symsByOffset_.find(ca, entryAddr))
-                        {
-                            assert(!"symsByOffset_.find(ca, entryAddr)");
-                        }
-                        for(unsigned j = 0; j < ca->second.size(); j++)
-                        {
-                            symsToModules_.insert({ ca->second[j], module });
-                        }
-                    }
-                    break;
-                }
-
-            default:
-                /* ignore other entries */
-                break;
-        }
-    }
-
-    delete stabptr;
-
-    return true;
-}
 
 // find_code_and_data(): populates the following members:
 //   code_ptr_, code_off_, code_len_
@@ -3073,110 +2635,44 @@ Object::find_code_and_data(Elf_X& elf, Offset txtaddr, Offset dataddr)
     // successful\n");
 }
 
-const char*
-Object::elf_vaddr_to_ptr(Offset vaddr) const
-{
-    const char* ret        = NULL;
-    unsigned    code_size_ = code_len_;
-    unsigned    data_size_ = data_len_;
-
-    if(vaddr >= code_off_ && vaddr < code_off_ + code_size_)
-    {
-        ret = ((char*) code_ptr_) + (vaddr - code_off_);
-    }
-    else if(vaddr >= data_off_ && vaddr < data_off_ + data_size_)
-    {
-        ret = ((char*) data_ptr_) + (vaddr - data_off_);
-    }
-
-    return ret;
-}
-
-stab_entry*
-Object::get_stab_info() const
-{
-    char* file_ptr = (char*) mf->base_addr();
-
-    // check that file has .stab info
-    if(stab_off_ && stab_size_ && stabstr_off_)
-    {
-        switch(addressWidth_nbytes)
-        {
-            case 4:  // 32-bit object
-                return new stab_entry_32(file_ptr + stab_off_, file_ptr + stabstr_off_,
-                                         stab_size_ / sizeof(stab32));
-                break;
-            case 8:  // 64-bit object
-                return new stab_entry_64(file_ptr + stab_off_, file_ptr + stabstr_off_,
-                                         stab_size_ / sizeof(stab64));
-                break;
-        };
-    }
-
-    return new stab_entry_64();
-}
-
-Object::Object(MappedFile* mf_, bool, void (*err_func)(const char*), bool alloc_syms,
-               Symtab* st)
-: AObject(mf_, err_func, st)
-, elfHdr(NULL)
-, hasReldyn_(false)
-, hasReladyn_(false)
-, hasRelplt_(false)
-, hasRelaplt_(false)
-, relType_(Region::RT_REL)
-, hasNoteSection_(false)
-, elf_hash_addr_(0)
-, gnu_hash_addr_(0)
-, dynamic_offset_(0)
-, dynamic_size_(0)
-, dynsym_size_(0)
-, init_addr_(0)
-, fini_addr_(0)
-, text_addr_(0)
-, text_size_(0)
-, symtab_addr_(0)
-, strtab_addr_(0)
-, dynamic_addr_(0)
-, dynsym_addr_(0)
-, dynstr_addr_(0)
-, got_addr_(0)
-, got_size_(0)
-, plt_addr_(0)
-, plt_size_(0)
-, plt_entry_size_(0)
-, rel_plt_addr_(0)
-, rel_plt_size_(0)
-, rel_plt_entry_size_(0)
-, rel_addr_(0)
-, rel_size_(0)
-, rel_entry_size_(0)
-, opd_addr_(0)
-, opd_size_(0)
-, stab_off_(0)
-, stab_size_(0)
-, stabstr_off_(0)
-, stab_indx_off_(0)
-, stab_indx_size_(0)
-, stabstr_indx_off_(0)
-, dwarvenDebugInfo(false)
-, loadAddress_(0)
-, entryAddress_(0)
-, interpreter_name_(NULL)
-, hasPieFlag_(false)
-, hasDtDebug_(false)
-, hasProgramLoad_(false)
-, hasBitsAlloc_(false)
-, hasDebugSections_(false)
-, hasModinfo_(false)
-, hasGnuLinkonceThisModule_(false)
-, isStripped(false)
-, dwarf(NULL)
-, EEL(false)
-, did_open(false)
-, obj_type_(obj_Unknown)
-, DbgSectionMapSorted(false)
-, soname_(NULL)
+Object::Object(MappedFile *mf_, bool, void (*err_func)(const char *),
+               bool alloc_syms, Symtab *st) :
+        AObject(mf_, err_func, st),
+        elfHdr(NULL),
+        hasReldyn_(false),
+        hasReladyn_(false),
+        hasRelplt_(false),
+        hasRelaplt_(false),
+        relType_(Region::RT_REL),
+        hasNoteSection_(false),
+        elf_hash_addr_(0), gnu_hash_addr_(0),
+        dynamic_offset_(0), dynamic_size_(0), dynsym_size_(0),
+        init_addr_(0), fini_addr_(0),
+        text_addr_(0), text_size_(0),
+        symtab_addr_(0), strtab_addr_(0),
+        dynamic_addr_(0), dynsym_addr_(0), dynstr_addr_(0),
+        got_addr_(0), got_size_(0),
+        plt_addr_(0), plt_size_(0), plt_entry_size_(0),
+        rel_plt_addr_(0), rel_plt_size_(0), rel_plt_entry_size_(0),
+        rel_addr_(0), rel_size_(0), rel_entry_size_(0),
+        opd_addr_(0), opd_size_(0),
+        dwarvenDebugInfo(false),
+        loadAddress_(0), entryAddress_(0),
+        interpreter_name_(NULL),
+        hasPieFlag_(false),
+        hasDtDebug_(false),
+        hasProgramLoad_(false),
+        hasBitsAlloc_(false),
+        hasDebugSections_(false),
+        hasModinfo_(false),
+        hasGnuLinkonceThisModule_(false),
+        isStripped(false),
+        dwarf(NULL),
+        EEL(false), did_open(false),
+        obj_type_(obj_Unknown),
+        DbgSectionMapSorted(false),
+        soname_(NULL),
+        containingFunc(nullptr)
 {
     li_for_object = NULL;
 
@@ -3185,13 +2681,10 @@ Object::Object(MappedFile* mf_, bool, void (*err_func)(const char*), bool alloc_
     gettimeofday(&starttime, NULL);
 #endif
 
-    if(mf->base_addr() == NULL)
-    {
-        elfHdr = Elf_X::newElf_X(mf->getFD(), ELF_C_READ, NULL, mf_->pathname());
-    }
-    else
-    {
-        elfHdr = Elf_X::newElf_X((char*) mf->base_addr(), mf->size(), mf_->pathname());
+    if (mf->base_addr() == NULL) {
+        elfHdr = Elf_X::newElf_X(mf->getFD(), ELF_C_READ, NULL, mf_->filename());
+    } else {
+        elfHdr = Elf_X::newElf_X((char *) mf->base_addr(), mf->size(), mf_->filename());
     }
 
     // ELF header: sanity check
@@ -3209,11 +2702,9 @@ Object::Object(MappedFile* mf_, bool, void (*err_func)(const char*), bool alloc_
         return;
     }
 
-    dwarf = DwarfHandle::createDwarfHandle(mf_->pathname(), elfHdr);
+    dwarf = DwarfHandle::createDwarfHandle(mf_->filename(), elfHdr);
 
-    if(elfHdr->e_type() == ET_DYN)
-    {
-        //        load_shared_object(alloc_syms);
+    if (elfHdr->e_type() == ET_DYN) {
         load_object(alloc_syms);
     }
     else if(elfHdr->e_type() == ET_REL || elfHdr->e_type() == ET_EXEC)
@@ -3232,9 +2723,6 @@ Object::Object(MappedFile* mf_, bool, void (*err_func)(const char*), bool alloc_
     // executables are treated as shared libraries.
     is_aout_ = isOnlyExecutable();
 
-#ifdef BINEDIT_DEBUG
-    print_symbol_map(&symbols_);
-#endif
 #if defined(TIMED_PARSE)
     struct timeval endtime;
     gettimeofday(&endtime, NULL);
@@ -3313,21 +2801,18 @@ Object::dump_state_info(ostream& s)
     AObject::dump_state_info(s);
     s << " <<end debuggingo info for base object>>" << endl;
 
-    s << " dynsym_addr_ = " << dynsym_addr_ << endl;
-    s << " dynstr_addr_ = " << dynstr_addr_ << endl;
-    s << " got_addr_ = " << got_addr_ << endl;
-    s << " plt_addr_ = " << plt_addr_ << endl;
-    s << " plt_size_ = " << plt_size_ << endl;
-    s << " plt_entry_size_ = " << plt_entry_size_ << endl;
-    s << " rel_plt_addr_ = " << rel_plt_addr_ << endl;
-    s << " rel_plt_size_ = " << rel_plt_size_ << endl;
-    s << " rel_plt_entry_size_ = " << rel_plt_entry_size_ << endl;
-    s << " rel_size_ = " << rel_size_ << endl;
-    s << " rel_entry_size_ = " << rel_entry_size_ << endl;
-    s << " stab_off_ = " << stab_off_ << endl;
-    s << " stab_size_ = " << stab_size_ << endl;
-    s << " stabstr_off_ = " << stabstr_off_ << endl;
-    s << " dwarvenDebugInfo = " << dwarvenDebugInfo << endl;
+  s << " dynsym_addr_ = " << dynsym_addr_ << endl;
+  s << " dynstr_addr_ = " << dynstr_addr_ << endl;
+  s << " got_addr_ = " << got_addr_ << endl;
+  s << " plt_addr_ = " << plt_addr_ << endl;
+  s << " plt_size_ = " << plt_size_ << endl;
+  s << " plt_entry_size_ = " << plt_entry_size_ << endl;
+  s << " rel_plt_addr_ = " << rel_plt_addr_ << endl;
+  s << " rel_plt_size_ = " << rel_plt_size_ << endl;
+  s << " rel_plt_entry_size_ = " << rel_plt_entry_size_ << endl;
+  s << " rel_size_ = " << rel_size_ << endl;
+  s << " rel_entry_size_ = " << rel_entry_size_ << endl;
+  s << " dwarvenDebugInfo = " << dwarvenDebugInfo << endl;
 
     // and dump the relocation table....
     s << " fbt_ = (field seperator :: )" << endl;
@@ -3532,16 +3017,11 @@ read_val_of_type(int type, unsigned long* value, const unsigned char* addr,
     switch(type & 0x0f)
     {
         case DW_EH_PE_absptr:
-            if(mi.word_size == 4)
-            {
-                *value =
-                    (unsigned long) endian_32bit(*((const uint32_t*) addr), mi.big_input);
+            if (mi.word_size == 4) {
+                *value = (unsigned long) endian_32bit(Dyninst::read_memory_as<uint32_t>(addr), mi.big_input);
                 size = 4;
-            }
-            else if(mi.word_size == 8)
-            {
-                *value =
-                    (unsigned long) endian_64bit(*((const uint64_t*) addr), mi.big_input);
+            } else if (mi.word_size == 8) {
+                *value = (unsigned long) endian_64bit(Dyninst::read_memory_as<uint64_t>(addr), mi.big_input);
                 size = 8;
             }
             break;
@@ -3552,28 +3032,28 @@ read_val_of_type(int type, unsigned long* value, const unsigned char* addr,
             *value = read_sleb128(addr, &size);
             break;
         case DW_EH_PE_udata2:
-            *value = endian_16bit(*((const uint16_t*) addr), mi.big_input);
-            size   = 2;
+            *value = endian_16bit(Dyninst::read_memory_as<uint16_t>(addr), mi.big_input);
+            size = 2;
             break;
         case DW_EH_PE_sdata2:
-            *value = endian_16bit(*((const uint16_t*) addr), mi.big_input);
-            size   = 2;
+            *value = endian_16bit(Dyninst::read_memory_as<uint16_t>(addr), mi.big_input);
+            size = 2;
             break;
         case DW_EH_PE_udata4:
-            *value = endian_32bit(*((const uint32_t*) addr), mi.big_input);
-            size   = 4;
+            *value = endian_32bit(Dyninst::read_memory_as<uint32_t>(addr), mi.big_input);
+            size = 4;
             break;
         case DW_EH_PE_sdata4:
-            *value = endian_32bit(*((const uint32_t*) addr), mi.big_input);
-            size   = 4;
+            *value = endian_32bit(Dyninst::read_memory_as<uint32_t>(addr), mi.big_input);
+            size = 4;
             break;
         case DW_EH_PE_udata8:
-            *value = endian_64bit(*((const uint64_t*) addr), mi.big_input);
-            size   = 8;
+            *value = endian_64bit(Dyninst::read_memory_as<uint64_t>(addr), mi.big_input);
+            size = 8;
             break;
         case DW_EH_PE_sdata8:
-            *value = endian_64bit(*((const uint64_t*) addr), mi.big_input);
-            size   = 8;
+            *value = endian_64bit(Dyninst::read_memory_as<uint64_t>(addr), mi.big_input);
+            size = 8;
             break;
         default:
             fprintf(stderr, "Unhandled type %d\n", type & 0x0f);
@@ -3776,9 +3256,8 @@ read_except_table_gcc3(const unsigned char e_ident[], mach_relative_info& mi,
         // pointer encodings, the FDE contains the actual pointers.
 
         // Calculate size in bytes of PC Begin
-        const unsigned char* pc_begin_start =
-            fde_bytes + 4 /* CIE Pointer size is 4 bytes */ +
-            (*(uint32_t*) fde_bytes == 0xffffffff ? LONG_FDE_HLEN : SHORT_FDE_HLEN);
+        const unsigned char* pc_begin_start = fde_bytes + 4 /* CIE Pointer size is 4 bytes */ + 
+            (Dyninst::read_memory_as<uint32_t>(fde_bytes) == 0xffffffff ? LONG_FDE_HLEN : SHORT_FDE_HLEN);
         unsigned long pc_begin_val;
         mi.pc = fde_addr + (unsigned long) (pc_begin_start - fde_bytes);
         int pc_begin_size =
@@ -3807,10 +3286,9 @@ read_except_table_gcc3(const unsigned char e_ident[], mach_relative_info& mi,
         low_pc = pc_begin_val;
 
         // Get the augmentation data for the FDE
-        cur_augdata =
-            fde_bytes + 4 /* CIE Pointer size is 4 bytes */ +
-            (*(uint32_t*) fde_bytes == 0xffffffff ? LONG_FDE_HLEN : SHORT_FDE_HLEN) +
-            pc_begin_size + pc_range_size + aug_length_size;
+        cur_augdata = fde_bytes + 4 /* CIE Pointer size is 4 bytes */ + 
+            (Dyninst::read_memory_as<uint32_t>(fde_bytes) == 0xffffffff ? LONG_FDE_HLEN : SHORT_FDE_HLEN) +
+            pc_begin_size + pc_range_size + aug_length_size; 
 
         for(j = 0; j < augmentor_len; j++)
         {
@@ -3938,12 +3416,10 @@ read_except_table_gcc3(const unsigned char e_ident[], mach_relative_info& mi,
     return true;
 }
 
-struct exception_compare
-: public binary_function<const ExceptionBlock&, const ExceptionBlock&, bool>
-{
-    bool operator()(const ExceptionBlock& e1, const ExceptionBlock& e2) const
-    {
-        if(e1.tryStart() < e2.tryStart())
+
+struct exception_compare  {
+    bool operator()(const ExceptionBlock &e1, const ExceptionBlock &e2) const {
+        if (e1.tryStart() < e2.tryStart())
             return true;
         return false;
     }
@@ -3993,193 +3469,13 @@ Object::objType() const
     return obj_type_;
 }
 
-void
-Object::getModuleLanguageInfo(dyn_hash_map<string, supportedLanguages>* mod_langs)
-{
-    string      working_module;
-    const char* ptr;
-    // check .stabs section to get language info for modules:
-    //   int stab_nsyms;
-    //   char *stabstr_nextoffset;
-    //   const char *stabstrs = 0;
+void Object::addModule(SymtabAPI::Module* m) {
+  associated_symtab->addModule(m);
+}
 
+void Object::getModuleLanguageInfo(dyn_hash_map<string, supportedLanguages> *mod_langs) {
+    string working_module;
     string mod_string;
-
-    // This ugly flag is set when certain (sun) fortran compilers are detected.
-    // If it is set at any point during the following iteration, this routine
-    // ends with "backtrack mode" and reiterates through all chosen languages, changing
-    // lang_Fortran to lang_Fortran_with_pretty_debug.
-    //
-    // This may be ugly, but it is set up this way since the information that is used
-    // to determine whether this flag is set comes from the N_OPT field, which
-    // seems to come only once per image.  The kludge is that we assume that all
-    // fortran sources in the module have this property (they probably do, but
-    // could conceivably be mixed (???)).
-    int fortran_kludge_flag = 0;
-
-    // "state variables" we use to accumulate potentially useful information
-    //  A final module<->language decision is not made until we have arrived at the
-    //  next module entry, at which point we use any and all info we have to
-    //  make the most sensible guess
-    supportedLanguages working_lang    = lang_Unknown;
-    char*              working_options = NULL;
-    const char*        working_name    = NULL;
-
-    stab_entry* stabptr      = NULL;
-    const char* next_stabstr = NULL;
-#if defined(TIMED_PARSE)
-    struct timeval starttime;
-    gettimeofday(&starttime, NULL);
-#endif
-
-    // Using the Object to get the pointers to the .stab and .stabstr
-    // XXX - Elf32 specific needs to be in seperate file -- jkh 3/18/99
-    stabptr      = get_stab_info();
-    next_stabstr = stabptr->getStringBase();
-
-    for(unsigned int i = 0; i < stabptr->count(); i++)
-    {
-        if(stabptr->type(i) == N_UNDF)
-        { /* start of object file */
-            /* value contains offset of the next string table for next module */
-            // assert(stabptr->nameIdx(i) == 1);
-            stabptr->setStringBase(next_stabstr);
-            next_stabstr = stabptr->getStringBase() + stabptr->val(i);
-        }
-        else if(stabptr->type(i) == N_OPT)
-        {
-            //  We can use the compiler option string (in a pinch) to guess at the source
-            //  file language There is possibly more useful information encoded somewhere
-            //  around here, but I lack an immediate reference....
-            if(working_name)
-                working_options = const_cast<char*>(stabptr->name(i));
-        }
-        else if((stabptr->type(i) == N_SO) || (stabptr->type(i) == N_ENDM))
-        { /* compilation source or file name */
-            // We have arrived at the next source file, finish up with the last one and
-            // reset state before starting next
-
-            //   XXXXXXXXXXX  This block is mirrored near the end of routine, if you edit
-            //   it,
-            //   XXXXXXXXXXX  change it there too.
-            if(working_name)
-            {
-                working_lang =
-                    pickLanguage(working_module, working_options, working_lang);
-                if(working_lang == lang_Fortran_with_pretty_debug)
-                    fortran_kludge_flag = 1;
-                (*mod_langs)[working_module] = working_lang;
-            }
-            //   XXXXXXXXXXX
-
-            // reset "state" here
-            working_lang    = lang_Unknown;
-            working_options = NULL;
-
-            //  Now:  out with the old, in with the new
-
-            if(stabptr->type(i) == N_ENDM)
-            {
-                // special case:
-                // which is most likely both broken (and ignorable ???)
-                working_name = "DEFAULT_MODULE";
-            }
-            else
-            {
-                working_name = stabptr->name(i);
-                ptr          = strrchr(working_name, '/');
-                if(ptr)
-                {
-                    ptr++;
-                    working_name = ptr;
-                }
-            }
-            working_module = string(working_name);
-
-            if((mod_langs->find(working_module) != mod_langs->end()) &&
-               (*mod_langs)[working_module] != lang_Unknown)
-            {
-                //  we already have a module with this name in the map.  If it has been
-                //  given a language assignment (not lang_Unknown), we can just skip ahead
-                working_name    = NULL;
-                working_options = NULL;
-                continue;
-            }
-            else
-            {
-                // cerr << __FILE__ << __LINE__ << ":  Module: " <<working_module<< " has
-                // language "<< stabptr->desc(i) << endl;
-                switch(stabptr->desc(i))
-                {
-                    case N_SO_FORTRAN:
-                        working_lang = lang_Fortran;
-                        break;
-                    case N_SO_F90:
-                        working_lang = lang_Fortran;  // not sure if this should be
-                                                      // different from N_SO_FORTRAN
-                        break;
-                    case N_SO_AS:
-                        working_lang = lang_Assembly;
-                        break;
-                    case N_SO_ANSI_C:
-                    case N_SO_C:
-                        working_lang = lang_C;
-                        break;
-                    case N_SO_CC:
-                        working_lang = lang_CPlusPlus;
-                        break;
-                    default:
-                        //  currently uncovered options are lang_CMFortran, and
-                        //  lang_GnuCPlusPlus do we need to make this kind of distinction
-                        //  here?
-                        working_lang = lang_Unknown;
-                        break;
-                }
-            }
-        }  // end N_SO section
-    }      // for loop
-
-    //  Need to make sure we finish up with the module we were last collecting information
-    //  about
-
-    //   XXXXXXXXXXX  see note above (find the X's)
-    if(working_name)
-    {
-        working_lang = pickLanguage(working_module, working_options, working_lang);
-        if(working_lang == lang_Fortran_with_pretty_debug)
-            fortran_kludge_flag = 1;
-        (*mod_langs)[working_module] = working_lang;
-    }
-    //   XXXXXXXXXXX
-
-    if(fortran_kludge_flag)
-    {
-        //  XXX  This code does not appear to be used anymore??
-        // go through map and change all lang_Fortran to lang_Fortran_with_pretty_symtab
-        dyn_hash_map<string, supportedLanguages>::iterator iter = (*mod_langs).begin();
-        string                                             aname;
-        supportedLanguages                                 alang;
-        for(; iter != (*mod_langs).end(); iter++)
-        {
-            aname = iter->first;
-            alang = iter->second;
-            if(lang_Fortran == alang)
-            {
-                (*mod_langs)[aname] = lang_Fortran_with_pretty_debug;
-            }
-        }
-    }
-#if defined(TIMED_PARSE)
-    struct timeval endtime;
-    gettimeofday(&endtime, NULL);
-    unsigned long lstarttime = starttime.tv_sec * 1000 * 1000 + starttime.tv_usec;
-    unsigned long lendtime   = endtime.tv_sec * 1000 * 1000 + endtime.tv_usec;
-    unsigned long difftime   = lendtime - lstarttime;
-    double        dursecs    = difftime / (1000);
-    cout << __FILE__ << ":" << __LINE__ << ": getModuleLanguageInfo took " << dursecs
-         << " msecs" << endl;
-#endif
-    delete stabptr;
 
 #if defined(cap_dwarf)
     if(hasDwarfInfo())
@@ -4205,33 +3501,12 @@ Object::getModuleLanguageInfo(dyn_hash_map<string, supportedLanguages>* mod_lang
             if(cu_die_p == NULL)
                 break;
 
-            Dwarf_Half moduleTag = dwarf_tag(&moduleDIE);
-            if(moduleTag != DW_TAG_compile_unit)
-            {
+            if (!DwarfDyninst::is_full_unit(moduleDIE)) {
                 continue;
             }
 
             /* Extract the name of this module. */
-            auto moduleName = dwarf_diename(&moduleDIE);
-            if(!moduleName)
-            {
-                break;
-            }
-            ptr = strrchr(moduleName, '/');
-            if(ptr)
-                ptr++;
-            else
-                ptr = moduleName;
-
-            working_module = string(ptr);
-
-            if(working_module == "<artificial>")
-            {
-                auto              off_die = dwarf_dieoffset(&moduleDIE);
-                std::stringstream suffix;
-                suffix << std::hex << off_die;
-                working_module = "<artificial>" + suffix.str();
-            }
+            auto moduleName = DwarfDyninst::die_name(moduleDIE);
 
             auto attr_p = dwarf_attr(&moduleDIE, DW_AT_language, &languageAttribute);
             if(attr_p == NULL)
@@ -4251,24 +3526,21 @@ Object::getModuleLanguageInfo(dyn_hash_map<string, supportedLanguages>* mod_lang
                 case DW_LANG_C:
                 case DW_LANG_C89:
                 case DW_LANG_C99:
-#    ifdef DW_LANG_C11
-                case DW_LANG_C11:
-#    endif
-                    (*mod_langs)[working_module] = lang_C;
+                    case DW_LANG_C11:
+                    (*mod_langs)[moduleName] = lang_C;
                     break;
                 case DW_LANG_C_plus_plus:
-#    ifdef DW_LANG_C_plus_plus_03
-                case DW_LANG_C_plus_plus_03:
-#    endif
-#    ifdef DW_LANG_C_plus_plus_11
-                case DW_LANG_C_plus_plus_11:
-#    endif
-                    (*mod_langs)[working_module] = lang_CPlusPlus;
+                    case DW_LANG_C_plus_plus_03:
+                    case DW_LANG_C_plus_plus_11:
+                    case DW_LANG_C_plus_plus_14:
+                    (*mod_langs)[moduleName] = lang_CPlusPlus;
                     break;
                 case DW_LANG_Fortran77:
                 case DW_LANG_Fortran90:
                 case DW_LANG_Fortran95:
-                    (*mod_langs)[working_module] = lang_Fortran;
+                case DW_LANG_Fortran03:
+                case DW_LANG_Fortran08:
+                    (*mod_langs)[moduleName] = lang_Fortran;
                     break;
                 default:
                     /* We know what the language is but don't care. */
@@ -4283,17 +3555,13 @@ bool
 AObject::getSegments(vector<Segment>& segs) const
 {
     unsigned i;
-    for(i = 0; i < regions_.size(); i++)
-    {
-        if((regions_[i]->getRegionName() == ".text") ||
-           (regions_[i]->getRegionName() == ".init") ||
-           (regions_[i]->getRegionName() == ".fini") ||
-           (regions_[i]->getRegionName() == ".rodata") ||
-           (regions_[i]->getRegionName() == ".plt") ||
-           (regions_[i]->getRegionName() == ".data"))
-        {
-            Segment seg;
-            seg.data     = regions_[i]->getPtrToRawData();
+    for (i = 0; i < regions_.size(); i++) {
+        if ((regions_[i]->getRegionName() == ".text") || (regions_[i]->getRegionName() == ".init") ||
+            (regions_[i]->getRegionName() == ".fini") ||
+            (regions_[i]->getRegionName() == ".rodata") || (regions_[i]->getRegionName() == ".plt") ||
+            (regions_[i]->getRegionName() == ".data")) {
+            Segment seg{};
+            seg.data = regions_[i]->getPtrToRawData();
             seg.loadaddr = regions_[i]->getDiskOffset();
             seg.size     = regions_[i]->getDiskSize();
             seg.name     = regions_[i]->getRegionName();
@@ -4304,20 +3572,12 @@ AObject::getSegments(vector<Segment>& segs) const
     return true;
 }
 
-bool
-Object::emitDriver(string fName, std::set<Symbol*>& allSymbols, unsigned)
-{
-#ifdef BINEDIT_DEBUG
-    printf("emitting...\n");
-    // print_symbol_map(&symbols_);
-    print_symbols(allSymbols);
-    printf("%d total symbol(s)\n", allSymbols.size());
-#endif
-    if(elfHdr->e_ident()[EI_CLASS] == ELFCLASS32)
-    {
-        Dyninst::SymtabAPI::emitElf<Dyninst::SymtabAPI::ElfTypes32>* em =
-            new Dyninst::SymtabAPI::emitElf<Dyninst::SymtabAPI::ElfTypes32>(
-                elfHdr, isStripped, this, err_func_, associated_symtab);
+
+bool Object::emitDriver(string fName, std::set<Symbol *> &allSymbols, unsigned) {
+    if (elfHdr->e_ident()[EI_CLASS] == ELFCLASS32) {
+        Dyninst::SymtabAPI::emitElf<Dyninst::SymtabAPI::ElfTypes32> *em =
+                new Dyninst::SymtabAPI::emitElf<Dyninst::SymtabAPI::ElfTypes32>(elfHdr, isStripped, this, err_func_,
+                                                                                associated_symtab);
         bool ok = em->createSymbolTables(allSymbols);
         if(ok)
         {
@@ -4348,259 +3608,14 @@ Object::interpreter_name() const
     return interpreter_name_;
 }
 
-/* Parse everything in the file on disk, and cache that we've done so,
-   because our modules may not bear any relation to the name source files. */
-void
-Object::parseStabFileLineInfo()
+void Object::parseLineInfoForCU(Offset offset_, LineInformation* li_for_module)
 {
-    static dyn_hash_map<string, bool> haveParsedFileMap;
-
-    /* We haven't parsed this file already, so iterate over its stab entries. */
-
-    stab_entry* stabEntry = get_stab_info();
-    if(stabEntry == NULL)
+    Dwarf_Die cuDIE{};
+    if(!DwarfDyninst::find_cu(*dwarf->type_dbg(), offset_, &cuDIE)) {
+        lineinfo_printf("No CU found at offset 0x%zx: %s\n", offset_, dwarf_errmsg(dwarf_errno()));
         return;
-    const char* nextStabString = stabEntry->getStringBase();
-
-    const char* currentSourceFile         = NULL;
-    const char* moduleName                = NULL;
-    Function*   currentFunction           = NULL;
-    Offset      currentAddress            = 0;
-    unsigned    currentLineBase           = 0;
-    unsigned    functionLineToPossiblyAdd = 0;
-
-    // Offset baseAddress = getBaseAddress();
-    LineInformation* li_for_module = NULL;
-
-    for(unsigned int i = 0; i < stabEntry->count(); i++)
-    {
-        switch(stabEntry->type(i))
-        {
-            case N_UNDF: /* start of an object file */
-            {
-                stabEntry->setStringBase(nextStabString);
-                nextStabString = stabEntry->getStringBase() + stabEntry->val(i);
-
-                currentSourceFile = NULL;
-            }
-            break;
-
-            case N_SO: /* compilation source or file name */
-            {
-                const char* sourceFile = stabEntry->name(i);
-                currentSourceFile      = strrchr(sourceFile, '/');
-
-                if(currentSourceFile == NULL)
-                {
-                    currentSourceFile = sourceFile;
-                }
-                else
-                {
-                    ++currentSourceFile;
-                }
-                Module* mod;
-
-                moduleName = currentSourceFile;
-                if(!associated_symtab->findModuleByName(mod, moduleName))
-                {
-                    mod = associated_symtab->getDefaultModule();
-                }
-                li_for_module = mod->getLineInformation();
-                if(!li_for_module)
-                {
-                    li_for_module = new LineInformation;
-                    mod->setLineInfo(li_for_module);
-                }
-            }
-            break;
-
-            case N_SOL: /* file name (possibly an include file) */
-            {
-                const char* sourceFile = stabEntry->name(i);
-                currentSourceFile      = strrchr(sourceFile, '/');
-                if(currentSourceFile == NULL)
-                {
-                    currentSourceFile = sourceFile;
-                }
-                else
-                {
-                    ++currentSourceFile;
-                }
-            }
-            break;
-
-            case N_FUN: /* a function */
-            {
-                if(*stabEntry->name(i) == 0)
-                {
-                    currentFunction = NULL;
-                    currentLineBase = 0;
-                    break;
-                } /* end if the N_FUN is an end-of-function-marker. */
-
-                std::vector<Function*> funcs;
-                char                   stringbuf[2048];
-                const char*            stabstr = stabEntry->name(i);
-                unsigned               iter    = 0;
-
-                while(iter < 2048)
-                {
-                    char c = stabstr[iter];
-
-                    if((c == ':') || (c == '\0'))
-                    {
-                        // stabstrs use ':' as delimiter
-                        stringbuf[iter] = '\0';
-                        break;
-                    }
-
-                    stringbuf[iter] = c;
-
-                    iter++;
-                }
-
-                if(iter >= 2047)
-                {
-                    create_printf("%s[%d]:  something went horribly awry\n", FILE__,
-                                  __LINE__);
-                    continue;
-                }
-                else
-                {
-                    switch(stabstr[iter + 1])
-                    {
-                        case 'F':
-                        case 'f':
-                            //  A "good" function
-                            break;
-                        case 'P':
-                        case 'p':
-                            //  A prototype function? need to discard
-                            continue;
-                            break;
-                        default:
-                            continue;
-                            break;
-                    };
-                }
-
-                if(!associated_symtab->findFunctionsByName(funcs,
-                                                           std::string(stringbuf)) ||
-                   !funcs.size())
-                {
-                    continue;
-                }
-
-                currentFunction           = funcs[0];
-                currentLineBase           = stabEntry->desc(i);
-                functionLineToPossiblyAdd = currentLineBase;
-
-                if(!currentFunction)
-                    continue;
-                currentAddress = currentFunction->getOffset();
-            }
-            break;
-
-            case N_SLINE: {
-                unsigned current_col = 0;
-
-                if(!currentLineBase)
-                {
-                    continue;
-                }
-
-                unsigned newLineSpec = stabEntry->desc(i);
-
-                //  Addresses specified in SLINEs are relative to the beginning of the fn
-                Offset newLineAddress = stabEntry->val(i) + currentFunction->getOffset();
-
-                if(newLineAddress <= currentAddress)
-                {
-                    continue;
-                }
-
-                //  If we just got our first N_SLINE after a function definition
-                //  its possible that the line number specified in the function
-                //  definition was less than the line number that we are currently on
-                //  If so, add an additional line number entry that encompasses
-                //  the line number of the original function definition in addition
-                //  to this SLINE ( use the same address range)
-
-                if(functionLineToPossiblyAdd)
-                {
-                    if(functionLineToPossiblyAdd < newLineSpec)
-                    {
-                        if(li_for_module)
-                            li_for_module->addLine(currentSourceFile,
-                                                   functionLineToPossiblyAdd, current_col,
-                                                   currentAddress, newLineAddress);
-                    }
-
-                    functionLineToPossiblyAdd = 0;
-                }
-
-                if(li_for_module)
-                    li_for_module->addLine(currentSourceFile, newLineSpec, current_col,
-                                           currentAddress, newLineAddress);
-
-                currentAddress  = newLineAddress;
-                currentLineBase = newLineSpec + 1;
-            }
-            break;
-
-        } /* end switch on the ith stab entry's type */
-
-    } /* end iteration over stab entries. */
-
-    //  haveParsedFileMap[ key ] = true;
-} /* end parseStabFileLineInfo() */
-
-class open_statement
-{
-public:
-    open_statement() { reset(); }
-    Dwarf_Addr noAddress() { return (Dwarf_Addr) ~0; }
-    bool       uninitialized() { return start_addr == noAddress(); }
-    void       reset()
-    {
-        string_table_index = -1;
-        start_addr         = noAddress();
-        end_addr           = noAddress();
-        line_number        = 0;
-        column_number      = 0;
-    }
-    bool sameFileLineColumn(const open_statement& rhs)
-    {
-        return ((string_table_index == rhs.string_table_index) &&
-                (line_number == rhs.line_number) && (column_number == rhs.column_number));
-    }
-    void operator=(const open_statement& rhs)
-    {
-        string_table_index = rhs.string_table_index;
-        start_addr         = rhs.start_addr;
-        end_addr           = rhs.end_addr;
-        line_number        = rhs.line_number;
-        column_number      = rhs.column_number;
-    }
-    friend std::ostream& operator<<(std::ostream& os, const open_statement& st)
-    {
-        os << hex << st.start_addr << " " << st.end_addr << " line:" << dec
-           << st.line_number << " file:" << st.string_table_index
-           << " col:" << st.column_number << std::endl;
-        return os;
     }
 
-public:
-    Dwarf_Word string_table_index;
-    Dwarf_Addr start_addr;
-    Dwarf_Addr end_addr;
-    int        line_number;
-    int        column_number;
-};
-
-void
-Object::parseLineInfoForCU(Dwarf_Die cuDIE, LineInformation* li_for_module)
-{
     /* Acquire this CU's source lines. */
     Dwarf_Lines*    lineBuffer;
     Dwarf_Attribute attr2;
@@ -4648,12 +3663,8 @@ Object::parseLineInfoForCU(Dwarf_Die cuDIE, LineInformation* li_for_module)
         return s_name;
     };
 
-    // dwarf_line_srcfileno == 0 means unknown; 1...n means files[0...n-1]
-    // so we ensure that we're adding a block of unknown, 1...n to the string table
-    // and that offset + dwarf_line_srcfileno points to the correct string
     using namespace boost::filesystem;
-    strings->emplace_back("<Unknown file>", "");
-    for(size_t i = 1; i < filecount; i++)
+    for(size_t i = 0; i < filecount; i++)
     {
         auto filename = dwarf_filesrc(files, i, nullptr, nullptr);
         if(!filename)
@@ -4772,6 +3783,206 @@ Object::parseLineInfoForCU(Dwarf_Die cuDIE, LineInformation* li_for_module)
         {
             current_line = current_statement;
             lineinfo_printf("current_line uninitialized\n");
+        } else {
+            current_line.end_addr = current_statement.start_addr;
+            if(current_line.sameFileLineColumn(current_statement))
+            	lineinfo_printf("sameFileLineColumn\n");
+            if (!current_line.sameFileLineColumn(current_statement) ||
+                    isEndOfSequence) {
+            	auto success = li_for_module->addLine((unsigned int)(current_line.string_table_index),
+                        (unsigned int)(current_line.line_number),
+                        (unsigned int)(current_line.column_number),
+                        current_line.start_addr, current_line.end_addr);
+            	lineinfo_printf("[%lu, %lu) %s:%d %s\n", current_line.start_addr, current_line.end_addr,
+            			((*strings)[current_line.string_table_index]).str.c_str(), current_line.line_number, (success?" inserted":" not"));
+                current_line = current_statement;
+
+                if (success) count++;
+            }
+        }
+        if (isEndOfSequence) {
+            current_line.reset();
+            lineinfo_printf("reset current_line\n");
+        }
+    } // end for
+    lineinfo_printf("amount of line info added: %d\n", count);
+}
+
+
+void
+dumpLineWithInlineContext
+(
+ open_statement &saved_statement,
+ vector<open_statement> &inline_context
+)
+{
+  saved_statement.dump(cout, true);
+  if (inline_context.size()) {
+    for (unsigned int i = inline_context.size(); i > 0; i--) {
+      inline_context[i -1].dump(cout, false);
+    }
+  }
+}
+
+
+void
+Object::recordLine
+(
+ Region *debug_str,
+ open_statement &saved_statement,
+ vector<open_statement> &inline_context
+)
+{
+  lineinfo_printf("Object::recordLine for [%lx, %lx)\n", saved_statement.start_addr, saved_statement.end_addr);
+  // record line map entry
+  li_for_object->addLine((unsigned int)(saved_statement.string_table_index),
+			 (unsigned int)(saved_statement.line_number),
+			 (unsigned int)(saved_statement.column_number),
+			 saved_statement.start_addr, saved_statement.end_addr);    
+  // record inline context, if any
+  if (debug_str != nullptr && inline_context.size()) {
+
+    // We only do a lookup when the current function does not contain the current range    
+    if (containingFunc == nullptr || 
+        containingFunc->getOffset() >= saved_statement.start_addr ||
+        containingFunc->getOffset() + containingFunc->getSize() < saved_statement.start_addr) {
+        if (containingFunc != nullptr) {
+            associated_symtab->addFunctionRange(containingFunc, 0);
+        }
+
+        associated_symtab->getContainingFunction(saved_statement.start_addr, containingFunc);
+        if (containingFunc == nullptr) {
+            lineinfo_printf("Cannot find function contains range [%lx, %lx)\n", saved_statement.start_addr, saved_statement.end_addr);
+            return;
+        }  
+    }
+    
+    FunctionBase* cur = static_cast<FunctionBase*>(containingFunc);
+    StringTablePtr strings(li_for_object->getStrings());
+
+    // Record all inline call sites
+    for (unsigned int i = 0; i < inline_context.size() - 1; ++i) {          
+      cur = recordAnInlinedFunction(
+          inline_context[i],
+          inline_context[i + 1],
+          strings,
+          cur,
+          saved_statement.start_addr,
+          saved_statement.end_addr);
+    }
+    recordAnInlinedFunction(
+        *(inline_context.rbegin()),
+        saved_statement,
+        strings,
+        cur,
+        saved_statement.start_addr,
+        saved_statement.end_addr);
+  }
+
+  if (common_debug_lineinfo) {
+    dumpLineWithInlineContext(saved_statement, inline_context);
+  }
+}
+
+InlinedFunction* Object::recordAnInlinedFunction(
+    open_statement& caller,
+    open_statement& callee,
+    StringTablePtr strings,
+    FunctionBase *parent,
+    Dwarf_Addr start,
+    Dwarf_Addr end
+) {
+    InlinedFunction *ifunc = new InlinedFunction(parent);
+
+    // Use the filename and line number from the caller 
+    const string& src_file = (*strings)[caller.string_table_index].str;                
+    ifunc->callsite_file_number = strings->project<0>(strings->get<1>().insert(StringTableEntry(src_file,"")).first) - strings->begin();      
+    ifunc->callsite_line = caller.line_number;
+    
+    // Use the function name from the callee
+    if (callee.funcname != nullptr) {
+        ifunc->addMangledName(callee.funcname, true, true);
+    }
+    ifunc->ranges.emplace_back(FuncRange(start, end - start, ifunc));
+    return ifunc;
+}
+
+
+void
+Object::lookupInlinedContext
+(
+ vector<open_statement> &inline_context,
+ open_statement &saved_statement
+)
+{
+  // If we encounter an unseen inline context,
+  // the current inlining call path is stored with the inline context id.
+  // Otherwise, we replace current context with the stored one
+  void* c = (void*)saved_statement.context;
+  if (c != nullptr) {
+    if (contextMap.find(c) == contextMap.end()) {
+        contextMap[c] = inline_context;
+    } else {
+        inline_context = contextMap[c];
+    }
+  }
+}
+
+
+LineInformation* Object::parseLineInfoForObject(StringTablePtr strings)
+{
+    Region *debug_str = nullptr;
+    std::string debug_str_secname = ".debug_str";
+    associated_symtab->findRegion(debug_str, debug_str_secname);
+
+    if (li_for_object) {
+        // The line information for this object has been parsed.
+        return li_for_object;
+    }
+    li_for_object = new LineInformation();
+    li_for_object->setStrings(strings);
+    /* Initialize libdwarf. */
+    Dwarf **dbg_ptr = dwarf->type_dbg();
+    if (!dbg_ptr) return li_for_object;
+    Dwarf *dbg = *dbg_ptr;
+
+    Dwarf_Off off, next_off = 0;
+    Dwarf_CU *cu = NULL;
+
+    Dwarf_Files *files;
+    size_t fileCount;
+
+    Dwarf_Lines * lineBuffer;
+    size_t lineCount;
+
+    int status;
+
+    while (1) {
+
+#pragma omp critical (next_lines)
+{
+    status = dwarf_next_lines(dbg, off = next_off, &next_off, &cu,
+                              &files, &fileCount, &lineBuffer, &lineCount);
+}
+    if (status != 0) break;
+      
+
+    boost::unique_lock<dyn_mutex> l(strings->lock);
+    size_t offset = strings->size();
+
+    using namespace boost::filesystem;
+    for(size_t i = 0; i < fileCount; i++)
+    {
+        auto filename = dwarf_filesrc(files, i, nullptr, nullptr);
+        if(!filename) continue;
+
+        string f = path(filename).filename().string();
+        auto tmp = strrchr(filename, '/');
+        if(tmp) ++tmp;
+
+        if(truncateLineFilenames && tmp)
+        {
+            strings->emplace_back(tmp,tmp);
         }
         else
         {
@@ -4792,8 +4003,68 @@ Object::parseLineInfoForCU(Dwarf_Die cuDIE, LineInformation* li_for_module)
                                 (success ? " inserted" : " not"));
                 current_line = current_statement;
 
-                if(success)
-                    count++;
+    Offset baseAddr = getBaseAddress();
+
+    /* Iterate over this object's source lines. */
+    open_statement saved_statement;
+    open_statement current_statement;
+
+    vector<open_statement> inline_context;
+    // The line map may contain un-relocated entries,
+    // which often corresponds to dead code.
+    // If we find line map entries with zero address,
+    // we ignore them until the end of sequence
+    bool isZeroAddress = false;
+    for(size_t i = 0; i < lineCount; i++ )
+    {
+        auto line = dwarf_onesrcline(lineBuffer, i);
+
+        /* Acquire the line number, address, source, and end of sequence flag. */
+        status = dwarf_lineno(line, &current_statement.line_number);
+        if ( status != 0 ) {
+            cout << "dwarf_lineno failed" << endl;
+            continue;
+        }
+
+        status = dwarf_linecol(line, &current_statement.column_number);
+        if ( status != 0 ) { current_statement.column_number = 0; }
+
+        status = dwarf_lineaddr(line, &current_statement.start_addr);
+        if ( status != 0 )
+        {
+            cout << "dwarf_lineaddr failed" << endl;
+            continue;
+        }
+        if (current_statement.start_addr == 0) {
+            isZeroAddress = true;
+            containingFunc = nullptr;
+        }
+
+        current_statement.start_addr += baseAddr;
+
+        if (dwarf->debugLinkFile()) {
+            Offset new_lineAddr;
+            bool result = convertDebugOffset(current_statement.start_addr, new_lineAddr);
+            if (result)
+                current_statement.start_addr = new_lineAddr;
+        }
+
+        //status = dwarf_line_srcfileno(line, &current_statement.string_table_index);
+        const char * file_name = dwarf_linesrc(line, NULL, NULL);
+        if ( !file_name ) {
+            cout << "dwarf_linesrc - empty name" << endl;
+            continue;
+        }
+
+        // search filename index
+        std::string file_name_str(file_name);
+        int index = -1;
+        for(size_t idx = offset; idx < strings->size(); ++idx)
+        {
+            if((*strings)[idx].str==file_name_str)
+            {
+                index = idx;
+                break;
             }
         }
         if(isEndOfSequence)
@@ -4976,6 +4247,66 @@ Object::parseLineInfoForObject(StringTablePtr strings_)
                 current_line.reset();
             }
         }
+        bool isStatement;
+        status = dwarf_linebeginstatement(line, &isStatement);
+        if(status != 0) {
+            cout << "dwarf_linebeginstatement failed" << endl;
+            continue;
+        }
+
+        // Only attempt to parse inlining context and inline function name
+        // when there is a .debug_str section.
+        if (debug_str != nullptr) {
+            current_statement.context = dwarf_linecontext(lineBuffer, line);
+            current_statement.funcname = dwarf_linefunctionname(dbg, line);
+        }
+
+        if (!isZeroAddress && saved_statement.uninitialized()) {
+            saved_statement = current_statement;
+        } else if (!isZeroAddress) {
+            bool pushed = false;
+            saved_statement.end_addr = current_statement.start_addr;
+            if (saved_statement.context || current_statement.context) {
+                // if saved_statement.context is non-zero, we need to remove any previously
+                // recorded inlined context that matches saved_statement.context or is
+                // nexted inside the matching context
+                lookupInlinedContext(inline_context, saved_statement);
+
+                // record saved_statement and its inlining context if any addresses fall
+                // between saved_statement and current_statement.
+                if (current_statement.start_addr != saved_statement.start_addr)
+                    recordLine (debug_str, saved_statement, inline_context);
+
+                // record saved_statement as inlined context for current_statement`
+                inline_context.push_back(saved_statement);
+                pushed = true;
+            }
+            if ((!saved_statement.sameFileLineColumn(current_statement) || isEndOfSequence)) {
+
+                if (!pushed) {
+                // we didn't add saved_statement to the inlined context of current_statement,
+                // so a line map entry for saved_statement needs to be recorded
+                    recordLine (debug_str, saved_statement, inline_context);
+                }
+
+                if (current_statement.context == 0) {
+                    // a line map statement with context 0 clears all inlined context.
+                    // remove all inlined context entries in the vector.
+                    inline_context.resize(0);
+                }
+
+                saved_statement = current_statement;
+            }
+        }
+        if (isEndOfSequence) {
+            isZeroAddress = false;
+            saved_statement.reset();
+            contextMap.clear();
+            if (containingFunc != nullptr) {
+                associated_symtab->addFunctionRange(containingFunc, 0);
+            }
+        }
+    }
     }
     return li_for_object;
 }
@@ -4986,21 +4317,17 @@ Object::parseLineInfoForAddr(Offset addr_to_find)
     Dwarf** dbg_ptr = dwarf->line_dbg();
     if(!dbg_ptr)
         return;
-    std::set<Module*> mod_for_offset;
-    associated_symtab->findModuleByOffset(mod_for_offset, addr_to_find);
-    for(auto mod = mod_for_offset.begin(); mod != mod_for_offset.end(); ++mod)
-    {
-        (*mod)->parseLineInformation();
-    }
+    auto *m = associated_symtab->getContainingModule(addr_to_find);
+    if(m) m->parseLineInformation();
     // no mod for offset means no line info for sure if we've parsed all ranges...
 }
 
 bool
 Object::hasDebugInfo()
 {
-    Region*     ignore;
-    std::string debug_info   = ".debug_info";
-    bool        hasDebugInfo = associated_symtab->findRegion(ignore, debug_info);
+    Region *unused;
+    std::string debug_info = ".debug_info";
+    bool hasDebugInfo = associated_symtab->findRegion(unused, debug_info);
     return hasDebugInfo;
 }
 
@@ -5022,7 +4349,6 @@ Object::parseFileLineInfo()
     if(parsedAllLineInfo)
         return;
 
-    parseStabFileLineInfo();
     parseDwarfFileLineInfo();
     parsedAllLineInfo = true;
 }
@@ -5035,10 +4361,8 @@ Object::parseTypeInfo()
     gettimeofday(&starttime, NULL);
 #endif
 
-    parseStabTypes();
-    Dwarf** typeInfo = dwarf->type_dbg();
-    if(!typeInfo)
-        return;
+    Dwarf **typeInfo = dwarf->type_dbg();
+    if (!typeInfo) return;
     DwarfWalker walker(associated_symtab, *typeInfo);
     walker.parse();
 #if defined(TIMED_PARSE)
@@ -5053,363 +4377,8 @@ Object::parseTypeInfo()
 #endif
 }
 
-void
-Object::parseStabTypes()
-{
-    types_printf("Entry to parseStabTypes for %s\n", associated_symtab->name().c_str());
-    stab_entry* stabptr      = NULL;
-    const char* next_stabstr = NULL;
-
-    unsigned i;
-    char*    modName = NULL;
-    string   temp;
-    char *   ptr = NULL, *ptr2 = NULL, *ptr3 = NULL;
-    bool     parseActive = false;
-
-    std::string*            currentFunctionName = NULL;
-    Symbol*                 commonBlockVar      = NULL;
-    string*                 commonBlockName     = NULL;
-    boost::shared_ptr<Type> commonBlock         = NULL;
-
-    Module*         mod;
-    typeCollection* tc = NULL;
-
-#if defined(TIMED_PARSE)
-    struct timeval starttime;
-    gettimeofday(&starttime, NULL);
-    unsigned int   pss_count = 0;
-    double         pss_dur   = 0;
-    unsigned int   src_count = 0;
-    double         src_dur   = 0;
-    unsigned int   fun_count = 0;
-    double         fun_dur   = 0;
-    struct timeval t1, t2;
-#endif
-
-    stabptr = get_stab_info();
-    if(!stabptr)
-    {
-        types_printf("\tWarning: no stab ptr, returning immediately\n");
-        return;
-    }
-
-    // Using the Object to get the pointers to the .stab and .stabstr
-    // XXX - Elf32 specific needs to be in seperate file -- jkh 3/18/99
-    next_stabstr = stabptr->getStringBase();
-    types_printf("\t Parsing %lu stab entries\n", stabptr->count());
-    for(i = 0; i < stabptr->count(); i++)
-    {
-        switch(stabptr->type(i))
-        {
-            case N_UNDF: /* start of object file */
-                /* value contains offset of the next string table for next module */
-                // assert(stabptr->nameIdx(i) == 1);
-                stabptr->setStringBase(next_stabstr);
-                next_stabstr = stabptr->getStringBase() + stabptr->val(i);
-
-                // N_UNDF is the start of object file. It is time to
-                // clean source file name at this moment.
-                /*
-    if(currentSourceFile){
-    delete currentSourceFile;
-    currentSourceFile = NULL;
-    delete absoluteDirectory;
-    absoluteDirectory = NULL;
-    delete currentFunctionName;
-    currentFunctionName = NULL;
-    currentFileInfo = NULL;
-    currentFuncInfo = NULL;
-    }
-      */
-                break;
-
-            case N_ENDM: /* end of object file */
-                break;
-
-            case N_SO: /* compilation source or file name */
-                /* bperr("Resetting CURRENT FUNCTION NAME FOR NEXT OBJECT FILE\n");*/
-#ifdef TIMED_PARSE
-                src_count++;
-                gettimeofday(&t1, NULL);
-#endif
-                symt_current_func_name         = "";  // reset for next object file
-                symt_current_mangled_func_name = "";  // reset for next object file
-                symt_current_func              = NULL;
-
-                modName = const_cast<char*>(stabptr->name(i));
-                // cerr << "checkpoint B" << endl;
-                ptr = strrchr(modName, '/');
-                //  cerr << "checkpoint C" << endl;
-                if(ptr)
-                {
-                    ptr++;
-                    modName = ptr;
-                }
-                if(associated_symtab->findModuleByName(mod, modName))
-                {
-                    tc          = typeCollection::getModTypeCollection(mod);
-                    parseActive = true;
-                    if(!mod)
-                    {
-                        create_printf("%s[%d]:  FIXME\n", FILE__, __LINE__);
-                    }
-                    else if(!tc)
-                    {
-                        create_printf("%s[%d]:  FIXME\n", FILE__, __LINE__);
-                    }
-                    else
-                        tc->clearNumberedTypes();
-                }
-                else
-                {
-                    // parseActive = false;
-                    mod = associated_symtab->getDefaultModule();
-                    tc  = typeCollection::getModTypeCollection(mod);
-                    types_printf(
-                        "\t Warning: failed to find module name matching %s, using %s\n",
-                        modName, mod->fileName().c_str());
-                }
-
-#ifdef TIMED_PARSE
-                gettimeofday(&t2, NULL);
-                src_dur +=
-                    (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
-                // src_dur += (t2.tv_sec/1000 + t2.tv_usec*1000) - (t1.tv_sec/1000 +
-                // t1.tv_usec*1000) ;
-#endif
-                break;
-            case N_SLINE:
-                break;
-            default:
-                break;
-        }
-        if(parseActive || !is_aout())
-        {
-            std::vector<Symbol*> bpfv;
-            switch(stabptr->type(i))
-            {
-                case N_FUN:
-#ifdef TIMED_PARSE
-                    fun_count++;
-                    gettimeofday(&t1, NULL);
-#endif
-                    // all we have to do with function stabs at this point is to assure
-                    // that we have properly set the var currentFunctionName for the later
-                    // case of (parseActive)
-                    symt_current_func = NULL;
-                    int currentEntry  = i;
-                    int funlen        = strlen(stabptr->name(currentEntry));
-                    ptr               = new char[funlen + 1];
-                    strcpy(ptr, stabptr->name(currentEntry));
-                    while(strlen(ptr) != 0 && ptr[strlen(ptr) - 1] == '\\')
-                    {
-                        ptr[strlen(ptr) - 1] = '\0';
-                        currentEntry++;
-                        strcat(ptr, stabptr->name(currentEntry));
-                    }
-                    char* colonPtr = NULL;
-                    if(currentFunctionName)
-                        delete currentFunctionName;
-                    if(!ptr || !(colonPtr = strchr(ptr, ':')))
-                        currentFunctionName = NULL;
-                    else
-                    {
-                        char* tmp = new char[colonPtr - ptr + 1];
-                        strncpy(tmp, ptr, colonPtr - ptr);
-                        tmp[colonPtr - ptr] = '\0';
-                        currentFunctionName = new string(tmp);
-                        // Shouldn't this be a function name lookup?
-                        std::vector<Symbol*> syms;
-                        if(!associated_symtab->findSymbol(syms, *currentFunctionName,
-                                                          Symbol::ST_FUNCTION,
-                                                          mangledName))
-                        {
-                            if(!associated_symtab->findSymbol(
-                                   syms, "_" + *currentFunctionName, Symbol::ST_FUNCTION,
-                                   mangledName))
-                            {
-                                string fortranName = *currentFunctionName + string("_");
-                                if(associated_symtab->findSymbol(syms, fortranName,
-                                                                 Symbol::ST_FUNCTION,
-                                                                 mangledName))
-                                {
-                                    delete currentFunctionName;
-                                    currentFunctionName = new string(fortranName);
-                                }
-                            }
-                        }
-                        syms.clear();
-                        delete[] tmp;
-                    }
-                    delete[] ptr;
-#ifdef TIMED_PARSE
-                    gettimeofday(&t2, NULL);
-                    fun_dur += (t2.tv_sec - t1.tv_sec) * 1000.0 +
-                               (t2.tv_usec - t1.tv_usec) / 1000.0;
-                    // fun_dur += (t2.tv_sec/1000 + t2.tv_usec*1000) - (t1.tv_sec/1000 +
-                    // t1.tv_usec*1000);
-#endif
-                    break;
-            }
-            if(!parseActive)
-                continue;
-            switch(stabptr->type(i))
-            {
-                case N_BCOMM: {
-                    // begin Fortran named common block
-                    string tmp      = string(stabptr->name(i));
-                    commonBlockName = &tmp;
-                    // find the variable for the common block
-
-                    // TODO? change this. findLocalVar will cause an infinite loop
-                    std::vector<Symbol*> vars;
-                    if(!associated_symtab->findSymbol(vars, *commonBlockName,
-                                                      Symbol::ST_OBJECT, mangledName))
-                    {
-                        if(!associated_symtab->findSymbol(vars, *commonBlockName,
-                                                          Symbol::ST_OBJECT, mangledName,
-                                                          true))
-                            commonBlockVar = NULL;
-                        else
-                            commonBlockVar = vars[0];
-                    }
-                    else
-                        commonBlockVar = vars[0];
-                    if(!commonBlockVar)
-                    {
-                        // //bperr("unable to find variable %s\n", commonBlockName);
-                    }
-                    else
-                    {
-                        commonBlock = tc->findVariableType(*commonBlockName, Type::share);
-                        if(!commonBlock->isCommonType())
-                        {
-                            // its still the null type, create a new one for it
-                            commonBlock = Type::make_shared<typeCommon>(*commonBlockName);
-                            tc->addGlobalVariable(commonBlock);
-                        }
-                        // reset field list
-                        commonBlock->asCommonType().beginCommonBlock();
-                    }
-                    break;
-                }
-                case N_ECOMM: {
-                    // copy this set of fields
-                    if(!currentFunctionName)
-                        break;
-                    if(!associated_symtab->findSymbol(bpfv, *currentFunctionName,
-                                                      Symbol::ST_FUNCTION, mangledName))
-                    {
-                        if(!associated_symtab->findSymbol(bpfv, *currentFunctionName,
-                                                          Symbol::ST_FUNCTION,
-                                                          mangledName, true))
-                        {
-                            // //bperr("unable to locate current function %s\n",
-                            // currentFunctionName->c_str());
-                        }
-                        else
-                        {
-                            Symbol* func = bpfv[0];
-                            commonBlock->asCommonType().endCommonBlock(
-                                func, (void*) commonBlockVar->getOffset());
-                        }
-                    }
-                    else
-                    {
-                        if(bpfv.size() > 1)
-                        {
-                            // warn if we find more than one function with this name
-                            // //bperr("%s[%d]:  WARNING: found %d funcs matching name %s,
-                            // using the first\n",
-                            //                     __FILE__, __LINE__, bpfv.size(),
-                            //                     currentFunctionName->c_str());
-                        }
-                        Symbol* func = bpfv[0];
-                        commonBlock->asCommonType().endCommonBlock(
-                            func, (void*) commonBlockVar->getOffset());
-                    }
-                    // TODO?? size for local variables??
-                    //       // update size if needed
-                    //       if (commonBlockVar)
-                    //           commonBlockVar->setSize(commonBlock->getSize());
-                    commonBlockVar = NULL;
-                    commonBlock.reset();
-                    break;
-                }
-                    // case C_BINCL: -- what is the elf version of this jkh 8/21/01
-                    // case C_EINCL: -- what is the elf version of this jkh 8/21/01
-                case 32:  // Global symbols -- N_GYSM
-                case 38:  // Global Static -- N_STSYM
-                case N_FUN:
-                case 128:   // typedefs and variables -- N_LSYM
-                case 160:   // parameter variable -- N_PSYM
-                case 0xc6:  // position-independant local typedefs -- N_ISYM
-                case 0xc8:  // position-independant external typedefs -- N_ESYM
-#ifdef TIMED_PARSE
-                    pss_count++;
-                    gettimeofday(&t1, NULL);
-#endif
-                    if(stabptr->type(i) == N_FUN)
-                        symt_current_func = NULL;
-                    ptr = const_cast<char*>(stabptr->name(i));
-                    while(ptr[strlen(ptr) - 1] == '\\')
-                    {
-                        // ptr[strlen(ptr)-1] = '\0';
-                        ptr2 = const_cast<char*>(stabptr->name(i + 1));
-                        ptr3 = (char*) malloc(strlen(ptr) + strlen(ptr2) + 1);
-                        strcpy(ptr3, ptr);
-                        ptr3[strlen(ptr) - 1] = '\0';
-                        strcat(ptr3, ptr2);
-                        ptr = ptr3;
-                        i++;
-                        // XXX - memory leak on multiple cont. lines
-                    }
-                    // bperr("stab #%d = %s\n", i, ptr);
-                    // may be nothing to parse - XXX  jdd 5/13/99
-
-                    temp = parseStabString(mod, stabptr->desc(i), (char*) ptr,
-                                           stabptr->val(i), &commonBlock->asCommonType());
-                    if(temp.length())
-                    {
-                        // Error parsing the stabstr, return should be \0
-                        // //bperr( "Stab string parsing ERROR!! More to parse: %s\n",
-                        //				                  temp.c_str());
-                        // //bperr( "  symbol: %s\n", ptr);
-                    }
-#ifdef TIMED_PARSE
-                    gettimeofday(&t2, NULL);
-                    pss_dur += (t2.tv_sec - t1.tv_sec) * 1000.0 +
-                               (t2.tv_usec - t1.tv_usec) / 1000.0;
-                    //      pss_dur += (t2.tv_sec/1000 + t2.tv_usec*1000) -
-                    //      (t1.tv_sec/1000 + t1.tv_usec*1000);
-#endif
-                    break;
-                default:
-                    break;
-            }
-        }
-    }
-#if defined(TIMED_PARSE)
-    struct timeval endtime;
-    gettimeofday(&endtime, NULL);
-    unsigned long lstarttime = starttime.tv_sec * 1000 * 1000 + starttime.tv_usec;
-    unsigned long lendtime   = endtime.tv_sec * 1000 * 1000 + endtime.tv_usec;
-    unsigned long difftime   = lendtime - lstarttime;
-    double        dursecs    = difftime / (1000);
-    cout << __FILE__ << ":" << __LINE__ << ": parseTypes(" << mod->fileName() << ") took "
-         << dursecs << " msecs" << endl;
-    cout << "Breakdown:" << endl;
-    cout << "     Functions: " << fun_count << " took " << fun_dur << "msec" << endl;
-    cout << "     Sources: " << src_count << " took " << src_dur << "msec" << endl;
-    cout << "     parseStabString: " << pss_count << " took " << pss_dur << "msec"
-         << endl;
-    cout << "     Total: " << pss_dur + fun_dur + src_dur << " msec" << endl;
-#endif
-}
-
-bool
-sort_dbg_map(const Object::DbgAddrConversion_t& a, const Object::DbgAddrConversion_t& b)
-{
+bool sort_dbg_map(const Object::DbgAddrConversion_t &a,
+                  const Object::DbgAddrConversion_t &b) {
     return (a.dbg_offset < b.dbg_offset);
 }
 
@@ -5419,11 +4388,10 @@ Object::convertDebugOffset(Offset off, Offset& new_off)
     dyn_mutex::unique_lock l(dsm_lock);
     int                    hi = DebugSectionMap.size();
 
-    if(hi == 0)
-    {
-        // DebugSectionMap is empty; handle this case separately
-        DbgSectionMapSorted = true;
-        return true;
+    if (hi == 0) {
+      // DebugSectionMap is empty; handle this case separately
+      DbgSectionMapSorted = true;
+      return true;
     }
 
     // invariant: DebugSectionMap is non-empty
@@ -5492,12 +4460,10 @@ Object::insertDynamicEntry(long name, long value)
 
 // Parses sections with relocations and links these relocations to
 // existing symbols
-bool
-Object::parse_all_relocations(Elf_X_Shdr* dynsym_scnp, Elf_X_Shdr* dynstr_scnp,
-                              Elf_X_Shdr* symtab_scnp, Elf_X_Shdr* strtab_scnp)
-{
-    // fprintf(stderr, "enter parse_all_relocations for object %s\n",
-    // getFileName().c_str() ); const char *shnames = pdelf_get_shnames(*elfHdr);
+bool Object::parse_all_relocations(Elf_X_Shdr *dynsym_scnp,
+                                   Elf_X_Shdr *dynstr_scnp, Elf_X_Shdr *symtab_scnp,
+                                   Elf_X_Shdr *strtab_scnp) {
+    //const char *shnames = pdelf_get_shnames(*elfHdr);
     // Setup symbol table access
     Offset      dynsym_offset = 0;
     Elf_X_Data  dynsym_data, dynstr_data;
@@ -5799,17 +4765,6 @@ Object::getSegmentsSymReader(vector<SymSegment>& segs)
 
         segs.push_back(seg);
     }
-}
-
-std::string
-Object::getFileName() const
-{
-    if(soname_)
-    {
-        return soname_;
-    }
-
-    return mf->filename();
 }
 
 // Object::isLoadable

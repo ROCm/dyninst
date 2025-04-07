@@ -59,10 +59,6 @@
 #include <iterator>
 #include <errno.h>
 
-#if defined(os_windows)
-#    pragma warning(disable : 4355 4477)
-#endif
-
 using namespace Dyninst;
 using namespace ProcControlAPI;
 using namespace std;
@@ -2215,25 +2211,25 @@ int_process::setForceGeneratorBlock(bool b)
 int
 int_process::getAddressWidth()
 {
-    switch(getTargetArch())
-    {
-        case Arch_x86:
-        case Arch_ppc32:
-        case Arch_aarch32:
-            return 4;
-        case Arch_x86_64:
-        case Arch_ppc64:
-        case Arch_aarch64:
-        case Arch_cuda:
-        case Arch_intelGen9:
-            return 8;
-        case Arch_amdgpu_vega:  // according to the vega architecture, there are 32/64
-                                // address mode
-        case Arch_amdgpu_rdna:
-        case Arch_none:
-            assert(0);
-    }
-    return 0;
+   switch (getTargetArch()) {
+      case Arch_x86:
+      case Arch_ppc32:
+      case Arch_aarch32:
+         return 4;
+      case Arch_x86_64:
+      case Arch_ppc64:
+      case Arch_aarch64:
+      case Arch_cuda:
+      case Arch_intelGen9:
+         return 8;
+      case Arch_amdgpu_gfx908:
+      case Arch_amdgpu_gfx90a:
+      case Arch_amdgpu_gfx940:
+         return 8;  
+      case Arch_none:
+         assert(0);
+   }
+   return 0;
 }
 
 HandlerPool*
@@ -2357,18 +2353,249 @@ int_process::addBreakpoint(Dyninst::Address addr, int_breakpoint* bp)
 bool
 int_process::removeAllBreakpoints()
 {
-    if(!mem)
-        return true;
-    bool                                                 ret  = true;
-    std::map<Dyninst::Address, sw_breakpoint*>::iterator iter = mem->breakpoints.begin();
-    while(iter != mem->breakpoints.end())
-    {
-        std::set<response::ptr> resps;
-        // uninstall will call erase to remove the item,
-        // so just keep calling begin() to iterate over all elements
-        if(!iter->second->uninstall(this, resps))
-        {
-            ret = false;
+   pthrd_printf("Removing breakpoint at %lx in %d\n", addr, getPid());
+   set<bp_instance *> bps_to_remove;
+   map<Address, sw_breakpoint *>::iterator i = mem->breakpoints.find(addr);
+   if (i != mem->breakpoints.end()) {
+      sw_breakpoint *swbp = i->second;
+      assert(swbp && swbp->isInstalled());
+      if (swbp->containsIntBreakpoint(bp))
+          bps_to_remove.insert(static_cast<bp_instance *>(swbp));
+   }
+
+   for (auto thr : *threadPool()) {
+      hw_breakpoint *hwbp = thr->getHWBreakpoint(addr);
+      if (hwbp && hwbp->containsIntBreakpoint(bp)) {
+         bps_to_remove.insert(static_cast<bp_instance *>(hwbp));
+      }
+   }
+
+   if (bps_to_remove.empty()) {
+      perr_printf("Attempted to removed breakpoint that isn't installed\n");
+      setLastError(err_notfound, "Tried to uninstall breakpoint that isn't installed.\n");
+      return false;
+   }
+
+   for (auto ibp : bps_to_remove) {
+      bool empty;
+      bool result = ibp->rmBreakpoint(this, bp, empty, resps);
+      if (!result) {
+         pthrd_printf("rmBreakpoint failed on breakpoint at %lx in %d\n", addr, getPid());
+         return false;
+      }
+      if (empty) {
+         delete ibp;
+      }
+   }
+
+   return true;
+}
+
+sw_breakpoint *int_process::getBreakpoint(Dyninst::Address addr)
+{
+   std::map<Dyninst::Address, sw_breakpoint *>::iterator  i = mem->breakpoints.find(addr);
+   if (i == mem->breakpoints.end())
+      return NULL;
+   return i->second;
+}
+
+int_library *int_process::getLibraryByName(std::string s) const
+{
+	// Exact matches first, but find substring matches and return if unique.
+	// TODO: is this the behavior we actually want?
+	bool substring_unique = true;
+	std::set<int_library*>::iterator substring_match = mem->libs.end();
+   for (set<int_library *>::iterator i = mem->libs.begin();
+        i != mem->libs.end(); ++i)
+   {
+	   std::string n = (*i)->getName();
+      if (s == n)
+         return *i;
+	  if((n.find(s) != std::string::npos)) {
+		  if(substring_match == mem->libs.end()) {
+			substring_match = i;
+		  }
+		  else {
+			substring_unique = false;
+		  }
+	  }
+   }
+	if(substring_match != mem->libs.end() && substring_unique)
+	{
+		return *substring_match;
+	}
+   return NULL;
+}
+
+unsigned int int_process::plat_getCapabilities()
+{
+   return (Process::pc_read | Process::pc_write | Process::pc_irpc | Process::pc_control);
+}
+
+Event::ptr int_process::plat_throwEventsBeforeContinue(int_thread *)
+{
+   return Event::ptr();
+}
+
+bool int_process::plat_threadOpsNeedProcStop()
+{
+   return false;
+}
+
+size_t int_process::numLibs() const
+{
+   return mem->libs.size();
+}
+
+std::string int_process::getExecutable() const
+{
+   return executable; //The name of the exec passed to PC
+}
+
+bool int_process::isInCallback()
+{
+   return in_callback;
+}
+
+mem_state::ptr int_process::memory() const
+{
+   return mem;
+}
+
+err_t int_process::getLastError() {
+   return last_error;
+}
+
+const char *int_process::getLastErrorMsg() {
+   return last_error_string;
+}
+
+void int_process::clearLastError() {
+   last_error = err_none;
+   last_error_string = "ok";
+}
+
+void int_process::setLastError(err_t err, const char *str) {
+   last_error = err;
+   last_error_string = str;
+   ProcControlAPI::globalSetLastError(err, str);
+}
+
+void int_process::setExitCode(int c)
+{
+   assert(!hasCrashSignal);
+   hasExitCode = true;
+   exitCode = c;
+}
+
+void int_process::setCrashSignal(int s)
+{
+   assert(!hasExitCode);
+   hasCrashSignal = true;
+   crashSignal = s;
+}
+
+bool int_process::getExitCode(int &c)
+{
+   c = exitCode;
+   return hasExitCode;
+}
+
+bool int_process::getCrashSignal(int &s)
+{
+   s = crashSignal;
+   return hasCrashSignal;
+}
+
+bool int_process::wasForcedTerminated() const
+{
+   return forcedTermination;
+}
+
+bool int_process::plat_individualRegRead(Dyninst::MachRegister, int_thread *)
+{
+   return plat_individualRegAccess();
+}
+
+bool int_process::plat_individualRegSet()
+{
+   return plat_individualRegAccess();
+}
+
+bool int_process::isInCB()
+{
+   return in_callback;
+}
+
+void int_process::setInCB(bool b)
+{
+   assert(in_callback == !b);
+   in_callback = b;
+}
+
+void int_process::throwNopEvent()
+{
+   EventNop::ptr ev = EventNop::ptr(new EventNop());
+   ev->setProcess(proc());
+   ev->setThread(threadPool()->initialThread()->thread());
+   ev->setSyncType(Event::async);
+
+   mbox()->enqueue(ev);
+}
+
+async_ret_t int_process::plat_calcTLSAddress(int_thread *, int_library *, Offset,
+                                             Address &, std::set<response::ptr> &)
+{
+   perr_printf("Unsupported access to plat_calcTLSAddress\n");
+   setLastError(err_unsupported, "TLS Access not supported on this platform\n");
+   return aret_error;
+}
+
+bool int_process::plat_needsAsyncIO() const
+{
+   return false;
+}
+
+bool int_process::plat_readMemAsync(int_thread *, Dyninst::Address,
+                                    mem_response::ptr )
+{
+   assert(0);
+   return false;
+}
+
+bool int_process::plat_writeMemAsync(int_thread *, const void *, Dyninst::Address,
+                                     size_t, result_response::ptr, bp_write_t)
+{
+   assert(0);
+   return false;
+}
+
+memCache *int_process::getMemCache()
+{
+   return &mem_cache;
+}
+
+void int_process::updateSyncState(Event::ptr ev, bool gen)
+{
+   // This works around a Linux bug where a continue races with a whole-process exit
+   plat_adjustSyncType(ev, gen);
+
+   EventType etype = ev->getEventType();
+   switch (ev->getSyncType()) {
+	  case Event::async: {
+         break;
+     }
+      case Event::sync_thread: {
+         int_thread *thrd = ev->getThread()->llthrd();
+         if (!thrd) {
+            pthrd_printf("No thread for sync thread event, assuming thread exited\n");
+            return;
+         }
+         int_thread::StateTracker &st = gen ? thrd->getGeneratorState() : thrd->getHandlerState();
+         int_thread::State old_state = st.getState();
+         if (old_state == int_thread::exited) {
+            //Silly, linux.  Giving us events on processes that have exited.
+            pthrd_printf("Recieved events for exited thread, not changing thread state\n");
             break;
         }
         assert(resps.empty());
@@ -5138,7 +5365,95 @@ int_thread::StateTracker::restoreStateProc()
 int_thread::State
 int_thread::StateTracker::getState() const
 {
-    return state;
+   std::string s = int_thread::stateIDToName(id);
+   Dyninst::LWP thisLwp = up_thr->getLWP();
+   Dyninst::PID pid = up_thr->llproc()->getPid();
+
+   if (state == to) {
+      pthrd_printf("Leaving %s state for %d/%d in state %s\n", s.c_str(), pid, thisLwp, stateStr(to));
+      return true;
+   }
+   if (state == errorstate) {
+      perr_printf("Attempted %s state reversion for %d/%d from errorstate to %s\n",
+                  s.c_str(), pid, thisLwp, stateStr(to));
+      return false;
+   }
+   if (state == exited && to != errorstate) {
+      perr_printf("Attempted %s state reversion for %d/%d from exited to %s\n",
+                  s.c_str(), pid, thisLwp, stateStr(to));
+      return false;
+   }
+   if (to == neonatal && state != none) {
+      perr_printf("Attempted %s state reversion for %d/%d from %s to neonatal\n",
+                  s.c_str(), pid, thisLwp, stateStr(state));
+      return false;
+   }
+
+   /**
+    * We need to keep track of the running threads counts.  We'll do that here.
+    **/
+   if (RUNNING_STATE(to) && !RUNNING_STATE(state))
+   {
+      //We're moving a thread into a running state...
+      if (id == int_thread::GeneratorStateID) {
+         up_thr->generatorRunningThreadsCount().inc();
+      }
+      else if (id == int_thread::HandlerStateID) {
+         up_thr->handlerRunningThreadsCount().inc();
+         if (up_thr->syncRPCCount().local()) {
+            up_thr->runningSyncRPCThreadCount().inc();
+         }
+      }
+   }
+   else if (RUNNING_STATE(state) && !RUNNING_STATE(to))
+   {
+      //We're moving a thread out of a running state...
+      if (id == int_thread::GeneratorStateID) {
+         up_thr->generatorRunningThreadsCount().dec();
+	  }
+      else if (id == int_thread::HandlerStateID) {
+         up_thr->handlerRunningThreadsCount().dec();
+         if (up_thr->syncRPCCount().local()) {
+            up_thr->runningSyncRPCThreadCount().dec();
+         }
+      }
+   }
+   if (id == int_thread::GeneratorStateID && to == int_thread::exited) {
+      up_thr->getGeneratorNonExitedThreadCount().dec();
+   }
+   if (id == int_thread::HandlerStateID) {
+      if ((state == int_thread::neonatal || state == int_thread::neonatal_intermediate) &&
+          (to != int_thread::neonatal && to != int_thread::neonatal_intermediate)) {
+         //Moving away from neonatal/neonatal_intermediate
+         up_thr->neonatalThreadCount().dec();
+      }
+      if ((state != int_thread::neonatal && state != neonatal_intermediate) &&
+          (to == int_thread::neonatal || to == int_thread::neonatal_intermediate)) {
+         //Moving into neonatal/neonatal_intermediate
+         up_thr->neonatalThreadCount().inc();
+      }
+   }
+   pthrd_printf("Changing %s state for %d/%d from %s to %s\n", s.c_str(), pid, thisLwp,
+                stateStr(state), stateStr(to));
+   state = to;
+
+/*    Xiaozhu: the asserts can fail legitimately.
+   if (up_thr->up_thread && !up_thr->suppressSanityChecks()) {
+      int_thread::State handler_state = up_thr->getHandlerState().getState();
+      int_thread::State generator_state = up_thr->getGeneratorState().getState();
+
+ *
+ *    The handler status and generator status of a thread are never in sync by design.
+ *    We will need to revisit such design.
+ *
+      if (handler_state == stopped)
+         assert(generator_state == stopped || generator_state == exited || generator_state == detached );
+      if (generator_state == running)
+         assert(handler_state == running);
+   }
+*/
+
+   return true;
 }
 
 bool
@@ -6739,14 +7054,32 @@ RegisterPool::find(MachRegister r)
     return RegisterPool::iterator(llregpool->regs.find(r));
 }
 
-bool
-RegisterPool::iterator::operator==(const iterator& iter)
+RegisterPool::~RegisterPool()
+{
+   delete llregpool;
+}
+
+RegisterPool::iterator RegisterPool::begin()
+{
+   return RegisterPool::iterator(llregpool->regs.begin());
+}
+
+RegisterPool::iterator RegisterPool::end()
+{
+   return RegisterPool::iterator(llregpool->regs.end());
+}
+
+RegisterPool::iterator RegisterPool::find(MachRegister r)
+{
+   return RegisterPool::iterator(llregpool->regs.find(r));
+}
+
+bool RegisterPool::iterator::operator==(const iterator &iter) const
 {
     return i == iter.i;
 }
 
-bool
-RegisterPool::iterator::operator!=(const iterator& iter)
+bool RegisterPool::iterator::operator!=(const iterator &iter) const
 {
     return i != iter.i;
 }
@@ -6769,14 +7102,12 @@ RegisterPool::find(MachRegister r) const
     return RegisterPool::const_iterator(llregpool->regs.find(r));
 }
 
-bool
-RegisterPool::const_iterator::operator==(const const_iterator& iter)
+bool RegisterPool::const_iterator::operator==(const const_iterator &iter) const
 {
     return i == iter.i;
 }
 
-bool
-RegisterPool::const_iterator::operator!=(const const_iterator& iter)
+bool RegisterPool::const_iterator::operator!=(const const_iterator &iter) const
 {
     return i != iter.i;
 }
@@ -7033,8 +7364,19 @@ LibraryPool::find(Library::ptr lib)
     return i;
 }
 
-LibraryPool::const_iterator
-LibraryPool::find(Library::ptr lib) const
+LibraryPool::iterator LibraryPool::find(Library::ptr lib) {
+   LibraryPool::iterator i{};
+   i.int_iter = proc->memory()->libs.find(lib->debug());
+   return i;
+}
+
+LibraryPool::const_iterator LibraryPool::find(Library::ptr lib) const {
+   LibraryPool::const_iterator i{};
+   i.int_iter = proc->memory()->libs.find(lib->debug());
+   return i;
+}
+
+LibraryPool::iterator::iterator()
 {
     LibraryPool::const_iterator i;
     i.int_iter = proc->memory()->libs.find(lib->debug());
@@ -7071,15 +7413,17 @@ LibraryPool::begin()
 LibraryPool::iterator
 LibraryPool::end()
 {
-    LibraryPool::iterator i;
-    i.int_iter = proc->memory()->libs.end();
-    return i;
+   LibraryPool::iterator i{};
+   i.int_iter = proc->memory()->libs.begin();
+   return i;
 }
 
 bool
 LibraryPool::iterator::operator==(const LibraryPool::iterator& i) const
 {
-    return int_iter == i.int_iter;
+   LibraryPool::iterator i{};
+   i.int_iter = proc->memory()->libs.end();
+   return i;
 }
 
 bool
@@ -7099,26 +7443,33 @@ LibraryPool::begin() const
 LibraryPool::const_iterator
 LibraryPool::end() const
 {
-    LibraryPool::const_iterator i;
-    i.int_iter = proc->memory()->libs.end();
-    return i;
+   LibraryPool::const_iterator i{};
+   i.int_iter = proc->memory()->libs.begin();
+   return i;
 }
 
-LibraryPool::const_iterator::const_iterator() {}
+LibraryPool::const_iterator LibraryPool::end() const
+{
+   LibraryPool::const_iterator i{};
+   i.int_iter = proc->memory()->libs.end();
+   return i;
+}
+
+LibraryPool::const_iterator::const_iterator()
+{
+}
 
 Library::const_ptr LibraryPool::const_iterator::operator*() const
 {
     return (*int_iter)->up_lib;
 }
 
-bool
-LibraryPool::const_iterator::operator==(const LibraryPool::const_iterator& i)
+bool LibraryPool::const_iterator::operator==(const LibraryPool::const_iterator &i) const
 {
     return int_iter == i.int_iter;
 }
 
-bool
-LibraryPool::const_iterator::operator!=(const LibraryPool::const_iterator& i)
+bool LibraryPool::const_iterator::operator!=(const LibraryPool::const_iterator &i) const
 {
     return int_iter != i.int_iter;
 }
@@ -9275,14 +9626,12 @@ ThreadPool::iterator::iterator()
     curh = Thread::ptr();
 }
 
-bool
-ThreadPool::iterator::operator==(const iterator& i)
+bool ThreadPool::iterator::operator==(const iterator &i) const
 {
     return (i.curh == curh);
 }
 
-bool
-ThreadPool::iterator::operator!=(const iterator& i)
+bool ThreadPool::iterator::operator!=(const iterator &i) const
 {
     return (i.curh != curh);
 }
@@ -9296,94 +9645,84 @@ Thread::ptr ThreadPool::iterator::operator*() const
     return curh;
 }
 
-ThreadPool::iterator
-ThreadPool::iterator::operator++()  // prefix
+ThreadPool::iterator ThreadPool::iterator::operator++() // prefix
+{
+   MTLock lock_this_func;
+
+   assert(curi >= 0); //If this fails, you incremented a bad iterator
+   for (;;) {
+      curi++;
+      if (curi >= (signed int) curp->hl_threads.size()) {
+         curh = Thread::ptr();
+         curi = end_val;
+         return *this;
+      }
+      curh = curp->hl_threads[curi];
+      if (!curh->llthrd())
+         continue;
+      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
+         continue;
+	  if (!curh->isUser())
+		  continue;
+      return *this;
+   }
+}
+
+ThreadPool::iterator ThreadPool::iterator::operator++(int) // postfix
+{
+   MTLock lock_this_func;
+   ThreadPool::iterator orig = *this;
+
+   assert(curi >= 0); //If this fails, you incremented a bad iterator
+   for (;;) {
+      curi++;
+      if (curi >= (signed int) curp->hl_threads.size()) {
+         curh = Thread::ptr();
+         curi = end_val;
+         return orig;
+      }
+      curh = curp->hl_threads[curi];
+      if (!curh->llthrd())
+         continue;
+      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
+         continue;
+      if (!curh->isUser())
+         continue;
+      return orig;
+   }
+}
+
+ThreadPool::iterator ThreadPool::begin()
+{
+   MTLock lock_this_func;
+   ThreadPool::iterator i{};
+   i.curp = threadpool;
+   i.curi = 0;
+
+   if (!threadpool->hl_threads.empty())
+      i.curh = i.curp->hl_threads[i.curi];
+   else
+      i.curh = Thread::ptr();
+
+   return i;
+}
+
+ThreadPool::iterator ThreadPool::end()
+{
+   MTLock lock_this_func;
+   ThreadPool::iterator i{};
+   i.curp = threadpool;
+   i.curi = iterator::end_val;
+   i.curh = Thread::ptr();
+   return i;
+}
+
+ThreadPool::iterator ThreadPool::find(Dyninst::LWP lwp)
 {
     MTLock lock_this_func;
-
-    assert(curi >= 0);  // If this fails, you incremented a bad iterator
-    for(;;)
-    {
-        curi++;
-        if(curi >= (signed int) curp->hl_threads.size())
-        {
-            curh = Thread::ptr();
-            curi = end_val;
-            return *this;
-        }
-        curh = curp->hl_threads[curi];
-        if(!curh->llthrd())
-            continue;
-        if(curh->llthrd()->getUserState().getState() == int_thread::exited)
-            continue;
-        if(!curh->isUser())
-            continue;
-        return *this;
-    }
-}
-
-ThreadPool::iterator
-ThreadPool::iterator::operator++(int)  // postfix
-{
-    MTLock               lock_this_func;
-    ThreadPool::iterator orig = *this;
-
-    assert(curi >= 0);  // If this fails, you incremented a bad iterator
-    for(;;)
-    {
-        curi++;
-        if(curi >= (signed int) curp->hl_threads.size())
-        {
-            curh = Thread::ptr();
-            curi = end_val;
-            return orig;
-        }
-        curh = curp->hl_threads[curi];
-        if(!curh->llthrd())
-            continue;
-        if(curh->llthrd()->getUserState().getState() == int_thread::exited)
-            continue;
-        if(!curh->isUser())
-            continue;
-        return orig;
-    }
-}
-
-ThreadPool::iterator
-ThreadPool::begin()
-{
-    MTLock               lock_this_func;
-    ThreadPool::iterator i;
-    i.curp = threadpool;
-    i.curi = 0;
-
-    if(!threadpool->hl_threads.empty())
-        i.curh = i.curp->hl_threads[i.curi];
-    else
-        i.curh = Thread::ptr();
-
-    return i;
-}
-
-ThreadPool::iterator
-ThreadPool::end()
-{
-    MTLock               lock_this_func;
-    ThreadPool::iterator i;
-    i.curp = threadpool;
-    i.curi = iterator::end_val;
-    i.curh = Thread::ptr();
-    return i;
-}
-
-ThreadPool::iterator
-ThreadPool::find(Dyninst::LWP lwp)
-{
-    MTLock               lock_this_func;
-    ThreadPool::iterator i;
-    int_thread*          thread = threadpool->findThreadByLWP(lwp);
-    if(!thread)
-        return end();
+    ThreadPool::iterator i{};
+    int_thread *thread = threadpool->findThreadByLWP(lwp);
+    if( !thread ) return end();
 
     i.curp = threadpool;
     i.curh = thread->thread();
@@ -9399,14 +9738,12 @@ ThreadPool::const_iterator::const_iterator()
     curh = Thread::ptr();
 }
 
-bool
-ThreadPool::const_iterator::operator==(const const_iterator& i)
+bool ThreadPool::const_iterator::operator==(const const_iterator &i) const
 {
     return (i.curh == curh);
 }
 
-bool
-ThreadPool::const_iterator::operator!=(const const_iterator& i)
+bool ThreadPool::const_iterator::operator!=(const const_iterator &i) const
 {
     return (i.curh != curh);
 }
@@ -9419,10 +9756,90 @@ Thread::const_ptr ThreadPool::const_iterator::operator*() const
     return curh;
 }
 
-ThreadPool::const_iterator
-ThreadPool::const_iterator::operator++()  // prefix
+ThreadPool::const_iterator ThreadPool::const_iterator::operator++() // prefix
+{
+   MTLock lock_this_func;
+
+   assert(curi >= 0); //If this fails, you incremented a bad iterator
+   for (;;) {
+      curi++;
+      if (curi >= (signed int) curp->hl_threads.size()) {
+         curh = Thread::ptr();
+         curi = end_val;
+         return *this;
+      }
+      curh = curp->hl_threads[curi];
+      if (!curh->llthrd())
+         continue;
+      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
+         continue;
+	  if (!curh->isUser())
+		  continue;
+      return *this;
+   }
+}
+
+ThreadPool::const_iterator ThreadPool::const_iterator::operator++(int) // postfix
+{
+   MTLock lock_this_func;
+   ThreadPool::const_iterator orig = *this;
+
+   assert(curi >= 0); //If this fails, you incremented a bad iterator
+   for (;;) {
+      curi++;
+      if (curi >= (signed int) curp->hl_threads.size()) {
+         curh = Thread::ptr();
+         curi = end_val;
+         return orig;
+      }
+      curh = curp->hl_threads[curi];
+      if (!curh->llthrd())
+         continue;
+      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
+         continue;
+	  if (!curh->isUser())
+		  continue;
+      return orig;
+   }
+}
+
+ThreadPool::const_iterator ThreadPool::begin() const
+{
+   MTLock lock_this_func;
+   ThreadPool::const_iterator i{};
+   i.curp = threadpool;
+   i.curi = 0;
+
+   if (!threadpool->hl_threads.empty()) {
+	   while(i.curi < (int)threadpool->hl_threads.size() &&
+		   i.curp->hl_threads[i.curi] &&
+		   !i.curp->hl_threads[i.curi]->isUser()) {
+			   i.curi++;
+	   }
+      i.curh = i.curp->hl_threads[i.curi];
+   }
+   else
+      i.curh = Thread::ptr();
+
+   return i;
+}
+
+ThreadPool::const_iterator ThreadPool::end() const
+{
+   MTLock lock_this_func;
+   ThreadPool::const_iterator i{};
+   i.curp = threadpool;
+   i.curi = const_iterator::end_val;
+   i.curh = Thread::ptr();
+   return i;
+}
+
+ThreadPool::const_iterator ThreadPool::find(Dyninst::LWP lwp) const
 {
     MTLock lock_this_func;
+    ThreadPool::const_iterator i{};
+    int_thread *thread = threadpool->findThreadByLWP(lwp);
+    if( !thread ) return end();
 
     assert(curi >= 0);  // If this fails, you incremented a bad iterator
     for(;;)

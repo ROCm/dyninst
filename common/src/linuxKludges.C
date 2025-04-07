@@ -31,8 +31,6 @@
 #include "common/src/headers.h"
 #include "common/src/parseauxv.h"
 #include "common/src/linuxKludges.h"
-#include "common/src/Types.h"
-
 #include <elf.h>
 
 #include <vector>
@@ -111,16 +109,16 @@ P_cplus_demangle(const std::string& symbol, bool includeTypes)
     return symbol_demangle_with_cache(symbol, includeTypes);
 } /* end P_cplus_demangle() */
 
-bool
-PtraceBulkRead(Address inTraced, unsigned size, void* inSelf, int pid)
+
+bool PtraceBulkRead(Dyninst::Address inTraced, unsigned size, void *inSelf, int pid)
 {
     static bool have_process_vm_readv = true;
 
-    const unsigned char* ap  = (const unsigned char*) inTraced;
-    unsigned char*       dp  = (unsigned char*) inSelf;
-    Address              w   = 0x0; /* ptrace I/O buffer */
-    int                  len = sizeof(void*);
-    unsigned             cnt;
+   const unsigned char *ap = (const unsigned char*) inTraced;
+   unsigned char *dp = (unsigned char *) inSelf;
+   Dyninst::Address w = 0x0;               /* ptrace I/O buffer */
+   int len = sizeof(void *);
+   unsigned cnt;
 
     if(0 == size)
     {
@@ -168,45 +166,53 @@ PtraceBulkRead(Address inTraced, unsigned size, void* inSelf, int pid)
         /* Start of request is not aligned. */
         unsigned char* p = (unsigned char*) &w;
 
-        /* Read the segment containing the unaligned portion, and
-           copy what was requested to DP. */
-        errno = 0;
-        w     = P_ptrace(PTRACE_PEEKDATA, pid, (Address)(ap - cnt), w, len);
-        if(errno)
-        {
-            return false;
-        }
-        for(unsigned i = 0; i < len - cnt && i < size; i++)
-            dp[i] = p[cnt + i];
+      /* Read the segment containing the unaligned portion, and
+         copy what was requested to DP. */
+      errno = 0;
+      w = P_ptrace(PTRACE_PEEKDATA, pid, (Dyninst::Address) (ap-cnt), w, len);
+      if (errno) {
+         return false;
+      }
+      for (unsigned i = 0; i < len-cnt && i < size; i++)
+         dp[i] = p[cnt+i];
 
         if(len - cnt >= size)
         {
             return true; /* done */
         }
 
-        dp += len - cnt;
-        ap += len - cnt;
-        size -= len - cnt;
-    }
-    /* Copy aligned portion */
-    while(size >= (u_int) len)
-    {
-        errno = 0;
-        w     = P_ptrace(PTRACE_PEEKTEXT, pid, (Address) ap, 0, len);
-        if(errno)
-        {
-            return false;
-        }
-        memcpy(dp, &w, len);
-        dp += len;
-        ap += len;
-        size -= len;
-    }
+      dp += len-cnt;
+      ap += len-cnt;
+      size -= len-cnt;
+   }
+   /* Copy aligned portion */
+   while (size >= (u_int)len) {
+      errno = 0;
+      w = P_ptrace(PTRACE_PEEKTEXT, pid, (Dyninst::Address) ap, 0, len);
+      if (errno) {
+         return false;
+      }
+      memcpy(dp, &w, len);
+      dp += len;
+      ap += len;
+      size -= len;
+   }
 
-    if(size > 0)
-    {
-        /* Some unaligned data remains */
-        unsigned char* p = (unsigned char*) &w;
+   if (size > 0) {
+      /* Some unaligned data remains */
+      unsigned char *p = (unsigned char *) &w;
+
+      /* Read the segment containing the unaligned portion, and
+         copy what was requested to DP. */
+      errno = 0;
+      w = P_ptrace(PTRACE_PEEKTEXT, pid, (Dyninst::Address) ap, 0, len);
+      if (errno) {
+         return false;
+      }
+      for (unsigned i = 0; i < size; i++)
+         dp[i] = p[i];
+   }
+   return true;
 
         /* Read the segment containing the unaligned portion, and
            copy what was requested to DP. */
@@ -227,11 +233,11 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
 {
     static bool have_process_vm_writev = true;
 
-    unsigned char*       ap = (unsigned char*) inTraced;
-    const unsigned char* dp = (const unsigned char*) inSelf;
-    Address              w  = 0x0;  /* ptrace I/O buffer */
-    int      len = sizeof(Address); /* address alignment of ptrace I/O requests */
-    unsigned cnt;
+   unsigned char *ap = (unsigned char*) inTraced;
+   const unsigned char *dp = (const unsigned char*) inSelf;
+   Dyninst::Address w = 0x0;               /* ptrace I/O buffer */
+   int len = sizeof(Dyninst::Address); /* address alignment of ptrace I/O requests */
+   unsigned cnt;
 
     if(0 == nbytes)
     {
@@ -274,15 +280,14 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
         }
     }
 
-    if((cnt = ((Address) ap) % len))
-    {
-        /* Start of request is not aligned. */
-        unsigned char* p = (unsigned char*) &w;
+   if ((cnt = ((Dyninst::Address)ap) % len)) {
+      /* Start of request is not aligned. */
+      unsigned char *p = (unsigned char*) &w;
 
-        /* Read the segment containing the unaligned portion, edit
-           in the data from DP, and write the segment back. */
-        errno = 0;
-        w     = P_ptrace(PTRACE_PEEKTEXT, pid, (Address)(ap - cnt), 0);
+      /* Read the segment containing the unaligned portion, edit
+         in the data from DP, and write the segment back. */
+      errno = 0;
+      w = P_ptrace(PTRACE_PEEKTEXT, pid, (Dyninst::Address) (ap-cnt), 0);
 
         if(errno)
         {
@@ -292,10 +297,9 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
         for(unsigned i = 0; i < len - cnt && i < nbytes; i++)
             p[cnt + i] = dp[i];
 
-        if(0 > P_ptrace(PTRACE_POKETEXT, pid, (Address)(ap - cnt), w))
-        {
-            return false;
-        }
+      if (0 > P_ptrace(PTRACE_POKETEXT, pid, (Dyninst::Address) (ap-cnt), w)) {
+         return false;
+      }
 
         if(len - cnt >= nbytes)
         {
@@ -307,16 +311,14 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
         nbytes -= len - cnt;
     }
 
-    /* Copy aligned portion */
-    while(nbytes >= (u_int) len)
-    {
-        assert(0 == ((Address) ap) % len);
-        memcpy(&w, dp, len);
-        int retval = P_ptrace(PTRACE_POKETEXT, pid, (Address) ap, w);
-        if(retval < 0)
-        {
-            return false;
-        }
+   /* Copy aligned portion */
+   while (nbytes >= (u_int)len) {
+      assert(0 == ((Dyninst::Address)ap) % len);
+      memcpy(&w, dp, len);
+      int retval =  P_ptrace(PTRACE_POKETEXT, pid, (Dyninst::Address) ap, w);
+      if (retval < 0) {
+         return false;
+      }
 
         // Check...
         dp += len;
@@ -329,10 +331,10 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
         /* Some unaligned data remains */
         unsigned char* p = (unsigned char*) &w;
 
-        /* Read the segment containing the unaligned portion, edit
-           in the data from DP, and write it back. */
-        errno = 0;
-        w     = P_ptrace(PTRACE_PEEKTEXT, pid, (Address) ap, 0);
+      /* Read the segment containing the unaligned portion, edit
+         in the data from DP, and write it back. */
+      errno = 0;
+      w = P_ptrace(PTRACE_PEEKTEXT, pid, (Dyninst::Address) ap, 0);
 
         if(errno)
         {
@@ -342,12 +344,14 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
         for(unsigned i = 0; i < nbytes; i++)
             p[i] = dp[i];
 
-        if(0 > P_ptrace(PTRACE_POKETEXT, pid, (Address) ap, w))
-        {
-            return false;
-        }
-    }
-    return true;
+      for (unsigned i = 0; i < nbytes; i++)
+         p[i] = dp[i];
+
+      if (0 > P_ptrace(PTRACE_POKETEXT, pid, (Dyninst::Address) ap, w)) {
+         return false;
+      }
+   }
+   return true;
 }
 
 // These constants are not defined in all versions of elf.h
@@ -364,22 +368,19 @@ PtraceBulkWrite(Dyninst::Address inTraced, unsigned nbytes, const void* inSelf, 
 #    define AT_SYSINFO_EHDR 33
 #endif
 
-static bool
-couldBeVsyscallPage(map_entries* entry, bool strict, Address)
-{
-    if(strict)
-    {
-        if(entry->prems != PREMS_PRIVATE)
-            return false;
-        if(entry->path[0] != '\0')
-            return false;
-    }
-    if(entry->offset != 0)
-        return false;
-    if(entry->dev_major != 0 || entry->dev_minor != 0)
-        return false;
-    if(entry->inode != 0)
-        return false;
+static bool couldBeVsyscallPage(map_entries *entry, bool strict, Dyninst::Address) {
+   if (strict) {
+       if (entry->prems != PREMS_PRIVATE)
+         return false;
+      if (entry->path[0] != '\0')
+         return false;
+   }
+   if (entry->offset != 0)
+      return false;
+   if (entry->dev_major != 0 || entry->dev_minor != 0)
+      return false;
+   if (entry->inode != 0)
+      return false;
 
     return true;
 }
@@ -387,15 +388,15 @@ couldBeVsyscallPage(map_entries* entry, bool strict, Address)
 bool
 AuxvParser::readAuxvInfo()
 {
-    /**
-     * The location of the vsyscall is stored in /proc/PID/auxv in Linux 2.6.
-     * auxv consists of a list of name/value pairs, ending with the AT_NULL
-     * name.  There isn't a direct way to get the vsyscall info on Linux 2.4
-     **/
-    uint32_t* buffer32  = NULL;
-    uint64_t* buffer64  = NULL;
-    unsigned  pos       = 0;
-    Address   dso_start = 0x0, text_start = 0x0;
+  /**
+   * The location of the vsyscall is stored in /proc/PID/auxv in Linux 2.6.
+   * auxv consists of a list of name/value pairs, ending with the AT_NULL
+   * name.  There isn't a direct way to get the vsyscall info on Linux 2.4
+   **/
+  uint32_t *buffer32 = NULL;
+  uint64_t *buffer64 = NULL;
+  unsigned pos = 0;
+  Dyninst::Address dso_start = 0x0, text_start = 0x0;
 
     struct
     {
@@ -472,12 +473,12 @@ AuxvParser::readAuxvInfo()
     return true;
 #endif
 
-    /**
-     * Even if we found dso_start in /proc/pid/auxv, the vsyscall 'page'
-     * can be larger than a single page.  Thus we look through /proc/pid/maps
-     * for known, default, or guessed start address(es).
-     **/
-    std::vector<Address> guessed_addrs;
+  /**
+   * Even if we found dso_start in /proc/pid/auxv, the vsyscall 'page'
+   * can be larger than a single page.  Thus we look through /proc/pid/maps
+   * for known, default, or guessed start address(es).
+   **/
+  std::vector<Dyninst::Address> guessed_addrs;
 
     /* The first thing to check is the auxvinfo, if we have any. */
     if(dso_start != 0x0)
@@ -498,22 +499,20 @@ AuxvParser::readAuxvInfo()
     guessed_addrs.push_back(0xffffffffff600000);
 #endif
 
-    /**
-     * Look through every entry in /proc/maps, and compare it to every
-     * entry in guessed_addrs.  If a guessed_addr looks like the right
-     * thing, then we'll go ahead and call it the vsyscall page.
-     **/
-    unsigned     num_maps;
-    map_entries* secondary_match = NULL;
-    map_entries* maps            = getVMMaps(pid, num_maps);
-    for(unsigned i = 0; i < guessed_addrs.size(); i++)
-    {
-        Address addr = guessed_addrs[i];
-        for(unsigned j = 0; j < num_maps; j++)
-        {
-            map_entries* entry = &(maps[j]);
-            if(addr < entry->start || addr >= entry->end)
-                continue;
+  /**
+   * Look through every entry in /proc/maps, and compare it to every
+   * entry in guessed_addrs.  If a guessed_addr looks like the right
+   * thing, then we'll go ahead and call it the vsyscall page.
+   **/
+  unsigned num_maps;
+  map_entries *secondary_match = NULL;
+  map_entries *maps = getVMMaps(pid, num_maps);
+  for (unsigned i=0; i<guessed_addrs.size(); i++) {
+     Dyninst::Address addr = guessed_addrs[i];
+     for (unsigned j=0; j<num_maps; j++) {
+        map_entries *entry = &(maps[j]);
+        if (addr < entry->start || addr >= entry->end)
+           continue;
 
             if(dso_start == entry->start || couldBeVsyscallPage(entry, true, page_size))
             {
@@ -673,9 +672,9 @@ static unsigned long get_word_at(process *p, unsigned long addr, bool &err) {
  * Check the machine's stack pointer, page align it, and start walking
  * back looking for an unaccessible page.
  **/
-static Address getStackTop(AddrSpaceReader *proc, bool &err) {
-   Address stack_pointer;
-   Address pagesize = getpagesize();
+static Dyninst::Address getStackTop(AddrSpaceReader *proc, bool &err) {
+   Dyninst::Address stack_pointer;
+   Dyninst::Address pagesize = getpagesize();
    bool result;
    long word;
    err = false;
@@ -871,199 +870,22 @@ AuxvParser::readAuxvFromProc()
     ssize_t        result      = 0;
     int            fd          = -1;
 
-    sprintf(filename, "/proc/%d/auxv", pid);
-    fd = open(filename, O_RDONLY, 0);
-    if(fd == -1)
-        goto done_err;
+   /**
+    * Linux 2.6:
+    **/
+   snprintf(name, 32, "/proc/%d/task", pid);
+   DIR *dirhandle = opendir(name);
+   if (dirhandle)
+   {
+      //Only works on Linux 2.6
+      while((direntry = readdir(dirhandle)) != NULL) {
+         unsigned lwp_id = atoi(direntry->d_name);
+         if (lwp_id)
+            lwps.push_back(lwp_id);
+      }
+      closedir(dirhandle);
+      return true;
+   }
 
-    buffer = (unsigned char*) malloc(buffer_size);
-    if(!buffer)
-    {
-        goto done_err;
-    }
-
-    for(;;)
-    {
-        result = read(fd, buffer + pos, READ_BLOCK_SIZE);
-        if(result == -1)
-        {
-            perror("Couldn't read auxv entry");
-            goto done_err;
-        }
-        else if(!result && !pos)
-        {
-            // Didn't find any data to read
-            perror("Could read auxv entry");
-            goto done_err;
-        }
-        else if(result < READ_BLOCK_SIZE)
-        {
-            // Success
-            goto done;
-        }
-        else if(result == READ_BLOCK_SIZE)
-        {
-            // WTF... 5k wasn't enough for auxv?
-            buffer_size *= 2;
-            temp = (unsigned char*) realloc(buffer, buffer_size);
-            if(!temp)
-                goto done_err;
-            buffer = temp;
-            pos += READ_BLOCK_SIZE;
-        }
-        else
-        {
-            fprintf(stderr, "[%s:%d] - Unknown error reading auxv\n", __FILE__, __LINE__);
-            goto done_err;
-        }
-    }
-
-done_err:
-    if(buffer)
-        free(buffer);
-    buffer = NULL;
-done:
-    if(fd != -1)
-        close(fd);
-    return buffer;
-}
-
-map_entries*
-getVMMaps(int pid, unsigned& maps_size)
-{
-    std::ostringstream maps_filename;
-    maps_filename << "/proc/" << pid << "/maps";
-    std::ifstream maps_file(maps_filename.str());
-
-    std::vector<map_entries> maps;
-    while(maps_file.good())
-    {
-        char        delim;
-        std::string prems;
-        map_entries map;
-        memset(&map, 0, sizeof(map));
-
-        maps_file >> std::hex >> map.start >> delim >> map.end >> prems >> map.offset >>
-            map.dev_major >> delim >> map.dev_minor >> std::dec >> map.inode;
-
-        for(auto i = prems.begin(); i != prems.end(); ++i)
-            switch(*i)
-            {
-                case 'r':
-                    map.prems |= PREMS_READ;
-                    break;
-                case 'w':
-                    map.prems |= PREMS_WRITE;
-                    break;
-                case 'x':
-                    map.prems |= PREMS_EXEC;
-                    break;
-                case 'p':
-                    map.prems |= PREMS_PRIVATE;
-                    break;
-                case 's':
-                    map.prems |= PREMS_EXEC;
-                    break;
-            }
-
-        std::string path;
-        std::getline(maps_file, path);
-        path.erase(0, path.find_first_not_of(" \t"));
-        strncpy(map.path, path.c_str(), sizeof(map.path) - 1);
-
-        if(maps_file.good())
-            maps.push_back(map);
-    }
-
-    if(maps.empty())
-    {
-        maps_size = 0;
-        return NULL;
-    }
-
-    map_entries* cmaps = (map_entries*) calloc(maps.size() + 1, sizeof(map_entries));
-    if(cmaps != NULL)
-    {
-        std::copy(maps.begin(), maps.end(), cmaps);
-        maps_size = maps.size();
-    }
-    return cmaps;
-}
-
-bool
-findProcLWPs(pid_t pid, std::vector<pid_t>& lwps)
-{
-    char           name[32];
-    struct dirent* direntry;
-
-    /**
-     * Linux 2.6:
-     **/
-    snprintf(name, 32, "/proc/%d/task", pid);
-    DIR* dirhandle = opendir(name);
-    if(dirhandle)
-    {
-        // Only works on Linux 2.6
-        while((direntry = readdir(dirhandle)) != NULL)
-        {
-            unsigned lwp_id = atoi(direntry->d_name);
-            if(lwp_id)
-                lwps.push_back(lwp_id);
-        }
-        closedir(dirhandle);
-        return true;
-    }
-    /**
-     * Linux 2.4:
-     *
-     * PIDs that are created by pthreads have a '.' prepending their name
-     * in /proc.  We'll check all of those for the ones that have this lwp
-     * as a parent pid.
-     **/
-    dirhandle = opendir("/proc");
-    if(!dirhandle)
-    {
-        // No /proc directory.  I give up.  No threads for you.
-        return false;
-    }
-    while((direntry = readdir(dirhandle)) != NULL)
-    {
-        if(direntry->d_name[0] != '.')
-        {
-            // fprintf(stderr, "%s[%d]: Skipping entry %s\n", FILE__, __LINE__,
-            // direntry->d_name);
-            continue;
-        }
-        unsigned lwp_id   = atoi(direntry->d_name + 1);
-        int      lwp_ppid = 0;
-        if(!lwp_id)
-            continue;
-        sprintf(name, "/proc/%u/status", lwp_id);
-        FILE* fd = P_fopen(name, "r");
-        if(!fd)
-        {
-            continue;
-        }
-        char buffer[1024];
-        while(fgets(buffer, 1024, fd))
-        {
-            if(strncmp(buffer, "Tgid", 4) == 0)
-            {
-                sscanf(buffer, "%*s %d", &lwp_ppid);
-                break;
-            }
-        }
-
-        fclose(fd);
-
-        if(lwp_ppid != pid)
-        {
-            continue;
-        }
-        lwps.push_back(lwp_id);
-    }
-    closedir(dirhandle);
-    lwps.push_back(pid);
-
-    return true;
+  return false;
 }

@@ -30,7 +30,7 @@
 
 #include "PCWidget.h"
 #include "instructionAPI/h/Instruction.h"
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 #include "../CFG/RelocBlock.h"
 #include "../CodeBuffer.h"
 #include "../CodeTracker.h"
@@ -41,6 +41,10 @@
 #include "dyninstAPI/src/registerSpace.h"
 
 #include "dyninstAPI/src/emitter.h"
+
+#include "unaligned_memory_access.h"
+#include <cstdint>
+#include <limits>
 
 using namespace Dyninst;
 using namespace Relocation;
@@ -145,12 +149,27 @@ IPPatch::apply(codeGen& gen, CodeBuffer*)
     *temp = offset;
     newInsn += sizeof(uint32_t);
 
-    if(type == Reg)
-    {
-        assert(reg != (Register) -1);
-        // pop...
-        *newInsn++ = static_cast<unsigned char>(0x58 + reg);  // POP family
-    }
-    SET_PTR(newInsn, gen);
-    return true;
+  // Emit a call to the next instruction to get current PC
+  // This is necessary for PIC code
+  GET_PTR(newInsn, gen); 
+  append_memory_as_byte(newInsn, 0xE8);
+  append_memory_as(newInsn, uint32_t{0});
+  SET_PTR(newInsn, gen);
+  // Compensating PC on stack to the original location
+  int64_t offset = addr - gen.currAddr() + insn.size();
+  REGET_PTR(newInsn, gen);
+  append_memory_as_byte(newInsn, 0x81);
+  append_memory_as_byte(newInsn, 0x04);
+  append_memory_as_byte(newInsn, 0x24);
+  // offset is 64-bits, assert if the value does not fit in 32-bits
+  assert(numeric_limits<int32_t>::lowest() <= offset && offset <= numeric_limits<int32_t>::max() && "offset more than 32 bits");
+  append_memory_as(newInsn, static_cast<int32_t>(offset));
+
+  if (type == Reg) {
+    assert(reg != (Register) -1);
+    // pop...
+    append_memory_as_byte(newInsn, 0x58 + reg); // POP family
+  }
+  SET_PTR(newInsn, gen);
+  return true;
 }

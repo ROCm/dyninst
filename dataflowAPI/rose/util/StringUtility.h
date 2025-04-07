@@ -2,6 +2,8 @@
 #define ROSE_StringUtility_H
 
 //#include "commandline_processing.h"
+#include <ostream>
+#include <stddef.h>
 #include <vector>
 #include <map>
 #include <list>
@@ -12,10 +14,6 @@
 
 #include "../rose.h"
 
-#if ROSE_MICROSOFT_OS
-// This is the boost solution for lack of support for stdint.h (e.g. types such as "uint64_t")
-#include "external/stdint-win.h"
-#endif
 
 /** Functions for operating on strings.
  *

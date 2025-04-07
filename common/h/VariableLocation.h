@@ -31,9 +31,11 @@
 #if !defined(_Variable_Location_h_)
 #    define _Variable_Location_h_
 
-#    include "dyn_regs.h"
-#    include "dyntypes.h"
-#    include "util.h"
+#include "registers/MachRegister.h"
+#include "dyntypes.h"
+#include "util.h"
+
+namespace Dyninst {
 
 namespace Dyninst
 {

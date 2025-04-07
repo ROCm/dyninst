@@ -35,18 +35,21 @@
 #        include <values.h>
 #    endif
 
-#    include <list>
-#    include <map>
-#    include <set>
-#    include <string>
+#include <ostream>
+#include <sstream>
+#include <utility>
+#include <vector>
+#include <list>
+#include <map>
+#include <set>
+#include <string>
 
 // To define StackAST
 #    include "DynAST.h"
 
-#    include "Absloc.h"
-#    include "dyntypes.h"
-#    include "dyn_regs.h"
-#    include "util.h"
+#include "Absloc.h"
+#include "dyntypes.h"
+#include "util.h"
 
 // FreeBSD is missing a MINLONG and MAXLONG
 #    if defined(os_freebsd)

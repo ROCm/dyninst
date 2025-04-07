@@ -37,6 +37,7 @@
 #include <limits.h>
 #include "common/src/headers.h"
 #include "compiler_annotations.h"
+#include "compiler_diagnostics.h"
 #include <unordered_map>
 #include "dyninstAPI/src/image.h"
 #include "dyninstAPI/src/inst.h"
@@ -67,6 +68,7 @@
 #include "Instruction.h"
 #include <sstream>
 #include <assert.h>
+#include "unaligned_memory_access.h"
 
 class ExpandInstruction;
 class InsertNops;
@@ -171,10 +173,8 @@ registerSpace::initialize32()
     registerSpace::createRegisterSpace(registers);
 }
 
-#if defined(cap_32_64)
-void
-registerSpace::initialize64()
-{
+#if defined arch_x86_64
+void registerSpace::initialize64() {
     static bool done = false;
     if(done)
         return;
@@ -352,7 +352,7 @@ registerSpace::initialize()
     }
 
     initialize32();
-#if defined(cap_32_64)
+#if defined arch_x86_64
     initialize64();
 #endif
 }
@@ -423,8 +423,8 @@ void
 emitJccR8(int condition_code, char jump_offset, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    *insn++ = static_cast<unsigned char>(condition_code);
-    *insn++ = jump_offset;
+    append_memory_as_byte(insn, condition_code);
+    append_memory_as_byte(insn, jump_offset);
     SET_PTR(insn, gen);
 }
 
@@ -439,26 +439,23 @@ emitJccR8(int condition_code, char jump_offset, codeGen& gen)
 void
 emitJcc(int condition, int offset, codeGen& gen, bool willRegen) /* = true */
 {
-    unsigned char opcode;
-    GET_PTR(insn, gen);
-
-    assert(condition >= 0 && condition <= 0x0F);
-
-    if(!willRegen && (offset >= -128 && offset <= 127))
-    {  // jcc rel8
-        opcode  = 0x70 | (unsigned char) condition;
-        *insn++ = opcode;
-        *insn++ = (unsigned char) (offset & 0xFF);
-    }
-    else
-    {  // jcc near rel32
-        opcode         = 0x80 | (unsigned char) condition;
-        *insn++        = 0x0F;
-        *insn++        = opcode;
-        *((int*) insn) = offset;
-        insn += sizeof(int);
-    }
-    SET_PTR(insn, gen);
+   unsigned char opcode;
+   GET_PTR(insn, gen);
+   
+   assert(condition >= 0 && condition <= 0x0F);
+   
+   if(!willRegen && (offset >= -128 && offset <= 127)) { // jcc rel8
+      opcode = 0x70 | (unsigned char)condition;
+      append_memory_as_byte(insn, opcode);
+      append_memory_as_byte(insn, offset & 0xFF);
+   }
+   else { // jcc near rel32
+      opcode = 0x80 | (unsigned char)condition;
+      append_memory_as_byte(insn, 0x0F);
+      append_memory_as_byte(insn, opcode);
+      append_memory_as(insn, int32_t{offset});
+   }
+   SET_PTR(insn, gen);
 }
 
 /****************************************************************************/
@@ -576,36 +573,28 @@ makeSIBbyte(unsigned Scale, unsigned Index, unsigned Base)
 void
 emitAddressingMode(unsigned base, RegValue disp, unsigned reg_opcode, codeGen& gen)
 {
-    // MT linux uses ESP+4
-    // we need an SIB in that case
-    if(base == REGNUM_ESP)
-    {
-        emitAddressingMode(REGNUM_ESP, Null_Register, 0, disp, reg_opcode, gen);
-        return;
-    }
-    GET_PTR(insn, gen);
-    if(base == Null_Register)
-    {
-        *insn++        = makeModRMbyte(0, reg_opcode, 5);
-        *((int*) insn) = disp;
-        insn += sizeof(int);
-    }
-    else if(disp == 0 && base != REGNUM_EBP)
-    {
-        *insn++ = makeModRMbyte(0, reg_opcode, base);
-    }
-    else if(disp >= -128 && disp <= 127)
-    {
-        *insn++           = makeModRMbyte(1, reg_opcode, base);
-        *((char*) insn++) = (char) disp;
-    }
-    else
-    {
-        *insn++        = makeModRMbyte(2, reg_opcode, base);
-        *((int*) insn) = disp;
-        insn += sizeof(int);
-    }
-    SET_PTR(insn, gen);
+   // MT linux uses ESP+4
+   // we need an SIB in that case
+   if (base == REGNUM_ESP) {
+      emitAddressingMode(REGNUM_ESP, Null_Register, 0, disp, reg_opcode, gen);
+      return;
+   }
+   GET_PTR(insn, gen);
+   if (base == Null_Register) {
+      append_memory_as_byte(insn, makeModRMbyte(0, reg_opcode, 5));
+      assert(numeric_limits<int32_t>::lowest() <= disp  && disp <= numeric_limits<int32_t>::max() && "disp more than 32 bits");
+      append_memory_as(insn, static_cast<int32_t>(disp));
+   } else if (disp == 0 && base != REGNUM_EBP) {
+      append_memory_as_byte(insn, makeModRMbyte(0, reg_opcode, base));
+   } else if (disp >= -128 && disp <= 127) {
+      append_memory_as_byte(insn, makeModRMbyte(1, reg_opcode, base));
+      append_memory_as(insn, static_cast<int8_t>(disp));
+   } else {
+      append_memory_as_byte(insn, makeModRMbyte(2, reg_opcode, base));
+      assert(numeric_limits<int32_t>::lowest() <= disp  && disp <= numeric_limits<int32_t>::max() && "disp more than 32 bits");
+      append_memory_as(insn, static_cast<int32_t>(disp));
+   }
+   SET_PTR(insn, gen);
 }
 
 // VG(7/30/02): emit a fully fledged addressing mode: base+index<<scale+disp
@@ -621,8 +610,29 @@ emitAddressingMode(unsigned base, unsigned index, unsigned int scale, RegValue d
         return;
     }
 
-    // This isn't true for AMD-64...
-    // assert(index != REGNUM_ESP);
+   GET_PTR(insn, gen);
+   
+   if(base == Null_Register) { // we have to emit [index<<scale+disp32]
+      append_memory_as_byte(insn, makeModRMbyte(0, reg_opcode, 4));
+      append_memory_as_byte(insn, makeSIBbyte(scale, index, 5));
+      assert(numeric_limits<int32_t>::lowest() <= disp  && disp <= numeric_limits<int32_t>::max() && "disp more than 32 bits");
+      append_memory_as(insn, static_cast<int32_t>(disp));
+   }
+   else if(disp == 0 && base != REGNUM_EBP) { // EBP must have 0 disp8; emit [base+index<<scale]
+       append_memory_as_byte(insn, makeModRMbyte(0, reg_opcode, 4));
+       append_memory_as_byte(insn, makeSIBbyte(scale, index, base));
+   }
+   else if (disp >= -128 && disp <= 127) { // emit [base+index<<scale+disp8]
+      append_memory_as_byte(insn, makeModRMbyte(1, reg_opcode, 4));
+      append_memory_as_byte(insn, makeSIBbyte(scale, index, base));
+      append_memory_as(insn, static_cast<int8_t>(disp));
+   }
+   else { // emit [base+index<<scale+disp32]
+      append_memory_as_byte(insn, makeModRMbyte(2, reg_opcode, 4));
+      append_memory_as_byte(insn, makeSIBbyte(scale, index, base));
+      assert(numeric_limits<int32_t>::lowest() <= disp  && disp <= numeric_limits<int32_t>::max() && "disp more than 32 bits");
+      append_memory_as(insn, static_cast<int32_t>(disp));
+   }
 
     if(index == Null_Register)
     {
@@ -666,7 +676,7 @@ void
 emitSimpleInsn(unsigned op, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    *insn++ = static_cast<unsigned char>(op);
+    append_memory_as(insn, static_cast<uint8_t>(op));
     SET_PTR(insn, gen);
 }
 
@@ -674,9 +684,8 @@ void
 emitPushImm(unsigned int imm, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    *insn++                 = 0x68;
-    *((unsigned int*) insn) = imm;
-    insn += sizeof(unsigned int);
+    append_memory_as_byte(insn, 0x68);
+    append_memory_as(insn, uint32_t{imm});
     SET_PTR(insn, gen);
     if(gen.rs())
         gen.rs()->incStack(gen.addrSpace()->getAddressWidth());
@@ -688,26 +697,33 @@ void
 emitOpRegReg(unsigned opcode, RealRegister dest, RealRegister src, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    if(opcode <= 0xFF)
-        *insn++ = static_cast<unsigned char>(opcode);
-    else
-    {
-        *insn++ = static_cast<unsigned char>(opcode >> 8);
-        *insn++ = static_cast<unsigned char>(opcode & 0xFF);
+    if (opcode <= 0xFF)
+       append_memory_as_byte(insn,opcode);
+    else {
+       append_memory_as_byte(insn, opcode >> 8);
+       append_memory_as_byte(insn, opcode & 0xFF);
     }
     // ModRM byte define the operands: Mod = 3, Reg = dest, RM = src
-    *insn++ = makeModRMbyte(3, dest.reg(), src.reg());
+    append_memory_as_byte(insn, makeModRMbyte(3, dest.reg(), src.reg()));
     SET_PTR(insn, gen);
 }
 
-void
-emitOpRegImm(int opcode, RealRegister dest, int imm, codeGen& gen)
+void emitOpRegImm(int opcode, RealRegister dest, int imm,
+                  codeGen &gen) {
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x81);
+   append_memory_as_byte(insn, makeModRMbyte(3, opcode, dest.reg()));
+   append_memory_as(insn, int32_t{imm});
+   SET_PTR(insn, gen);
+}
+
+void emitOpSegRMReg(unsigned opcode, RealRegister dest, RealRegister, int disp, codeGen &gen)
 {
     GET_PTR(insn, gen);
-    *insn++        = 0x81;
-    *insn++        = makeModRMbyte(3, opcode, dest.reg());
-    *((int*) insn) = imm;
-    insn += sizeof(int);
+    append_memory_as_byte(insn, opcode);
+    append_memory_as_byte(insn, makeModRMbyte(0, dest.reg(), 4));
+    append_memory_as_byte(insn, 0x25);
+    append_memory_as(insn, int32_t{disp});
     SET_PTR(insn, gen);
 }
 
@@ -715,93 +731,73 @@ void
 emitOpSegRMReg(unsigned opcode, RealRegister dest, RealRegister, int disp, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    *insn++        = opcode;
-    *insn++        = makeModRMbyte(0, dest.reg(), 4);
-    *insn++        = 0x25;
-    *((int*) insn) = disp;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
-}
-
-// emit OP reg, r/m
-void
-emitOpRegRM(unsigned opcode, RealRegister dest, RealRegister base, int disp, codeGen& gen)
-{
-    GET_PTR(insn, gen);
-    if(opcode <= 0xff)
-    {
-        *insn++ = static_cast<unsigned char>(opcode);
-    }
-    else
-    {
-        *insn++ = static_cast<unsigned char>(opcode >> 8);
-        *insn++ = static_cast<unsigned char>(opcode & 0xff);
+    if (opcode <= 0xff) {
+       append_memory_as_byte(insn, opcode);
+    } else {
+       append_memory_as_byte(insn, opcode >> 8);
+       append_memory_as_byte(insn, opcode & 0xff);
     }
     SET_PTR(insn, gen);
     emitAddressingMode(base.reg(), disp, dest.reg(), gen);
 }
 
 // emit OP r/m, reg
-void
-emitOpRMReg(unsigned opcode, RealRegister base, int disp, RealRegister src, codeGen& gen)
-{
-    GET_PTR(insn, gen);
-    *insn++ = static_cast<unsigned char>(opcode);
-    SET_PTR(insn, gen);
-    emitAddressingMode(base.reg(), disp, src.reg(), gen);
+void emitOpRMReg(unsigned opcode, RealRegister base, int disp,
+                 RealRegister src, codeGen &gen) {
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, opcode);
+   SET_PTR(insn, gen);
+   emitAddressingMode(base.reg(), disp, src.reg(), gen);
 }
 
 // emit OP reg, imm32
 void
 emitOpExtRegImm(int opcode, int ext, RealRegister dest, int imm, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = opcode;
-    *insn++        = makeModRMbyte(3, (char) ext, dest.reg());
-    *((int*) insn) = imm;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+  GET_PTR(insn, gen);
+   append_memory_as_byte(insn, opcode);
+   append_memory_as_byte(insn, makeModRMbyte(3, (char) ext, dest.reg()));
+   append_memory_as(insn, int32_t{imm});
+   SET_PTR(insn, gen);
 }
 
 void
 emitOpExtRegImm8(int opcode, char ext, RealRegister dest, unsigned char imm, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++                  = opcode;
-    *insn++                  = makeModRMbyte(3, ext, dest.reg());
-    *((unsigned char*) insn) = imm;
-    insn += sizeof(unsigned char);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, opcode);
+   append_memory_as_byte(insn, makeModRMbyte(3, ext, dest.reg()));
+   append_memory_as_byte(insn, imm);
+   SET_PTR(insn, gen);
 }
 
 void
 emitOpExtReg(unsigned opcode, unsigned char ext, RealRegister reg, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = opcode;
-    *insn++ = makeModRMbyte(3, ext, reg.reg());
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, opcode);
+   append_memory_as_byte(insn, makeModRMbyte(3, ext, reg.reg()));
+   SET_PTR(insn, gen);
 }
 
 void
 emitMovRegToReg(RealRegister dest, RealRegister src, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = 0x8B;
-    *insn++ = makeModRMbyte(3, dest.reg(), src.reg());
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x8B);
+   append_memory_as_byte(insn, makeModRMbyte(3, dest.reg(), src.reg()));
+   SET_PTR(insn, gen);
 }
 
 void
 emitOpRegRegImm(unsigned opcode, RealRegister dest, RealRegister src, unsigned imm,
                 codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = opcode;
-    *insn++        = makeModRMbyte(3, dest.reg(), src.reg());
-    *((int*) insn) = imm;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, opcode);
+   append_memory_as_byte(insn, makeModRMbyte(3, dest.reg(), src.reg()));
+   append_memory_as(insn, uint32_t{imm});
+   SET_PTR(insn, gen);
 }
 
 // emit MOV reg, (reg)
@@ -809,8 +805,8 @@ void
 emitMovIRegToReg(RealRegister dest, RealRegister src, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    *insn++ = 0x8B;
-    *insn++ = makeModRMbyte(0, dest.reg(), src.reg());
+    append_memory_as_byte(insn, 0x8B);
+    append_memory_as_byte(insn, makeModRMbyte(0, dest.reg(), src.reg()));
     SET_PTR(insn, gen);
     gen.markRegDefined(dest.reg());
 }
@@ -821,24 +817,23 @@ void
 emitLEA(RealRegister base, RealRegister index, unsigned int scale, RegValue disp,
         RealRegister dest, codeGen& gen)
 {
-    if(dest.reg() != REGNUM_ESP)
-        gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++ = 0x8D;
-    SET_PTR(insn, gen);
-    emitAddressingMode(base.reg(), index.reg(), scale, disp, (int) dest.reg(), gen);
+   if (dest.reg() != REGNUM_ESP)
+      gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x8D);
+   SET_PTR(insn, gen);
+   emitAddressingMode(base.reg(), index.reg(), scale, disp, (int)dest.reg(), gen);
 }
 
 void
 emitLEA(RealRegister base, unsigned displacement, RealRegister dest, codeGen& gen)
 {
-    gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++             = 0x8D;
-    *insn++             = makeModRMbyte(2, dest.reg(), base.reg());
-    *((unsigned*) insn) = displacement;
-    insn += sizeof(unsigned);
-    SET_PTR(insn, gen);
+   gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x8D);
+   append_memory_as_byte(insn, makeModRMbyte(2, dest.reg(), base.reg()));
+   append_memory_as(insn, uint32_t{displacement});
+   SET_PTR(insn, gen);
 }
 
 // emit MOV reg, (offset(%eip))
@@ -904,130 +899,159 @@ emitMovPCRMToReg(RealRegister dest, int offset, codeGen& gen, bool deref_result)
         emitLEA(pc_reg, offset, dest, gen);
     }
 
-    if(gen.getPCRelUseCount() > 1 && gen.rs()->pc_rel_use_count == gen.getPCRelUseCount())
-    {
-        // We've made the last use of getPC.  Free the register that stores the PC
-        // Don't do if getPCRelUseCount() is 0, because we don't know how many uses
-        // there are.
-        // Don't do if getPCRelUseCount() is 1, because it was special cased above
-        gen.rs()->freeRegister(gen.rs()->pc_rel_reg);
-        gen.rs()->pc_rel_reg      = Null_Register;
-        gen.rs()->pc_rel_offset() = -1;
-    }
+      //assert(!gen.rs()->pc_rel_use_count);
+      if (gen.getPCRelUseCount() == 1) {
+         //We know there's only one getPC instruction.  We won't setup
+         // a stored register for the PC.  Just use dest since we're
+         // about to write to it anyways.
+         pc_reg = dest;
+      }
+      else {
+         gen.rs()->pc_rel_reg = gen.rs()->allocateRegister(gen, true);
+         pc_reg = gen.rs()->loadVirtualForWrite(gen.rs()->pc_rel_reg, gen);
+      }
+      gen.rs()->pc_rel_offset() = used + 5;
+      append_memory_as_byte(insn, 0xE8);
+      append_memory_as_byte(insn, 0x00);
+      append_memory_as_byte(insn, 0x00);
+      append_memory_as_byte(insn, 0x00);
+      append_memory_as_byte(insn, 0x00);
+      append_memory_as_byte(insn, 0x58 + pc_reg.reg());
+      SET_PTR(insn, gen);
+   }
+   else {
+      pc_reg = gen.rs()->loadVirtual(gen.rs()->pc_rel_reg, gen);   
+   }
+   gen.rs()->pc_rel_use_count++;
+
+   offset += used - gen.rs()->pc_rel_offset();
+   if (deref_result) {
+      emitMovRMToReg(dest, pc_reg, offset, gen);
+   }
+   else {
+      emitLEA(pc_reg, offset, dest, gen);
+   }   
+
+   if (gen.getPCRelUseCount() > 1 && 
+       gen.rs()->pc_rel_use_count == gen.getPCRelUseCount())
+   {
+      //We've made the last use of getPC.  Free the register that stores the PC
+      //Don't do if getPCRelUseCount() is 0, because we don't know how many uses
+      // there are.
+      //Don't do if getPCRelUseCount() is 1, because it was special cased above
+      gen.rs()->freeRegister(gen.rs()->pc_rel_reg);
+      gen.rs()->pc_rel_reg = Null_Register;
+      gen.rs()->pc_rel_offset() = -1;
+   }
 }
 
 // emit MOV reg, r/m
 void
 emitMovRMToReg(RealRegister dest, RealRegister base, int disp, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = 0x8B;
-    SET_PTR(insn, gen);
-    emitAddressingMode(base.reg(), disp, dest.reg(), gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x8B);
+   SET_PTR(insn, gen);
+   emitAddressingMode(base.reg(), disp, dest.reg(), gen);
 }
 
 // emit MOV r/m, reg
 void
 emitMovRegToRM(RealRegister base, int disp, RealRegister src, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = 0x89;
-    SET_PTR(insn, gen);
-    emitAddressingMode(base.reg(), disp, src.reg(), gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x89);
+   SET_PTR(insn, gen);
+   emitAddressingMode(base.reg(), disp, src.reg(), gen);
 }
 
 // emit MOV m, reg
 void
 emitMovRegToM(int disp, RealRegister src, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = 0x89;
-    SET_PTR(insn, gen);
-    emitAddressingMode(Null_Register, disp, src.reg(), gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x89);
+   SET_PTR(insn, gen);
+   emitAddressingMode(Null_Register, disp, src.reg(), gen);
 }
 
 // emit MOV m, reg
 void
 emitMovRegToMB(int disp, RealRegister src, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = 0x88;
-    *insn++        = makeModRMbyte(0, src.reg(), 5);
-    *((int*) insn) = disp;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x88);
+   append_memory_as_byte(insn, makeModRMbyte(0, src.reg(), 5));
+   append_memory_as(insn, int32_t{disp});
+   SET_PTR(insn, gen);
 }
 
 // emit MOV m, reg
 void
 emitMovRegToMW(int disp, RealRegister src, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = 0x66;
-    *insn++        = 0x88;
-    *insn++        = makeModRMbyte(0, src.reg(), 5);
-    *((int*) insn) = disp;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x66);
+   append_memory_as_byte(insn, 0x88);
+   append_memory_as_byte(insn, makeModRMbyte(0, src.reg(), 5));
+   append_memory_as(insn, int32_t{disp});
+   SET_PTR(insn, gen);
 }
 
 // emit MOV reg, m
 void
 emitMovMToReg(RealRegister dest, int disp, codeGen& gen)
 {
-    gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++ = 0x8B;
-    SET_PTR(insn, gen);
-    emitAddressingMode(Null_Register, disp, dest.reg(), gen);
+   gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x8B);
+   SET_PTR(insn, gen);
+   emitAddressingMode(Null_Register, disp, dest.reg(), gen);
 }
 
 // emit MOVSBL reg, m
 void
 emitMovMBToReg(RealRegister dest, int disp, codeGen& gen)
 {
-    gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++ = 0x0F;
-    *insn++ = 0xBE;
-    SET_PTR(insn, gen);
-    emitAddressingMode(Null_Register, disp, dest.reg(), gen);
+   gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x0F);
+   append_memory_as_byte(insn, 0xBE);
+   SET_PTR(insn, gen);
+   emitAddressingMode(Null_Register, disp, dest.reg(), gen);
 }
 
 // emit MOVSWL reg, m
 void
 emitMovMWToReg(RealRegister dest, int disp, codeGen& gen)
 {
-    gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++ = 0x0F;
-    *insn++ = 0xBF;
-    SET_PTR(insn, gen);
-    emitAddressingMode(Null_Register, disp, dest.reg(), gen);
+   gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x0F);
+   append_memory_as_byte(insn, 0xBF);
+   SET_PTR(insn, gen);
+   emitAddressingMode(Null_Register, disp, dest.reg(), gen);
 }
 
 // emit MOV reg, imm32
 void
 emitMovImmToReg(RealRegister dest, int imm, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = static_cast<unsigned char>(0xB8 + dest.reg());
-    *((int*) insn) = imm;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0xB8 + dest.reg());
+   append_memory_as(insn, int32_t{imm});
+   SET_PTR(insn, gen);
 }
 
 // emit MOV r/m32, imm32
-void
-emitMovImmToRM(RealRegister base, int disp, int imm, codeGen& gen)
-{
-    GET_PTR(insn, gen);
-    *insn++ = 0xC7;
-    SET_PTR(insn, gen);
-    emitAddressingMode(base.reg(), disp, 0, gen);
-    REGET_PTR(insn, gen);
-    *((int*) insn) = imm;
-    insn += sizeof(int);
+void emitMovImmToRM(RealRegister base, int disp, int imm,
+                    codeGen &gen) {
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0xC7);
+   SET_PTR(insn, gen);
+   emitAddressingMode(base.reg(), disp, 0, gen);
+   REGET_PTR(insn, gen);
+   append_memory_as(insn, int32_t{imm});
     SET_PTR(insn, gen);
 }
 
@@ -1040,7 +1064,7 @@ emitMovImmToMem(Address maddr, int imm, codeGen& gen)
     // address operand (in both x86 and x86_64), the full ModRM + SIB
     // syntax must be used.
     GET_PTR(insn, gen);
-    *insn++ = 0xC7;
+    append_memory_as_byte(insn, 0xC7);
 
     // FIXME: To adhere strictly to the x86 and x86_64 ISAs, we specify an
     // absolute (32-bit) address by emitting a ModRM and SIB byte of the
@@ -1050,13 +1074,12 @@ emitMovImmToMem(Address maddr, int imm, codeGen& gen)
     // Current forms of emitAddressingMode() do not allow for this, and so
     // we do it manually here.  emitAddressingMode() should be made more
     // robust.
-    *insn++        = makeModRMbyte(0, 0, 4);
-    *insn++        = makeSIBbyte(0, 4, 5);
-    *((int*) insn) = maddr;
-    insn += sizeof(unsigned);
+    append_memory_as_byte(insn, makeModRMbyte(0, 0, 4));
+    append_memory_as_byte(insn, makeSIBbyte(0, 4, 5));
+    assert(maddr <= numeric_limits<uint32_t>::max() && "maddr more than 32 bits");
+    append_memory_as(insn, static_cast<uint32_t>(maddr));
 
-    *((int*) insn) = imm;
-    insn += sizeof(int);
+    append_memory_as(insn, int32_t{imm});
     SET_PTR(insn, gen);
 }
 
@@ -1065,12 +1088,11 @@ void
 emitAddMemImm32(Address addr, int imm, codeGen& gen)
 {
     GET_PTR(insn, gen);
-    *insn++             = 0x81;
-    *insn++             = 0x05;
-    *((unsigned*) insn) = addr;
-    insn += sizeof(unsigned);
-    *((int*) insn) = imm;
-    insn += sizeof(int);
+   append_memory_as_byte(insn, 0x81);
+   append_memory_as_byte(insn, 0x05);
+   assert(addr <= numeric_limits<uint32_t>::max() && "addr more than 32 bits");
+   append_memory_as(insn, static_cast<uint32_t>(addr));
+   append_memory_as(insn, int32_t{imm});
     SET_PTR(insn, gen);
 }
 
@@ -1078,33 +1100,29 @@ emitAddMemImm32(Address addr, int imm, codeGen& gen)
 void
 emitAddRegImm32(RealRegister reg, int imm, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    if(imm >= -128 && imm <= 127)
-    {
-        *insn++         = 0x83;
-        *insn++         = makeModRMbyte(3, 0, reg.reg());
-        *((char*) insn) = (char) imm;
-        insn += sizeof(char);
-    }
-    else
-    {
-        *insn++        = 0x81;
-        *insn++        = makeModRMbyte(3, 0, reg.reg());
-        *((int*) insn) = imm;
-        insn += sizeof(int);
-    }
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   if (imm >= -128 && imm <= 127) {
+      append_memory_as_byte(insn, 0x83);
+      append_memory_as_byte(insn, makeModRMbyte(3, 0, reg.reg()));
+      append_memory_as_byte(insn, static_cast<int8_t>(imm));
+   }
+   else {
+      append_memory_as_byte(insn, 0x81);
+      append_memory_as_byte(insn, makeModRMbyte(3, 0, reg.reg()));
+      append_memory_as(insn, int32_t{imm});
+   }
+   SET_PTR(insn, gen);
 }
 
 // emit Sub reg, reg
 void
 emitSubRegReg(RealRegister dest, RealRegister src, codeGen& gen)
 {
-    gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++ = 0x2B;
-    *insn++ = makeModRMbyte(3, dest.reg(), src.reg());
-    SET_PTR(insn, gen);
+   gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x2B);
+   append_memory_as_byte(insn, makeModRMbyte(3, dest.reg(), src.reg()));
+   SET_PTR(insn, gen);
 }
 
 unsigned char
@@ -1177,19 +1195,19 @@ jccOpcodeFromRelOp(unsigned op, bool s)
     return 0x0;
 }
 
-Register
-emitFuncCall(opCode, codeGen&, std::vector<AstNodePtr>&, bool, Address)
-{
-    assert(0);
-    return 0;
+Dyninst::Register emitFuncCall(opCode, codeGen &, std::vector<AstNodePtr> &, bool, Address) {
+	assert(0);
+	return 0;
 }
 
 // this function just multiplexes between the 32-bit and 64-bit versions
-Register
-emitFuncCall(opCode op, codeGen& gen, std::vector<AstNodePtr>& operands, bool noCost,
-             func_instance* callee)
+Dyninst::Register emitFuncCall(opCode op,
+                      codeGen &gen,
+                      std::vector<AstNodePtr> &operands, 
+                      bool noCost,
+                      func_instance *callee)
 {
-    Register reg = gen.codeEmitter()->emitCall(op, gen, operands, noCost, callee);
+    Dyninst::Register reg = gen.codeEmitter()->emitCall(op, gen, operands, noCost, callee);
     return reg;
 }
 
@@ -1241,10 +1259,11 @@ EmitterIA32::setFPSaveOrNot(const int* liveFPReg, bool saveOrNot)
     }
 }
 
-Register
-EmitterIA32::emitCall(opCode op, codeGen& gen, const std::vector<AstNodePtr>& operands,
-                      bool noCost, func_instance* callee)
-{
+
+Dyninst::Register EmitterIA32::emitCall(opCode op,
+                               codeGen &gen,
+                               const std::vector<AstNodePtr> &operands, 
+                               bool noCost, func_instance *callee) {
     bool inInstrumentation = true;
 #if 0
     if (gen.obj() &&
@@ -1260,10 +1279,10 @@ EmitterIA32::emitCall(opCode op, codeGen& gen, const std::vector<AstNodePtr>& op
         cerr << "ERROR: emitCall with op == " << op << endl;
     }
     assert(op == callOp);
-    std::vector<Register> srcs;
-    int                   param_size;
-    std::vector<Register> saves;
-
+    std::vector <Dyninst::Register> srcs;
+    int param_size;
+    std::vector<Dyninst::Register> saves;
+    
     //  Sanity check for NULL address arg
     if(!callee)
     {
@@ -1278,15 +1297,14 @@ EmitterIA32::emitCall(opCode op, codeGen& gen, const std::vector<AstNodePtr>& op
 
     param_size = emitCallParams(gen, operands, callee, saves, noCost);
 
-    // Register ret = gen.rs()->allocateRegister(gen, noCost);
-    Register ret = REGNUM_EAX;
+   //Dyninst::Register ret = gen.rs()->allocateRegister(gen, noCost);
+   Dyninst::Register ret = REGNUM_EAX;
 
     emitCallInstruction(gen, callee, ret);
 
     emitCallCleanup(gen, callee, param_size, saves);
 
-    if(!inInstrumentation)
-        return REG_NULL;
+   if (!inInstrumentation) return Null_Register;
 
     // allocate a (virtual) register to store the return value
     // Virtual register
@@ -1300,9 +1318,8 @@ EmitterIA32::emitCall(opCode op, codeGen& gen, const std::vector<AstNodePtr>& op
  * base is the next free position on ibuf where code is to be generated
  */
 
-codeBufIndex_t
-emitA(opCode op, Register src1, Register /*src2*/, long dest, codeGen& gen, RegControl rc,
-      bool /*noCost*/)
+codeBufIndex_t emitA(opCode op, Dyninst::Register src1, Dyninst::Register /*src2*/, long dest,
+                     codeGen &gen, RegControl rc, bool /*noCost*/)
 {
     // bperr("emitA(op=%d,src1=%d,src2=XX,dest=%d)\n",op,src1,dest);
 
@@ -1338,9 +1355,9 @@ emitA(opCode op, Register src1, Register /*src2*/, long dest, codeGen& gen, RegC
     return retval;
 }
 
-Register
-emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen, bool noCost,
-      const instPoint* location, bool /*for_multithreaded*/)
+Dyninst::Register emitR(opCode op, Dyninst::Register src1, Dyninst::Register src2, Dyninst::Register dest,
+               codeGen &gen, bool noCost,
+               const instPoint *location, bool /*for_multithreaded*/)
 {
     // bperr("emitR(op=%d,src1=%d,src2=XX,dest=%d)\n",op,src1,dest);
 
@@ -1385,13 +1402,14 @@ emitR(opCode op, Register src1, Register src2, Register dest, codeGen& gen, bool
 void
 emitSHL(RealRegister dest, unsigned char pos, codeGen& gen)
 {
-    // bperr( "Emiting SHL\n");
-    gen.markRegDefined(dest.reg());
-    GET_PTR(insn, gen);
-    *insn++ = 0xC1;
-    *insn++ = makeModRMbyte(3 /* rm gives register */, 4 /* opcode ext. */, dest.reg());
-    *insn++ = pos;
-    SET_PTR(insn, gen);
+  //bperr( "Emiting SHL\n");
+   gen.markRegDefined(dest.reg());
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0xC1);
+   append_memory_as_byte(insn, makeModRMbyte(3 /* rm gives register */,
+                           4 /* opcode ext. */, dest.reg()));
+   append_memory_as_byte(insn, pos);
+   SET_PTR(insn, gen);
 }
 
 void
@@ -1453,20 +1471,16 @@ getHeightOf(stackItem sitem, codeGen& gen)
     int          offset = 0;
     RealRegister reg;
 
-    int addr_width = gen.addrSpace()->getAddressWidth();
-#if defined(__GNUC__)
-#    pragma GCC diagnostic push
-#    if __GNUC__ >= 7
-// disable warning as the registers numbers are identical for 32-bit
-// and 64-bit but use semantically distinct names
-#        pragma GCC diagnostic ignored "-Wduplicated-branches"
-#    endif
-#endif
-    RealRegister plat_bp(addr_width == 4 ? REGNUM_EBP : REGNUM_RBP);
-    RealRegister plat_sp(addr_width == 4 ? REGNUM_ESP : REGNUM_RSP);
-#if defined(__GNUC__)
-#    pragma GCC diagnostic pop
-#endif
+   int addr_width = gen.addrSpace()->getAddressWidth();
+
+   // Suppress warning (for compilers where it is a false positive)
+   // The value of REGNUM_EBP and REGNUM_RBP are identical
+   DYNINST_DIAGNOSTIC_BEGIN_SUPPRESS_DUPLICATED_BRANCHES
+
+   RealRegister plat_bp(addr_width == 4 ? REGNUM_EBP : REGNUM_RBP);
+   RealRegister plat_sp(addr_width == 4 ? REGNUM_ESP : REGNUM_RSP); 
+ 
+   DYNINST_DIAGNOSTIC_END_SUPPRESS_DUPLICATED_BRANCHES
 
     if(sitem.item == stackItem::reg_item && sitem.reg.reg() == plat_sp.reg())
     {
@@ -1506,115 +1520,88 @@ getHeightOf(stackItem sitem, codeGen& gen)
             return stackItemLocation(plat_sp, offset);
         }
 
-        // NOTE: We can no longer return a direct offset for the top of our
-        // instrumentation stack.  The stack pointer was forcibly aligned,
-        // which created a variable sized padding hole.
-        //
-        // Instead, we'll return where in memory we stored the original
-        // stack pointer.
-        case stackItem::stacktop: {
-            offset = gen.rs()->getInstFrameSize();
-            if(!gen.bt() || gen.bt()->createdFrame)
-            {
-                return stackItemLocation(plat_bp, offset);
-            }
-
-            offset += gen.rs()->getStackHeight();
-            return stackItemLocation(plat_sp, offset);
-        }
-        case stackItem::framebase: {
-            if(!gen.bt() || gen.bt()->createdFrame)
-            {
-                return stackItemLocation(plat_bp, 0);
-            }
-            offset = gen.rs()->getStackHeight();
-            return stackItemLocation(plat_sp, offset);
-        }
-    }
-    assert(0);
-    return stackItemLocation(RealRegister(REG_NULL), 0);
+         offset += gen.rs()->getStackHeight();
+         return stackItemLocation(plat_sp, offset);
+      }
+      case stackItem::framebase: {
+         if (!gen.bt() || gen.bt()->createdFrame) {
+            return stackItemLocation(plat_bp, 0);
+         }
+         offset = gen.rs()->getStackHeight();
+         return stackItemLocation(plat_sp, offset);
+      }
+   }
+   assert(0);
+   return stackItemLocation(RealRegister(Null_Register), 0);
 }
 
 // Restore mutatee value of GPR reg to dest (real) GPR
-Register
-restoreGPRtoReg(RealRegister reg, codeGen& gen, RealRegister* dest_to_use)
+Dyninst::Register restoreGPRtoReg(RealRegister reg, codeGen &gen, RealRegister *dest_to_use)
 {
-    Register     dest = REG_NULL;
-    RealRegister dest_r(-1);
-    if(dest_to_use)
-    {
-        dest_r = *dest_to_use;
-    }
-    else
-    {
-        if(gen.inInstrumentation())
-        {
-            dest = gen.rs()->getScratchRegister(gen);
-        }
-        else
-        {
-            dest = gen.rs()->getScratchRegister(gen, false, true);
-        }
-    }
-
-    if(reg.reg() == REGNUM_EBP)
-    {
-        // Special handling for EBP with and without instr stack frame
-        if(dest_r.reg() == -1)
-            dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
-        if(gen.bt() && gen.bt()->createdFrame)
-        {
-            emitMovRMToReg(dest_r, RealRegister(REGNUM_EBP), 0, gen);
-        }
-        else
-        {
-            if(reg.reg() != dest_r.reg())
-            {
-                // TODO: Future optimization here, allow ebp to be used
-                // though not allocated
-                emitMovRegToReg(dest_r, reg, gen);
-            }
-        }
-        return dest;
-    }
-
-    if(reg.reg() == REGNUM_ESP)
-    {
-        // Special handling for ESP
-        if(dest_r.reg() == -1)
-            dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
-
-        stackItemLocation loc = getHeightOf(stackItem::stacktop, gen);
-        if(!gen.bt() || gen.bt()->alignedStack)
-        {
-            emitMovRMToReg(dest_r, loc.reg, loc.offset, gen);
-        }
-        else
-        {
-            emitLEA(loc.reg, RealRegister(Null_Register), 0, loc.offset, dest_r, gen);
-        }
-        return dest;
-    }
-
-    registerSlot* r = gen.rs()->trampRegs()[reg.reg()];
-    if(r->spilledState == registerSlot::unspilled || !gen.isRegDefined(reg.reg()))
-    {
-        // Register is still in its pristine state from app, leave it.
-        if(dest_r.reg() == -1)
-            gen.rs()->noteVirtualInReal(dest, reg);
-        else if(dest_r.reg() != reg.reg())
+   Dyninst::Register dest = Null_Register;
+   RealRegister dest_r(-1);
+   if (dest_to_use) {
+      dest_r = *dest_to_use;
+   }
+   else {
+      if (gen.inInstrumentation()) {
+         dest = gen.rs()->getScratchRegister(gen);
+      }
+      else {
+         dest = gen.rs()->getScratchRegister(gen, false, true);
+      }
+   }
+   
+   if (reg.reg() == REGNUM_EBP) {
+      //Special handling for EBP with and without instr stack frame
+      if (dest_r.reg() == -1)
+         dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
+      if (gen.bt() && gen.bt()->createdFrame) {
+         emitMovRMToReg(dest_r, RealRegister(REGNUM_EBP), 0, gen);
+      }
+      else {
+         if (reg.reg() != dest_r.reg()) {
+            //TODO: Future optimization here, allow ebp to be used
+            // though not allocated
             emitMovRegToReg(dest_r, reg, gen);
         return dest;
     }
 
-    // Load register from its saved location
-    stackItemLocation loc = getHeightOf(stackItem(reg), gen);
-    if(dest_r.reg() == -1)
-    {
-        dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
-    }
-    emitMovRMToReg(dest_r, loc.reg, loc.offset, gen);
-    return dest;
+   if (reg.reg() == REGNUM_ESP) {
+      //Special handling for ESP 
+      if (dest_r.reg() == -1)
+          dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
+
+      stackItemLocation loc = getHeightOf(stackItem::stacktop, gen);
+      if (!gen.bt() || gen.bt()->alignedStack) {
+          emitMovRMToReg(dest_r, loc.reg, loc.offset, gen);
+      } else {
+          emitLEA(loc.reg, RealRegister(Null_Register), 0,
+                  loc.offset, dest_r, gen);
+      }
+      return dest;
+   }
+
+   registerSlot *r = gen.rs()->trampRegs()[reg.reg()];
+   if (r->spilledState == registerSlot::unspilled ||
+       !gen.isRegDefined(reg.reg())) 
+   {
+      //Dyninst::Register is still in its pristine state from app, leave it.
+      if (dest_r.reg() == -1)
+	      gen.rs()->noteVirtualInReal(dest, reg);
+      else if (dest_r.reg() != reg.reg())
+         emitMovRegToReg(dest_r, reg, gen);
+      return dest;
+   }
+
+   //Load register from its saved location
+   stackItemLocation loc = getHeightOf(stackItem(reg), gen);
+   if(dest_r.reg() == -1)
+   {
+       dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
+   }
+   emitMovRMToReg(dest_r, loc.reg, loc.offset, gen);
+   return dest;
 }
 
 void
@@ -1625,9 +1612,7 @@ restoreGPRtoGPR(RealRegister src, RealRegister dest, codeGen& gen)
 
 // VG(11/07/01): Load in destination the effective address given
 // by the address descriptor. Used for memory access stuff.
-void
-emitASload(const BPatch_addrSpec_NP* as, Register dest, int stackShift, codeGen& gen,
-           bool /* noCost */)
+void emitASload(const BPatch_addrSpec_NP *as, Dyninst::Register dest, int stackShift, codeGen &gen, bool /* noCost */)
 {
     // TODO 16-bit registers, rep hacks
     long imm = as->getImm();
@@ -1638,24 +1623,152 @@ emitASload(const BPatch_addrSpec_NP* as, Register dest, int stackShift, codeGen&
     gen.codeEmitter()->emitASload(ra, rb, sc, imm, dest, stackShift, gen);
 }
 
-void
-EmitterIA32::emitASload(int ra, int rb, int sc, long imm, Register dest, int stackOffset,
-                        codeGen& gen)
+void EmitterIA32::emitASload(int ra, int rb, int sc, long imm, Dyninst::Register dest, int stackOffset, codeGen &gen)
 {
     bool havera = ra > -1, haverb = rb > -1;
 
-    // assuming 32-bit addressing (for now)
+   RealRegister src1_r(-1);
+   Dyninst::Register src1 = Null_Register;
+   if (havera) {
+      if (gen.inInstrumentation()) {
+       src1 = restoreGPRtoReg(RealRegister(ra), gen);
+       src1_r = gen.rs()->loadVirtual(src1, gen);
+      gen.rs()->markKeptRegister(src1);
+     }
+     else {
+       // Don't have a base tramp - use only reals
+       src1_r = RealRegister(ra);
+	   // If this is a stack pointer, modify imm to compensate
+	   // for any changes in the stack pointer
+	   if (ra == REGNUM_ESP) {
+		   imm -= stackOffset;
+	   }
+     }
+   }
 
-    if(ra == REGNUM_ESP && !haverb && sc == 0 && gen.bt())
-    {
-        // Optimization, common for push/pop
-        RealRegister      dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
-        stackItemLocation loc    = getHeightOf(stackItem::stacktop, gen);
-        if(!gen.bt() || gen.bt()->alignedStack)
-        {
-            emitMovRMToReg(dest_r, loc.reg, loc.offset, gen);
-            if(imm)
-                ::emitLEA(dest_r, RealRegister(Null_Register), 0, imm, dest_r, gen);
+   RealRegister src2_r(-1);
+   Dyninst::Register src2 = Null_Register;
+   if (haverb) {
+      if (ra == rb) {
+         src2_r = src1_r;
+      }
+      else if (gen.inInstrumentation()) {
+	src2 = restoreGPRtoReg(RealRegister(rb), gen);
+	src2_r = gen.rs()->loadVirtual(src2, gen);
+	gen.rs()->markKeptRegister(src2);
+      }
+      else {
+		  src2_r = RealRegister(rb);
+	      // If this is a stack pointer, modify imm to compensate
+	      // for any changes in the stack pointer
+	      if (rb == REGNUM_ESP) {
+			  imm -= (stackOffset*sc);
+		  }
+      }
+   }
+   
+   if (havera && !haverb && !sc && !imm) {
+      //Optimized case, just use the existing src1_r
+      if (gen.inInstrumentation()) {
+       gen.rs()->unKeepRegister(src1);
+       gen.rs()->freeRegister(src1);
+       gen.rs()->noteVirtualInReal(dest, src1_r);
+       return;
+     }
+     else {
+       // No base tramp, no virtual registers - emit a move?
+       emitMovRegToReg(RealRegister(dest), src1_r, gen);
+       return;
+     }
+   }
+
+   // Emit the lea to do the math for us:
+   // e.g. lea eax, [eax + edx * sc + imm] if both ra and rb had to be
+   // restored
+   RealRegister dest_r; 
+   if (gen.inInstrumentation()) {
+     dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
+   }
+   else {
+     dest_r = RealRegister(dest);
+   }
+   ::emitLEA(src1_r, src2_r, sc, (long) imm, dest_r, gen);
+
+   if (src1 != Null_Register) {
+       gen.rs()->unKeepRegister(src1);
+       gen.rs()->freeRegister(src1);
+   }
+   if (src2 != Null_Register) {
+       gen.rs()->unKeepRegister(src2);
+       gen.rs()->freeRegister(src2);
+   }
+}
+
+void emitCSload(const BPatch_countSpec_NP *as, Dyninst::Register dest,
+		codeGen &gen, bool /* noCost */ )
+{
+   // VG(7/30/02): different from ASload on this platform, no LEA business
+
+   long imm = as->getImm();
+   int ra  = as->getReg(0);
+   int rb  = as->getReg(1);
+   int sc  = as->getScale();
+
+   gen.codeEmitter()->emitCSload(ra, rb, sc, imm, dest, gen);
+}
+
+void EmitterIA32::emitCSload(int ra, int rb, int sc, long imm, Dyninst::Register dest, codeGen &gen)
+{
+   // count is at most 1 register or constant or hack (aka pseudoregister)
+   assert((ra == -1) &&
+          ((rb == -1) ||
+            ((imm == 0) && (rb == 1 /*REGNUM_ECX */ || rb >= IA32_EMULATE))));
+
+   if(rb >= IA32_EMULATE) {
+      bool neg = false;
+      //bperr( "!!!In case rb >= IA32_EMULATE!!!\n");
+      switch(rb) {
+        case IA32_NESCAS:
+           neg = true;
+	   DYNINST_FALLTHROUGH;
+        case IA32_ESCAS: {
+           // plan: restore flags, edi, eax, ecx; do rep(n)e scas(b/w);
+           // compute (saved_ecx - ecx) << sc;
+
+           gen.rs()->makeRegisterAvail(RealRegister(REGNUM_EAX), gen);
+           gen.rs()->makeRegisterAvail(RealRegister(REGNUM_ECX), gen);
+           gen.rs()->makeRegisterAvail(RealRegister(REGNUM_EDI), gen);
+           
+           // mov eax<-offset[ebp]
+           emitRestoreFlagsFromStackSlot(gen);
+           restoreGPRtoGPR(RealRegister(REGNUM_EAX), RealRegister(REGNUM_EAX), gen);
+           restoreGPRtoGPR(RealRegister(REGNUM_ECX), RealRegister(REGNUM_ECX), gen);
+           restoreGPRtoGPR(RealRegister(REGNUM_EDI), RealRegister(REGNUM_EDI), gen);
+           gen.markRegDefined(REGNUM_EAX);
+           gen.markRegDefined(REGNUM_ECX);
+           gen.markRegDefined(REGNUM_EDI);
+           emitSimpleInsn(neg ? 0xF2 : 0xF3, gen); // rep(n)e
+           switch(sc) {
+             case 0:
+                emitSimpleInsn(0xAE, gen); // scasb
+                break;
+             case 1:
+                emitSimpleInsn(0x66, gen); // operand size override for scasw;
+		DYNINST_FALLTHROUGH;
+             case 2:
+                emitSimpleInsn(0xAF, gen); // scasw/d
+                break;
+             default:
+                assert(!"Wrong scale!");
+           }
+           restoreGPRtoGPR(RealRegister(REGNUM_ECX), RealRegister(REGNUM_EAX), gen); // old ecx -> eax
+           emitSubRegReg(RealRegister(REGNUM_EAX), RealRegister(REGNUM_ECX), gen); // eax = eax - ecx
+           gen.markRegDefined(REGNUM_EAX);
+           if(sc > 0)
+              emitSHL(RealRegister(REGNUM_EAX), static_cast<unsigned char>(sc), gen); // shl eax, scale
+           RealRegister dest_r = gen.rs()->loadVirtualForWrite(dest, gen);
+           emitMovRegToReg(dest_r, RealRegister(REGNUM_EAX), gen);
+           break;
         }
         else
             ::emitLEA(loc.reg, RealRegister(Null_Register), 0, loc.offset, dest_r, gen);
@@ -1755,8 +1868,10 @@ EmitterIA32::emitASload(int ra, int rb, int sc, long imm, Register dest, int sta
     }
 }
 
-void
-emitCSload(const BPatch_countSpec_NP* as, Register dest, codeGen& gen, bool /* noCost */)
+void emitVload(opCode op, Address src1, Dyninst::Register src2, Dyninst::Register dest,
+               codeGen &gen, bool /*noCost*/, 
+               registerSpace * /*rs*/, int size,
+               const instPoint * /* location */, AddressSpace * /* proc */)
 {
     // VG(7/30/02): different from ASload on this platform, no LEA business
 
@@ -1768,8 +1883,10 @@ emitCSload(const BPatch_countSpec_NP* as, Register dest, codeGen& gen, bool /* n
     gen.codeEmitter()->emitCSload(ra, rb, sc, imm, dest, gen);
 }
 
-void
-EmitterIA32::emitCSload(int ra, int rb, int sc, long imm, Register dest, codeGen& gen)
+void emitVstore(opCode op, Dyninst::Register src1, Dyninst::Register src2, Address dest,
+                codeGen &gen, bool /*noCost*/, registerSpace * /*rs*/, 
+                int size,
+                const instPoint * /* location */, AddressSpace * /* proc */)
 {
     // count is at most 1 register or constant or hack (aka pseudoregister)
     assert((ra == -1) && ((rb == -1) || ((imm == 0) && (rb == 1 /*REGNUM_ECX */ ||
@@ -1895,10 +2012,10 @@ EmitterIA32::emitCSload(int ra, int rb, int sc, long imm, Register dest, codeGen
     }
 }
 
-void
-emitVload(opCode op, Address src1, Register src2, Register dest, codeGen& gen,
-          bool /*noCost*/, registerSpace* /*rs*/, int size,
-          const instPoint* /* location */, AddressSpace* /* proc */)
+void emitV(opCode op, Dyninst::Register src1, Dyninst::Register src2, Dyninst::Register dest,
+           codeGen &gen, bool /*noCost*/, 
+           registerSpace * /*rs*/, int size,
+           const instPoint * /* location */, AddressSpace * /* proc */, bool s)
 {
     if(op == loadConstOp)
     {
@@ -2082,9 +2199,8 @@ emitV(opCode op, Register src1, Register src2, Register dest, codeGen& gen,
     return;
 }
 
-void
-emitImm(opCode op, Register src1, RegValue src2imm, Register dest, codeGen& gen, bool,
-        registerSpace*, bool s)
+void emitImm(opCode op, Dyninst::Register src1, RegValue src2imm, Dyninst::Register dest,
+             codeGen &gen, bool, registerSpace *, bool s)
 {
     if(op == storeOp)
     {
@@ -2258,16 +2374,12 @@ getInsnCost(opCode op)
     return 0;
 }
 
-bool
-EmitterIA32::emitPush(codeGen& gen, Register reg)
-{
+bool EmitterIA32::emitPush(codeGen &gen, Dyninst::Register reg) {
     RealRegister real_reg = gen.rs()->loadVirtual(reg, gen);
     return ::emitPush(real_reg, gen);
 }
 
-bool
-EmitterIA32::emitPop(codeGen& gen, Register reg)
-{
+bool EmitterIA32::emitPop(codeGen &gen, Dyninst::Register reg) {
     RealRegister real_reg = gen.rs()->loadVirtual(reg, gen);
     return ::emitPop(real_reg, gen);
 }
@@ -2279,8 +2391,7 @@ emitPush(RealRegister reg, codeGen& gen)
     int r = reg.reg();
     assert(r < 8);
 
-    *insn++ = static_cast<unsigned char>(
-        0x50 + r);  // 0x50 is push EAX, and it increases from there.
+    append_memory_as_byte(insn, 0x50 + r); // 0x50 is push EAX, and it increases from there.
 
     SET_PTR(insn, gen);
     if(gen.inInstrumentation())
@@ -2296,7 +2407,7 @@ emitPop(RealRegister reg, codeGen& gen)
     GET_PTR(insn, gen);
     int r = reg.reg();
     assert(r < 8);
-    *insn++ = static_cast<unsigned char>(0x58 + r);
+    append_memory_as_byte(insn, 0x58 + r);
     SET_PTR(insn, gen);
     if(gen.inInstrumentation())
     {
@@ -2317,17 +2428,20 @@ EmitterIA32::emitAdjustStackPointer(int index, codeGen& gen)
     return true;
 }
 
-void
-emitLoadPreviousStackFrameRegister(Address register_num, Register dest, codeGen& gen, int,
-                                   bool)
-{
+
+void emitLoadPreviousStackFrameRegister(Address register_num,
+                                        Dyninst::Register dest,
+                                        codeGen &gen,
+                                        int,
+                                        bool){
     gen.codeEmitter()->emitLoadOrigRegister(register_num, dest, gen);
 }
 
-void
-emitStorePreviousStackFrameRegister(Address register_num, Register src, codeGen& gen, int,
-                                    bool)
-{
+void emitStorePreviousStackFrameRegister(Address register_num,
+                                        Dyninst::Register src,
+                                        codeGen &gen,
+                                        int,
+                                        bool) {
     gen.codeEmitter()->emitStoreOrigRegister(register_num, src, gen);
 }
 
@@ -2338,16 +2452,17 @@ bool
 AddressSpace::getDynamicCallSiteArgs(InstructionAPI::Instruction insn, Address addr,
                                      std::vector<AstNodePtr>& args)
 {
-    using namespace Dyninst::InstructionAPI;
-    Expression::Ptr cft = insn.getControlFlowTarget();
-    ASTFactory      f;
-    cft->apply(&f);
-    assert(f.m_stack.size() == 1);
-    args.push_back(f.m_stack[0]);
-    args.push_back(AstNode::operandNode(AstNode::Constant, (void*) addr));
-    inst_printf("%s[%d]:  Inserting dynamic call site instrumentation for %s\n", FILE__,
-                __LINE__, cft->format(insn.getArch()).c_str());
-    return true;
+   using namespace Dyninst::InstructionAPI;        
+   Expression::Ptr cft = insn.getControlFlowTarget();
+   ASTFactory f;
+   cft->apply(&f);
+   assert(f.m_stack.size() == 1);
+   args.push_back(f.m_stack[0]);
+   args.push_back(AstNode::operandNode(AstNode::operandType::Constant,
+                                       (void *) addr));
+   inst_printf("%s[%d]:  Inserting dynamic call site instrumentation for %s\n",
+               FILE__, __LINE__, cft->format(insn.getArch()).c_str());
+   return true;
 }
 
 /****************************************************************************/
@@ -2445,21 +2560,14 @@ AddressSpace::getEmitter()
 }
 
 #if defined(arch_x86_64)
-int
-registerSpace::framePointer()
-{
-#    if defined(__GNUC__)
-#        pragma GCC diagnostic push
-#        if __GNUC__ >= 7
-// disable warning as the registers numbers are identical for 32-bit
-// and 64-bit but use semantically distinct names
-#            pragma GCC diagnostic ignored "-Wduplicated-branches"
-#        endif
-#    endif
-    return addr_width == 8 ? REGNUM_RBP : REGNUM_EBP;
-#    if defined(__GNUC__)
-#        pragma GCC diagnostic pop
-#    endif
+int registerSpace::framePointer() { 
+   // Suppress warning (for compilers where it is a false positive)
+   // The value of REGNUM_EBP and REGNUM_RBP are identical
+   DYNINST_DIAGNOSTIC_BEGIN_SUPPRESS_DUPLICATED_BRANCHES
+
+   return addr_width == 8 ? REGNUM_RBP : REGNUM_EBP; 
+
+   DYNINST_DIAGNOSTIC_END_SUPPRESS_DUPLICATED_BRANCHES
 }
 #elif defined(arch_x86)
 int
@@ -2556,41 +2664,39 @@ regState_t::regState_t()
 void
 emitSaveO(codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = 0x0f;
-    *insn++ = 0x90;
-    *insn++ = 0xC0;
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x0f);
+   append_memory_as_byte(insn, 0x90);
+   append_memory_as_byte(insn, 0xC0);
+   SET_PTR(insn, gen);
 }
 
 void
 emitRestoreO(codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++ = 0x80;
-    *insn++ = 0xC0;
-    *insn++ = 0x7f;
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0x80);
+   append_memory_as_byte(insn, 0xC0);
+   append_memory_as_byte(insn, 0x7f);
+   SET_PTR(insn, gen);
 }
 
 void
 emitCallRel32(unsigned disp32, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = 0xE8;
-    *((int*) insn) = disp32;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0xE8);
+   append_memory_as(insn, uint32_t{disp32});
+   SET_PTR(insn, gen);
 }
 
 void
 emitJump(unsigned disp32, codeGen& gen)
 {
-    GET_PTR(insn, gen);
-    *insn++        = 0xE9;
-    *((int*) insn) = disp32;
-    insn += sizeof(int);
-    SET_PTR(insn, gen);
+   GET_PTR(insn, gen);
+   append_memory_as_byte(insn, 0xE9);
+   append_memory_as(insn, uint32_t{disp32});
+   SET_PTR(insn, gen);
 }
 
 #if defined(os_linux) || defined(os_freebsd)
@@ -2598,21 +2704,23 @@ emitJump(unsigned disp32, codeGen& gen)
 // These functions were factored from linux-x86.C because
 // they are identical on Linux and FreeBSD
 
-int
-EmitterIA32::emitCallParams(codeGen& gen, const std::vector<AstNodePtr>& operands,
-                            func_instance* /*target*/,
-                            std::vector<Register>& /*extra_saves*/, bool noCost)
+int EmitterIA32::emitCallParams(codeGen &gen, 
+                              const std::vector<AstNodePtr> &operands,
+                              func_instance */*target*/, 
+                              std::vector<Dyninst::Register> &/*extra_saves*/,
+                              bool noCost)
 {
-    std::vector<Register> srcs;
-    unsigned              frame_size = 0;
-    unsigned              u;
-    for(u = 0; u < operands.size(); u++)
-    {
-        Address  unused = ADDR_NULL;
-        Register reg    = REG_NULL;
-        if(!operands[u]->generateCode_phase2(gen, noCost, unused, reg))
-            assert(0);            // ARGH....
-        assert(reg != REG_NULL);  // Give me a real return path!
+    std::vector <Dyninst::Register> srcs;
+    unsigned frame_size = 0;
+    unsigned u;
+    for (u = 0; u < operands.size(); u++) {
+        Address unused = ADDR_NULL;
+        Dyninst::Register reg = Null_Register;
+        if (!operands[u]->generateCode_phase2(gen,
+                                              noCost,
+                                              unused,
+                                              reg)) assert(0); // ARGH....
+        assert (reg != Null_Register); // Give me a real return path!
         srcs.push_back(reg);
     }
 
@@ -2629,9 +2737,10 @@ EmitterIA32::emitCallParams(codeGen& gen, const std::vector<AstNodePtr>& operand
     return frame_size;
 }
 
-bool
-EmitterIA32::emitCallCleanup(codeGen& gen, func_instance* /*target*/, int frame_size,
-                             std::vector<Register>& /*extra_saves*/)
+bool EmitterIA32::emitCallCleanup(codeGen &gen,
+                                func_instance * /*target*/, 
+                                int frame_size, 
+                                std::vector<Dyninst::Register> &/*extra_saves*/)
 {
     if(frame_size)
         emitOpRegImm(0, RealRegister(REGNUM_ESP), frame_size,

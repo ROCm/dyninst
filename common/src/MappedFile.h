@@ -33,7 +33,7 @@
 #include "headers.h"
 
 #include <string>
-#include "Types.h"
+#include "util.h"
 
 class MappedFile
 {
@@ -45,9 +45,8 @@ public:
                                                       const std::string& name);
     COMMON_EXPORT static void        closeMappedFile(MappedFile*& mf);
 
-    COMMON_EXPORT std::string pathname();
-    COMMON_EXPORT std::string filename();
-    COMMON_EXPORT void*       base_addr() { return map_addr; }
+      COMMON_EXPORT std::string filename();
+      COMMON_EXPORT void *base_addr() {return map_addr;}
 #if defined(os_windows)
     COMMON_EXPORT HANDLE getFileHandle() { return hFile; }
 #else

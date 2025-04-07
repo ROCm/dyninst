@@ -34,6 +34,8 @@
 #define KLUDGES_H
 
 #include <sys/types.h>
+#include <stddef.h>
+#include <string.h>
 
 #ifndef FILE__
 #    define FILE__ strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__
@@ -42,8 +44,6 @@
 /*
  * Kludges to handle broken system includes and such...
  */
-
-#include "common/src/Types.h"
 
 #if defined(os_linux)
 #    include "common/src/linuxHeaders.h"

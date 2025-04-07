@@ -111,11 +111,18 @@ syscallNotification::installPostFork()
     if(!PCEventMuxer::useBreakpoint(EventType(EventType::Post, EventType::Fork)))
         return true;
 
-    AstNodePtr returnVal = AstNode::operandNode(AstNode::ReturnVal, (void*) 0);
-    postForkInst         = new instMapping(getForkFuncName(), "DYNINST_instForkExit",
-                                   FUNC_EXIT | FUNC_ARG, returnVal);
-    postForkInst->dontUseTrampGuard();
-    postForkInst->canUseTrap(false);
+   AstNodePtr returnVal = AstNode::operandNode(AstNode::operandType::ReturnVal, (void *)0);
+   postForkInst = new instMapping(getForkFuncName(), "DYNINST_instForkExit",
+                                  FUNC_EXIT|FUNC_ARG,
+                                  returnVal);
+   postForkInst->dontUseTrampGuard();
+   postForkInst->canUseTrap(false);
+   
+   std::vector<instMapping *> instReqs;
+   instReqs.push_back(postForkInst);
+   
+   proc->installInstrRequests(instReqs);
+   proc->trapMapping.flush();
 
     std::vector<instMapping*> instReqs;
     instReqs.push_back(postForkInst);
@@ -128,15 +135,19 @@ syscallNotification::installPostFork()
 
 /////////// Pre-exec instrumentation
 
-bool
-syscallNotification::installPreExec()
-{
-    if(!PCEventMuxer::useBreakpoint(EventType(EventType::Pre, EventType::Exec)))
-        return true;
-    AstNodePtr arg0 = AstNode::operandNode(AstNode::Param, (void*) 0);
-    preExecInst     = new instMapping(getExecFuncName(), "DYNINST_instExecEntry",
-                                  FUNC_ENTRY | FUNC_ARG, arg0);
-    preExecInst->dontUseTrampGuard();
+bool syscallNotification::installPreExec() {
+   if (!PCEventMuxer::useBreakpoint(EventType(EventType::Pre, EventType::Exec))) return true;
+   AstNodePtr arg0 = AstNode::operandNode(AstNode::operandType::Param, (void *)0);
+   preExecInst = new instMapping(getExecFuncName(), "DYNINST_instExecEntry",
+                                 FUNC_ENTRY|FUNC_ARG,
+                                 arg0);
+   preExecInst->dontUseTrampGuard();
+   
+   std::vector<instMapping *> instReqs;
+   instReqs.push_back(preExecInst);
+   
+   proc->installInstrRequests(instReqs);
+   proc->trapMapping.flush();
 
     std::vector<instMapping*> instReqs;
     instReqs.push_back(preExecInst);
@@ -159,15 +170,21 @@ syscallNotification::installPostExec()
 
 /////////// Pre-exit instrumentation
 
-bool
-syscallNotification::installPreExit()
-{
-    if(!PCEventMuxer::useBreakpoint(EventType(EventType::Pre, EventType::Exit)))
-        return true;
-    AstNodePtr arg0 = AstNode::operandNode(AstNode::Param, (void*) 0);
-    preExitInst     = new instMapping(getExitFuncName(), "DYNINST_instExitEntry",
-                                  FUNC_ENTRY | FUNC_ARG, arg0);
-    preExitInst->dontUseTrampGuard();
+bool syscallNotification::installPreExit() {
+   if (!PCEventMuxer::useBreakpoint(EventType(EventType::Pre, EventType::Exit))) return true;
+   AstNodePtr arg0 = AstNode::operandNode(AstNode::operandType::Param, (void *)0);
+   preExitInst = new instMapping(getExitFuncName(), "DYNINST_instExitEntry",
+                                 FUNC_ENTRY|FUNC_ARG,
+                                 arg0);
+   preExitInst->dontUseTrampGuard();
+   
+   preExitInst->allow_trap = true;
+   
+   std::vector<instMapping *> instReqs;
+   instReqs.push_back(preExitInst);
+   
+   proc->installInstrRequests(instReqs);
+   proc->trapMapping.flush();
 
     preExitInst->allow_trap = true;
 

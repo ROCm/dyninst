@@ -32,7 +32,6 @@
 #include <time.h>
 #include <numeric>
 
-#include "common/h/dyn_regs.h"
 #include "common/h/dyntypes.h"
 #include "symtabAPI/h/Symtab.h"
 #include "common/src/pathName.h"

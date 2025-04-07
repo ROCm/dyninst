@@ -30,16 +30,21 @@
 #if !defined(FREEBSD_H_)
 #    define FREEBSD_H_
 
-#    include "Generator.h"
-#    include "Event.h"
-#    include "Decoder.h"
-#    include "Handler.h"
-#    include "int_process.h"
-#    include "int_thread_db.h"
-#    include "unix.h"
-#    include "sysv.h"
-#    include "x86_process.h"
-#    include "mmapalloc.h"
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <vector>
+#include "Generator.h"
+#include "Event.h"
+#include "Decoder.h"
+#include "Handler.h"
+#include "int_process.h"
+#include "int_thread_db.h"
+#include "unix.h"
+#include "sysv.h"
+#include "x86_process.h"
+#include "mmapalloc.h"
 
 #    include "common/src/dthread.h"
 

@@ -49,6 +49,7 @@
 #include "emitElfStatic.h"
 #include "debug.h"
 #include "Object-elf.h"
+#include "unaligned_memory_access.h"
 
 #if defined(os_freebsd)
 #    define R_X86_64_JUMP_SLOT R_X86_64_JMP_SLOT
@@ -2006,69 +2007,63 @@ emitElfStatic::buildRela(Symtab* target, Offset globalOffset, LinkMap& lmap,
         // 64-bit uses RELA
         unsigned copied = 0;
 
-        char*       data  = lmap.allocatedData;
-        Elf64_Rela* relas = (Elf64_Rela*) &(data[lmap.relRegionOffset]);
+    char *data = lmap.allocatedData;
+    auto relas = alignas_cast<Elf64_Rela>(&(data[lmap.relRegionOffset]));
 
-        Region* rela = NULL;
-        target->findRegion(rela, ".rela.plt");
-        if(rela)
-        {
-            memcpy(relas, rela->getPtrToRawData(), rela->getDiskSize());
-            copied += rela->getDiskSize();
-            relas = (Elf64_Rela*) &(data[lmap.relRegionOffset + rela->getDiskSize()]);
-        }
-
-        unsigned index = 0;
-        for(auto iter = lmap.pltEntries.begin(); iter != lmap.pltEntries.end(); ++iter)
-        {
-            // Grab a GOT location
-            relas[index].r_offset = iter->second.second;
-            relas[index].r_info =
-                ELF64_R_INFO((unsigned long) STN_UNDEF, R_X86_64_IRELATIVE);
-            relas[index].r_addend = iter->first->getOffset();
-            copied += sizeof(Elf64_Rela);
-            ++index;
-        }
-        assert(copied == lmap.relSize);
-    }
-    else
-    {
-        // 32 bit uses REL
-        unsigned copied = 0;
-
-        char*      data = lmap.allocatedData;
-        Elf32_Rel* rels = (Elf32_Rel*) &(data[lmap.relRegionOffset]);
-
-        Region* rel = NULL;
-        target->findRegion(rel, ".rel.plt");
-        if(rel)
-        {
-            memcpy(rels, rel->getPtrToRawData(), rel->getDiskSize());
-            copied += rel->getDiskSize();
-            rels = (Elf32_Rel*) &(data[lmap.relRegionOffset + rel->getDiskSize()]);
-        }
-
-        unsigned index = 0;
-        for(auto iter = lmap.pltEntries.begin(); iter != lmap.pltEntries.end(); ++iter)
-        {
-            // Grab a GOT location
-            rels[index].r_offset = iter->second.second;
-            rels[index].r_info = ELF32_R_INFO((unsigned long) STN_UNDEF, R_386_IRELATIVE);
-            // For a REL relocation, the addend goes in *offset instead of its own
-            // slot...
-
-            // So find the data address for rels[index].r_offset
-            // and set it to iter->first->getOffset(), AKA the symbol address
-
-            // We should be writing into .dyninstRELAgot; just have to figure out how.
-            long* got = (long*) &(data[rels[index].r_offset - globalOffset]);
-            *got      = iter->first->getOffset();
-
-            copied += sizeof(Elf32_Rel);
-            ++index;
-        }
-        assert(copied == lmap.relSize);
+    Region *rela = NULL;
+    target->findRegion(rela, ".rela.plt");
+    if (rela) {
+      memcpy(relas, rela->getPtrToRawData(), rela->getDiskSize());
+      copied += rela->getDiskSize();
+      relas = alignas_cast<Elf64_Rela>(&(data[lmap.relRegionOffset + rela->getDiskSize()]));
     }
 
-    return true;
+    unsigned index = 0;
+    for (auto iter = lmap.pltEntries.begin(); iter != lmap.pltEntries.end(); ++iter) {
+      // Grab a GOT location
+      relas[index].r_offset = iter->second.second;
+      relas[index].r_info = ELF64_R_INFO((unsigned long) STN_UNDEF, R_X86_64_IRELATIVE);
+      relas[index].r_addend = iter->first->getOffset();
+      copied += sizeof(Elf64_Rela);
+      ++index;
+    }
+    assert(copied == lmap.relSize);
+  }
+  else {
+    // 32 bit uses REL
+    unsigned copied = 0;
+
+    char *data = lmap.allocatedData;
+    auto *rels = alignas_cast<Elf32_Rel>(&(data[lmap.relRegionOffset]));
+
+    Region *rel = NULL;
+    target->findRegion(rel, ".rel.plt");
+    if (rel) {
+      memcpy(rels, rel->getPtrToRawData(), rel->getDiskSize());
+      copied += rel->getDiskSize();
+      rels = alignas_cast<Elf32_Rel>(&(data[lmap.relRegionOffset + rel->getDiskSize()]));
+    }
+
+    unsigned index = 0;
+    for (auto iter = lmap.pltEntries.begin(); iter != lmap.pltEntries.end(); ++iter) {
+      // Grab a GOT location
+      rels[index].r_offset = iter->second.second;
+      rels[index].r_info = ELF32_R_INFO((unsigned long) STN_UNDEF, R_386_IRELATIVE);
+      // For a REL relocation, the addend goes in *offset instead of its own
+      // slot...
+
+      // So find the data address for rels[index].r_offset
+      // and set it to iter->first->getOffset(), AKA the symbol address
+
+      // We should be writing into .dyninstRELAgot; just have to figure out how.
+      auto *got = alignas_cast<long>(&(data[rels[index].r_offset - globalOffset]));
+      *got = iter->first->getOffset();
+
+      copied += sizeof(Elf32_Rel);
+      ++index;
+    }
+    assert(copied == lmap.relSize);
+  }
+
+  return true;
 }

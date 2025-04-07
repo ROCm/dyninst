@@ -32,11 +32,13 @@
 #define __ELF_X_H__
 
 #include "libelf.h"
+#include <stddef.h>
+#include <utility>
 #include <string>
 #include <map>
 #include <vector>
 #include "util.h"
-#include "dyn_regs.h"
+#include "Architecture.h"
 
 #ifndef EM_CUDA
 #    define EM_CUDA 190 /* NVIDIA CUDA */
@@ -46,8 +48,12 @@
 #    define EM_INTEL_GEN9 182 /* INTEL GEN9 */
 #endif
 
-namespace Dyninst
-{
+#ifndef EM_INTELGT
+#define EM_INTELGT		205	/* INTEL Graphics Technology */
+#endif
+
+namespace Dyninst {
+
 // Forward declarations
 class Elf_X;
 class Elf_X_Phdr;
@@ -131,25 +137,25 @@ public:
 
     Dyninst::Architecture getArch() const;
 
-protected:
-    Elf*                    elf;
-    Elf32_Ehdr*             ehdr32;
-    Elf64_Ehdr*             ehdr64;
-    Elf32_Phdr*             phdr32;
-    Elf64_Phdr*             phdr64;
-    int                     filedes;
-    bool                    is64;
-    bool                    isArchive;
-    bool                    isBigEndian;
+  protected:
+    Elf *elf{};
+    Elf32_Ehdr *ehdr32{};
+    Elf64_Ehdr *ehdr64{};
+    Elf32_Phdr *phdr32{};
+    Elf64_Phdr *phdr64{};
+    int filedes{};
+    bool is64{};
+    bool isArchive{};
+    bool isBigEndian{};
     std::vector<Elf_X_Shdr> shdrs;
     std::vector<Elf_X_Phdr> phdrs;
-    unsigned int            ref_count;
-    std::string             filename;
+    unsigned int ref_count{};
+    std::string filename;
 
-    char*         cached_debug_buffer;
-    unsigned long cached_debug_size;
-    std::string   cached_debug_name;
-    bool          cached_debug;
+    char *cached_debug_buffer{};
+    unsigned long cached_debug_size{};
+    std::string cached_debug_name;
+    bool cached_debug{};
 
     Elf_X();
     Elf_X(int input, Elf_Cmd cmd, Elf_X* ref = NULL);

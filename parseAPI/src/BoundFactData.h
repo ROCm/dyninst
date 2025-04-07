@@ -10,6 +10,10 @@
 #include "entryIDs.h"
 
 #include <climits>
+#include <map>
+#include <stdint.h>
+#include <string>
+#include <utility>
 using namespace std;
 using namespace Dyninst;
 using namespace Dyninst::ParseAPI;
@@ -192,10 +196,9 @@ struct BoundFact
         }
     } pred;
 
-    struct StackTop
-    {
-        int64_t value;
-        bool    valid;
+    struct StackTop {
+        int64_t value{};
+	bool valid;
 
         StackTop()
         : valid(false)

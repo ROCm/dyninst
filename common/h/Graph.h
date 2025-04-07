@@ -33,21 +33,19 @@
 #if !defined(GRAPH_H)
 #    define GRAPH_H
 
-#    include "dyntypes.h"
-#    include "boost/shared_ptr.hpp"
-#    include <set>
-#    include <list>
-#    include <queue>
-#    include <map>
-#    include <unordered_set>
-#    include <unordered_map>
+#include "dyntypes.h"
+#include "boost/shared_ptr.hpp"
+#include <string>
+#include <set>
+#include <list>
+#include <queue>
+#include <map>
+#include <unordered_set>
+#include <unordered_map>
 
 #    include "Annotatable.h"
 #    include "Node.h"
 
-#    if defined(_MSC_VER)
-#        pragma warning(disable : 4251)
-#    endif
 
 namespace Dyninst
 {

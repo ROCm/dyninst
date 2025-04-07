@@ -30,9 +30,10 @@
 #if !defined(SINGLETON_OBJECT_POOL_H)
 #    define SINGLETON_OBJECT_POOL_H
 
-#    include "pool_allocators.h"
-#    include "dthread.h"
-#    include "compiler_annotations.h"
+#include <memory>
+#include "pool_allocators.h"
+#include "dthread.h"
+#include "compiler_annotations.h"
 
 // This is only safe for objects with nothrow constructors...
 template <typename T, typename Alloc = std::allocator<T>>

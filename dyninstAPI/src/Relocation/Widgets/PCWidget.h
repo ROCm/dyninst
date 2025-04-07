@@ -31,10 +31,11 @@
 #if !defined(_PATCHAPI_PC_ATOM_H_)
 #    define _PATCHAPI_PC_ATOM_H_
 
-#    include "Widget.h"
+#include <string>
 
-// Define where the PC value is supposed to go
-#    include "dataflowAPI/h/Absloc.h"
+#include "dyn_register.h"
+#include "Widget.h"
+#include "dataflowAPI/h/Absloc.h"
 
 class block_instance;
 class func_instance;

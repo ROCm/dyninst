@@ -39,11 +39,13 @@
  * header files.
  ************************************************************************/
 
-#    include "common/src/Types.h"
-#    include <vector>
-#    include <string>
-#    include <algorithm>
-#    include "symtabAPI/h/symutil.h"
+#include <map>
+#include <set>
+#include <utility>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include "symtabAPI/h/symutil.h"
 
 #    include <stdio.h>
 #    include <stdlib.h>

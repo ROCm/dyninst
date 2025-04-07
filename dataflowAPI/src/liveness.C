@@ -36,10 +36,13 @@
 #include "instructionAPI/h/InstructionDecoder.h"
 #include "instructionAPI/h/Register.h"
 #include "instructionAPI/h/Instruction.h"
-
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
 #include "dataflowAPI/h/liveness.h"
 #include "dataflowAPI/h/ABI.h"
 #include <boost/bind/bind.hpp>
+#include "instructionAPI/h/syscalls.h"
+#include "instructionAPI/h/interrupts.h"
 
 std::string regs1 =
     " ttttttttddddddddcccccccmxxxxxxxxxxxxxxxxgf                  rrrrrrrrrrrrrrrrr";
@@ -522,50 +525,13 @@ LivenessAnalyzer::calcRWSets(Instruction curInsn, Block* blk, Address a)
     for(std::set<RegisterAST::Ptr>::const_iterator i = cur_written.begin();
         i != cur_written.end(); i++)
     {
-        MachRegister cur = (*i)->getID();
-        if(cur.getArchitecture() == Arch_ppc64)
-            cur = MachRegister((cur.val() & ~Arch_ppc64) | Arch_ppc32);
-        liveness_printf("\t%s \n", cur.name().c_str());
-        MachRegister base = cur.getBaseRegister();
-        if(base == x86::flags || base == x86_64::flags)
-        {
-            if(width == 4)
-            {
-                ret.written[getIndex(x86::of)]  = true;
-                ret.written[getIndex(x86::cf)]  = true;
-                ret.written[getIndex(x86::pf)]  = true;
-                ret.written[getIndex(x86::af)]  = true;
-                ret.written[getIndex(x86::zf)]  = true;
-                ret.written[getIndex(x86::sf)]  = true;
-                ret.written[getIndex(x86::df)]  = true;
-                ret.written[getIndex(x86::tf)]  = true;
-                ret.written[getIndex(x86::nt_)] = true;
-            }
-            else
-            {
-                ret.written[getIndex(x86_64::of)]  = true;
-                ret.written[getIndex(x86_64::cf)]  = true;
-                ret.written[getIndex(x86_64::pf)]  = true;
-                ret.written[getIndex(x86_64::af)]  = true;
-                ret.written[getIndex(x86_64::zf)]  = true;
-                ret.written[getIndex(x86_64::sf)]  = true;
-                ret.written[getIndex(x86_64::df)]  = true;
-                ret.written[getIndex(x86_64::tf)]  = true;
-                ret.written[getIndex(x86_64::nt_)] = true;
-            }
-        }
-        else
-        {
-            base      = changeIfMMX(base);
-            int index = getIndex(base);
-            // assert(index >= 0);
-            if(index >= 0)
-            {
-                ret.written[index] = true;
-                if((cur != base && cur.size() < 4) || isMMX(base))
-                    ret.read[index] = true;
-            }
-        }
+      const bool isInterrupt = Dyninst::InstructionAPI::isSoftwareInterrupt(curInsn);
+      const bool isSyscall = Dyninst::InstructionAPI::isSystemCall(curInsn);
+
+      if (isInterrupt || isSyscall) {
+	ret.read |= (abi->getSyscallReadRegisters());
+	ret.written |= (abi->getSyscallWrittenRegisters());
+      }
     }
     InsnCategory category = curInsn.getCategory();
     switch(category)
@@ -689,17 +655,15 @@ LivenessAnalyzer::clean(Function* func)
         cachedLivenessInfo.clean();
 }
 
-bool
-LivenessAnalyzer::isMMX(MachRegister machReg)
-{
-    if((machReg.val() & Arch_x86) == Arch_x86 ||
-       (machReg.val() & Arch_x86_64) == Arch_x86_64)
-    {
-        assert(((machReg.val() & x86::MMX) == x86::MMX) ==
-               ((machReg.val() & x86_64::MMX) == x86_64::MMX));
-        return (machReg.val() & x86::MMX) == x86::MMX;
-    }
-    return false;
+bool LivenessAnalyzer::isMMX(MachRegister machReg){
+	auto const arch = machReg.getArchitecture();
+	if (arch == Arch_x86) {
+		return machReg.regClass() == x86::MMX;
+	}
+	if (arch == Arch_x86_64) {
+		return machReg.regClass() == x86_64::MMX;
+	}
+	return false;
 }
 
 MachRegister

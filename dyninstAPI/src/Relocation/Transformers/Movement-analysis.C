@@ -31,7 +31,7 @@
 #include "Transformer.h"
 #include "Movement-analysis.h"
 #include "Modification.h"
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 #include "../Widgets/Widget.h"
 #include "dyninstAPI/src/function.h"
 #include "../Widgets/CFWidget.h"
@@ -42,9 +42,9 @@
 #include "dyninstAPI/src/mapped_object.h"
 #include "instructionAPI/h/InstructionDecoder.h"
 #include "dyninstAPI/src/instPoint.h"
-
+#include "registers/x86_regs.h"
 #include "dataflowAPI/h/slicing.h"
-
+#include "instructionAPI/h/syscalls.h"
 #include "../CFG/RelocBlock.h"
 #include "../CFG/RelocGraph.h"
 
@@ -125,8 +125,7 @@ PCSensitiveTransformer::process(RelocBlock* reloc, RelocGraph* g)
         // 2) Is it externally sensitive... will this instruction cause the program
         // to produce a different result.
 
-        if(isSyscall(insn, addr))
-        {
+        if (Dyninst::InstructionAPI::isSystemCall(insn)) {
             continue;
         }
 
@@ -727,287 +726,216 @@ PCSensitiveTransformer::cacheAnalysis(const block_instance* bbl, Address addr,
     analysisCache_[bbl][addr] = std::make_pair(intSens, extSens);
 }
 
-bool
-PCSensitiveTransformer::queryCache(const block_instance* bbl, Address addr, bool& intSens,
-                                   bool& extSens)
-{
-    // intSens = true;
-    // extSens = true;
-    // return true;
-    AnalysisCache::const_iterator iter = analysisCache_.find(bbl);
-    if(iter == analysisCache_.end())
-        return false;
-    CacheEntry::const_iterator iter2 = iter->second.find(addr);
-    if(iter2 == iter->second.end())
-        return false;
-    intSens = iter2->second.first;
-    extSens = iter2->second.second;
-    return true;
+bool PCSensitiveTransformer::queryCache(const block_instance *bbl, Address addr, bool &intSens, bool &extSens) {
+	//intSens = true;
+	//extSens = true;
+	//return true;
+	AnalysisCache::const_iterator iter = analysisCache_.find(bbl);
+   if (iter == analysisCache_.end()) return false;
+   CacheEntry::const_iterator iter2 = iter->second.find(addr);
+   if (iter2 == iter->second.end()) return false;
+   intSens = iter2->second.first;
+   extSens = iter2->second.second;
+   return true;
 }
 
-void
-PCSensitiveTransformer::invalidateCache(const block_instance* b)
-{
-    // Clear everything corresponding to an addr in the block;
-    // overapproximation for shared functions and shared blocks,
-    // but hey.
-    analysisCache_.erase(b);
+void PCSensitiveTransformer::invalidateCache(const block_instance *b) {
+   // Clear everything corresponding to an addr in the block;
+   // overapproximation for shared functions and shared blocks,
+   // but hey. 
+	analysisCache_.erase(b);
 }
 
-void
-PCSensitiveTransformer::invalidateCache(func_instance* f)
-{
-    // We want to invalidate any cache results for f directly,
-    // as well as any for blocks that call f.
+void PCSensitiveTransformer::invalidateCache(func_instance *f) {
+   // We want to invalidate any cache results for f directly,
+   // as well as any for blocks that call f. 
 
-    const PatchFunction::Blockset& blocks = f->blocks();
-    for(PatchFunction::Blockset::const_iterator iter = blocks.begin();
-        iter != blocks.end(); ++iter)
-    {
-        invalidateCache(SCAST_BI(*iter));
-    }
-
-    // Get callers of this function
-    PatchAPI::PatchBlock::edgelist edges = f->entry()->sources();
-    for(PatchAPI::PatchBlock::edgelist::iterator iter = edges.begin();
-        iter != edges.end(); ++iter)
-    {
-        invalidateCache(SCAST_BI((*iter)->src()));
-    }
+   const PatchFunction::Blockset &blocks = f->blocks();
+   for (PatchFunction::Blockset::const_iterator iter = blocks.begin();
+        iter != blocks.end(); ++iter) {
+      invalidateCache(SCAST_BI(*iter));
+   }
+   
+   // Get callers of this function
+   PatchAPI::PatchBlock::edgelist edges = f->entry()->sources();
+   for (PatchAPI::PatchBlock::edgelist::iterator iter = edges.begin(); iter != edges.end(); ++iter) {
+      invalidateCache(SCAST_BI((*iter)->src()));
+   }
 }
 
-ExtPCSensVisitor::ExtPCSensVisitor(const AbsRegion& a)
-: isExtSens_(false)
-{
-    if(a.absloc().isPC())
-    {
-        assignPC_ = true;
-    }
-    else
-    {
-        assignPC_ = false;
-    }
+ExtPCSensVisitor::ExtPCSensVisitor(const AbsRegion &a) :
+  isExtSens_(false) {
+  if (a.absloc().isPC()) {
+    assignPC_ = true;
+  }
+  else {
+    assignPC_ = false;
+  }
 }
 
-AST::Ptr
-ExtPCSensVisitor::visit(AST* a)
-{
-    // Should never be able to get this
+AST::Ptr ExtPCSensVisitor::visit(AST *a) {
+  // Should never be able to get this
+  isExtSens_ = true;
+  return a->ptr();
+}
+
+AST::Ptr ExtPCSensVisitor::visit(BottomAST *b) {
+  isExtSens_ = true;
+  return b->ptr();
+}
+
+AST::Ptr ExtPCSensVisitor::visit(ConstantAST *c) {
+  diffs_.push(DiffVar((int)c->val().val, 0));
+  return c->ptr();
+}
+
+AST::Ptr ExtPCSensVisitor::visit(VariableAST *v) {
+  const AbsRegion &reg = v->val().reg;
+  const Absloc &aloc = reg.absloc();
+  if (aloc.isPC()) {
+    // Right on!
+    diffs_.push(DiffVar(0, 1));
+  }
+  else {
+    diffs_.push(DiffVar(v->val(), 0));
+  }
+  return v->ptr();
+}
+
+AST::Ptr ExtPCSensVisitor::visit(StackAST *s) {
+  // If we see one of these we're getting a weird "pc + esp", 
+  // so we can consider it a constant.
+  if (s->val().isBottom()) {
     isExtSens_ = true;
-    return a->ptr();
+  }
+  else {
+    diffs_.push(DiffVar(s->val().height(), 0));
+  }
+  return s->ptr();
 }
 
-AST::Ptr
-ExtPCSensVisitor::visit(BottomAST* b)
-{
-    isExtSens_ = true;
-    return b->ptr();
+AST::Ptr ExtPCSensVisitor::visit(RoseAST *r) {
+  // Abort (ish) if we're already sensitive
+  if (isExtSens_) return r->ptr();
+  
+  // Simplify children to the stack. 
+  // Discard the pointers because we really don't care.
+  // Go backwards so that the stack order matches the child order.
+  // (that is, child 1 on top)
+  for (unsigned i = r->numChildren(); i > 0; --i) {
+    r->child(i-1)->accept(this);
+  }
+  // Again, if we've concluded we're externally sensitive
+  // then return immediately.
+  if (isExtSens_) return r->ptr();
+
+  // Okay, let's see what's goin' on...
+  switch(r->val().op) {
+  case ROSEOperation::derefOp: {
+    // A dereference is a decision point: either we're externally
+    // sensitive (if the calculated difference depends on the PC at all)
+    // or we reset the difference to 0.
+    if (diffs_.top().b != 0) {
+      isExtSens_ = true;
+    }
+    // Ignore the other entries... might be conditional loads, etc.
+    for (unsigned i = 0; i < r->numChildren(); i++) {
+      diffs_.pop();
+    }
+    // A non-modified dereference resets our "what's the difference" to 0. 
+    diffs_.push(DiffVar(0, 0));
+    
+    break;
+  }
+  case ROSEOperation::addOp: {
+    DiffVar sum(0,0);
+    for (unsigned i = 0; i < r->numChildren(); ++i) {
+      sum += diffs_.top(); diffs_.pop();
+    }
+    diffs_.push(sum);
+    break;
+  }
+  case ROSEOperation::invertOp: {
+    diffs_.top() *= -1;
+    break;
+  }
+  case ROSEOperation::extendMSBOp:
+  case ROSEOperation::extractOp: {
+    DiffVar tmp = diffs_.top();
+    for (unsigned i = 0; i < r->numChildren(); ++i) {
+      diffs_.pop();
+    }
+    diffs_.push(tmp);
+    break;
+  }
+  case ROSEOperation::equalToZeroOp:
+    if (diffs_.top().b != 0) {
+      isExtSens_ = true;
+    }
+    for (unsigned i = 0; i < r->numChildren(); ++i) {
+      diffs_.pop();
+    }
+    diffs_.push(DiffVar(0, 0));
+    break;
+  case ROSEOperation::ifOp: {
+    DiffVar c = diffs_.top(); diffs_.pop();
+    DiffVar t = diffs_.top(); diffs_.pop();
+    DiffVar e = diffs_.top(); diffs_.pop();
+
+    if (c.b != 0) {
+      isExtSens_ = true;
+    }
+    if (assignPC_) {
+      if ((t.b != 1) ||
+	  (e.b != 1)) { 
+	isExtSens_ = true;
+      }
+    }
+    else { 
+      if ((t.b != 0) ||
+	  (e.b != 0)) {
+	isExtSens_ = true;
+      }
+    }
+    // Pick one and propagate it up
+    // Should split the analysis here... but this situation never actually
+    // appears, so it seems silly to code for it.
+    diffs_.push(t);
+
+    break;
+  }
+  default:
+    for (unsigned i = 0; i < r->numChildren(); i++) {
+      if (diffs_.top().b != 0) {
+	isExtSens_ = true;
+      }
+      diffs_.pop();
+    }
+    diffs_.push(DiffVar(0, 0));
+    break;
+  }
+  return r->ptr();
 }
 
-AST::Ptr
-ExtPCSensVisitor::visit(ConstantAST* c)
-{
-    diffs_.push(DiffVar((int) c->val().val, 0));
-    return c->ptr();
-}
+bool ExtPCSensVisitor::isExtSens(AST::Ptr a) {
+  a->accept(this);
 
-AST::Ptr
-ExtPCSensVisitor::visit(VariableAST* v)
-{
-    const AbsRegion& reg  = v->val().reg;
-    const Absloc&    aloc = reg.absloc();
-    if(aloc.isPC())
-    {
-        // Right on!
-        diffs_.push(DiffVar(0, 1));
-    }
-    else
-    {
-        diffs_.push(DiffVar(v->val(), 0));
-    }
-    return v->ptr();
-}
+  // Simplify...
+  if (isExtSens_) return true;
 
-AST::Ptr
-ExtPCSensVisitor::visit(StackAST* s)
-{
-    // If we see one of these we're getting a weird "pc + esp",
-    // so we can consider it a constant.
-    if(s->val().isBottom())
-    {
-        isExtSens_ = true;
-    }
-    else
-    {
-        diffs_.push(DiffVar(s->val().height(), 0));
-    }
-    return s->ptr();
-}
+  assert(diffs_.size() == 1);
 
-AST::Ptr
-ExtPCSensVisitor::visit(RoseAST* r)
-{
-    // Abort (ish) if we're already sensitive
-    if(isExtSens_)
-        return r->ptr();
+  // By my model, we are externally sensitive if:
+  //   def defines pc: diff != delta
+  //   def defines _: diff != 0
+  // Since I did the visitor over a set of linear variables of the
+  // form a + b*delta, we can ignore a (as those will cancel) 
+  // and return if b != 1.
 
-    // Simplify children to the stack.
-    // Discard the pointers because we really don't care.
-    // Go backwards so that the stack order matches the child order.
-    // (that is, child 1 on top)
-    for(unsigned i = r->numChildren(); i > 0; --i)
-    {
-        r->child(i - 1)->accept(this);
-    }
-    // Again, if we've concluded we're externally sensitive
-    // then return immediately.
-    if(isExtSens_)
-        return r->ptr();
-
-    // Okay, let's see what's goin' on...
-    switch(r->val().op)
-    {
-        case ROSEOperation::derefOp: {
-            // A dereference is a decision point: either we're externally
-            // sensitive (if the calculated difference depends on the PC at all)
-            // or we reset the difference to 0.
-            if(diffs_.top().b != 0)
-            {
-                isExtSens_ = true;
-            }
-            // Ignore the other entries... might be conditional loads, etc.
-            for(unsigned i = 0; i < r->numChildren(); i++)
-            {
-                diffs_.pop();
-            }
-            // A non-modified dereference resets our "what's the difference" to 0.
-            diffs_.push(DiffVar(0, 0));
-
-            break;
-        }
-        case ROSEOperation::addOp: {
-            DiffVar sum(0, 0);
-            for(unsigned i = 0; i < r->numChildren(); ++i)
-            {
-                sum += diffs_.top();
-                diffs_.pop();
-            }
-            diffs_.push(sum);
-            break;
-        }
-        case ROSEOperation::invertOp: {
-            diffs_.top() *= -1;
-            break;
-        }
-        case ROSEOperation::extendMSBOp:
-        case ROSEOperation::extractOp: {
-            DiffVar tmp = diffs_.top();
-            for(unsigned i = 0; i < r->numChildren(); ++i)
-            {
-                diffs_.pop();
-            }
-            diffs_.push(tmp);
-            break;
-        }
-        case ROSEOperation::equalToZeroOp:
-            if(diffs_.top().b != 0)
-            {
-                isExtSens_ = true;
-            }
-            for(unsigned i = 0; i < r->numChildren(); ++i)
-            {
-                diffs_.pop();
-            }
-            diffs_.push(DiffVar(0, 0));
-            break;
-        case ROSEOperation::ifOp: {
-            DiffVar c = diffs_.top();
-            diffs_.pop();
-            DiffVar t = diffs_.top();
-            diffs_.pop();
-            DiffVar e = diffs_.top();
-            diffs_.pop();
-
-            if(c.b != 0)
-            {
-                isExtSens_ = true;
-            }
-            if(assignPC_)
-            {
-                if((t.b != 1) || (e.b != 1))
-                {
-                    isExtSens_ = true;
-                }
-            }
-            else
-            {
-                if((t.b != 0) || (e.b != 0))
-                {
-                    isExtSens_ = true;
-                }
-            }
-            // Pick one and propagate it up
-            // Should split the analysis here... but this situation never actually
-            // appears, so it seems silly to code for it.
-            diffs_.push(t);
-
-            break;
-        }
-        default:
-            for(unsigned i = 0; i < r->numChildren(); i++)
-            {
-                if(diffs_.top().b != 0)
-                {
-                    isExtSens_ = true;
-                }
-                diffs_.pop();
-            }
-            diffs_.push(DiffVar(0, 0));
-            break;
-    }
-    return r->ptr();
-}
-
-bool
-ExtPCSensVisitor::isExtSens(AST::Ptr a)
-{
-    a->accept(this);
-
-    // Simplify...
-    if(isExtSens_)
-        return true;
-
-    assert(diffs_.size() == 1);
-
-    // By my model, we are externally sensitive if:
-    //   def defines pc: diff != delta
-    //   def defines _: diff != 0
-    // Since I did the visitor over a set of linear variables of the
-    // form a + b*delta, we can ignore a (as those will cancel)
-    // and return if b != 1.
-
-    if(assignPC_)
-    {
-        return (diffs_.top().b != 1);
-    }
-    else
-    {
-        return (diffs_.top().b != 0);
-    }
-}
-
-bool
-PCSensitiveTransformer::isSyscall(Instruction insn, Address)
-{
-    // call *%gs:0x10
-    // Build a GS
-    static Expression::Ptr x86_gs(new RegisterAST(x86::gs));
-
-    if(insn.isRead(x86_gs))
-    {
-        // relocation_cerr << "Skipping syscall " << insn->format() << hex << "@ " << addr
-        // << dec << endl;
-        return true;
-    }
-    return false;
+  if (assignPC_) {
+    return (diffs_.top().b != 1);
+  }
+  else {
+    return (diffs_.top().b != 0);
+  }
 }

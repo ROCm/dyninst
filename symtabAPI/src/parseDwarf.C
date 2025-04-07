@@ -89,10 +89,7 @@ convertCharToString(char* ptr)
     return str;
 }
 
-/* extern void pd_dwarf_handler( Dwarf_Error, Dwarf_Ptr ); */
-
-void
-Object::parseDwarfTypes(Symtab*)
+void Object::parseDwarfTypes( Symtab *) 
 {
     assert(0);
 } /* end parseDwarfTypes() */

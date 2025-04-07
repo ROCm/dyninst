@@ -29,6 +29,8 @@
  */
 
 #include "SymLite-elf.h"
+#include "common/src/headers.h"
+#include "unaligned_memory_access.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -443,11 +445,16 @@ symcache_cmp(const void* a, const void* b)
 unsigned long
 SymElf::getSymOffset(const Elf_X_Sym& symbol, unsigned idx)
 {
-    if(need_odp && symbol.ST_TYPE(idx) == STT_FUNC)
-    {
-        unsigned long odp_addr = odp_section->sh_addr();
-        unsigned long odp_size = odp_section->sh_size();
-        const char*   odp_data = (const char*) odp_section->get_data().d_buf();
+   if (need_odp && symbol.ST_TYPE(idx) == STT_FUNC) {
+      unsigned long odp_addr = odp_section->sh_addr();
+      unsigned long odp_size = odp_section->sh_size();
+      const char *odp_data = (const char *) odp_section->get_data().d_buf();
+      
+      unsigned long sym_offset = symbol.st_value(idx);
+      while (sym_offset >= odp_addr && sym_offset < odp_addr + odp_size)
+         sym_offset = Dyninst::read_memory_as<uint64_t>(odp_data + sym_offset - odp_addr);
+      return sym_offset;
+   }
 
         unsigned long sym_offset = symbol.st_value(idx);
         while(sym_offset >= odp_addr && sym_offset < odp_addr + odp_size)
@@ -471,10 +478,9 @@ SymElf::getSymTOC(const Elf_X_Sym& symbol, unsigned idx)
         if(sym_offset < odp_addr || (sym_offset >= odp_addr + odp_size))
             return 0;
 
-        unsigned long toc =
-            *((const unsigned long*) (odp_data + (sym_offset - odp_addr + sizeof(long))));
-        return toc;
-    }
+      auto toc = Dyninst::read_memory_as<uint64_t>(odp_data + (sym_offset - odp_addr + sizeof(long)));
+      return toc;
+   }
 
     return 0;
 }

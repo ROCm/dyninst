@@ -146,39 +146,18 @@ Event::ptr
 DecoderWindows::decodeSingleStepEvent(DEBUG_EVENT e, int_process* proc,
                                       int_thread* thread)
 {
-    Event::ptr evt;
-    // This handles user-level breakpoints; if we can't associate this with a thread we
-    // know about, it's not something the user installed (or we're in an inconsistent
-    // state). Forward to the mutatee.
-    if(!thread)
-        return evt;
+	fprintf(stderr, "segfault in mutatee at %ux\n", problemArea);
+	for(unsigned i = problemArea-16; i < problemArea+16; i++)
+	{
+		unsigned char tmp = 0;
 
-    assert(thread->singleStep());
-    bp_instance* clearingbp = thread->isClearingBreakpoint();
-    if(clearingbp)
-    {
-        pthrd_printf("Decoded event to breakpoint cleanup\n");
-        evt = Event::ptr(
-            new EventBreakpointRestore(new int_eventBreakpointRestore(clearingbp)));
-    }
-    else
-    {
-        evt = Event::ptr(new EventSingleStep());
-    }
-
-    CONTEXT verification;
-    verification.ContextFlags = CONTEXT_FULL;
-    ::GetThreadContext(((windows_thread*) thread)->plat_getHandle(), &verification);
-
-    if(verification.EFlags & TF_BIT)
-    {
-        pthrd_printf(
-            "BUG ENCOUNTERED: OS handled us a thread with TF set, clearing manually\n");
-        verification.EFlags &= (~TF_BIT);
-        ::SetThreadContext(((windows_thread*) thread)->plat_getHandle(), &verification);
-    }
-
-    return evt;
+		if(proc->plat_readMem(NULL, &tmp, i, 1)) {
+			fprintf(stderr, "%ux: %x\n", i, tmp);
+		}
+		else {
+			fprintf(stderr, "failed to read from %ux\n", i);
+		}
+	}
 }
 
 Event::ptr

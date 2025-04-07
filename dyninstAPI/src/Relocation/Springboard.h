@@ -31,12 +31,15 @@
 // Build the branches from previous versions of moved code to the new versions.
 
 #if !defined(_R_SPRINGBOARD_H_)
-#    define _R_SPRINGBOARD_H_
-#    include <map>
-#    include "common/src/IntervalTree.h"
-#    include "common/h/dyntypes.h"
-#    include "Transformers/Transformer.h"  // Priority enum
-#    include "dyninstAPI/src/codegen.h"
+#define _R_SPRINGBOARD_H_
+#include <assert.h>
+#include <list>
+#include <set>
+#include <map>
+#include "common/src/IntervalTree.h"
+#include "common/h/dyntypes.h"
+#include "Transformers/Transformer.h" // Priority enum
+#include "dyninstAPI/src/codegen.h"
 
 class AddressSpace;
 

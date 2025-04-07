@@ -33,6 +33,7 @@
 
 #include <string>
 #include <set>
+#include <map>
 #include "Annotatable.h"
 #include "BPatch_dll.h"
 #include "BPatch_Vector.h"
@@ -41,6 +42,7 @@
 #include "BPatch_basicBlockLoop.h"
 #include "BPatch_loopTreeNode.h"
 #include "BPatch_edge.h"
+#include "dyntypes.h"
 
 class func_instance;
 class AddressSpace;

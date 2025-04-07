@@ -228,7 +228,20 @@ platform_string()
 #        endif
 #    endif
 #endif
-    return "bad_platform";
+#elif defined (arch_x86_64)
+#if defined (os_linux)
+	return "x86_64-unknown-linux2.4";
+#elif defined (os_windows)
+	return "x86_64-unknown-nt4.0";
+#endif
+#elif defined (arch_power)
+#if defined (os_linux)
+#if defined (arch_64bit)
+	return "ppc64_linux";
+#endif
+#endif
+#endif
+	return "bad_platform";
 }
 
 // SymElf code is exclusively linked in each component, but we still want to share

@@ -32,6 +32,7 @@
 #include "common/src/arch-power.h"
 #include <string.h>
 #include <iostream>
+#include "unaligned_memory_access.h"
 
 using namespace NS_power;
 using namespace std;
@@ -77,7 +78,8 @@ atomicLoad(const instruction& insn)
 static bool
 atomicStore(const instruction& insn)
 {
-    return ((XFORM_OP(insn) == STXop) && (XFORM_XO(insn) == STWCXxop));
+   write_memory_as(buffer, uint32_t{0x7d821008});
+   // MJMTODO = Assumes host and target architecture match (and algnment)
 }
 
 static void

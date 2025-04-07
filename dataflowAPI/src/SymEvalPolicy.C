@@ -29,7 +29,11 @@
  */
 #include "SymEvalPolicy.h"
 
-#include "dyn_regs.h"
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
+#include "registers/ppc32_regs.h"
+#include "registers/ppc64_regs.h"
+
 
 using namespace Dyninst;
 using namespace Dyninst::DataflowAPI;
@@ -53,42 +57,23 @@ SymEvalPolicy::SymEvalPolicy(Result_t& r, Address a, Dyninst::Architecture ac,
             continue;
         AbsRegion& o = a->out();
 
-        if(o.containsOfType(Absloc::Register))
-        {
-            // We're assuming this is a single register...
-            // std::cerr << "Marking register " << a << std::endl;
-            aaMap[o.absloc()] = a;
-        }
-        else
-        {
-            // Use sufficiently-unique (Heap,0) Absloc
-            // to represent a definition to a memory absloc
-            aaMap[Absloc(0)] = a;
-        }
+  // We also need to build aaMap FTW!!!
+  for (Result_t::iterator iter = r.begin();
+       iter != r.end(); ++iter) {
+    Assignment::Ptr ap = iter->first;
+    // For a different instruction...
+    if (ap->addr() != addr) continue; 
+    AbsRegion &o = ap->out();
+
+    if (o.containsOfType(Absloc::Register)) {
+      // We're assuming this is a single register...
+      //std::cerr << "Marking register " << ap << std::endl;
+      aaMap[o.absloc()] = ap;
     }
-}
-
-void
-SymEvalPolicy::undefinedInstruction(SgAsmx86Instruction*)
-{
-    undefinedInstructionCommon();
-}
-
-void
-SymEvalPolicy::undefinedInstruction(SgAsmPowerpcInstruction*)
-{
-    // Log insn details here
-
-    undefinedInstructionCommon();
-}
-
-void
-SymEvalPolicy::undefinedInstructionCommon()
-{
-    for(std::map<Absloc, Assignment::Ptr>::iterator iter = aaMap.begin();
-        iter != aaMap.end(); ++iter)
-    {
-        res[iter->second] = getBottomAST();
+    else {
+      // Use sufficiently-unique (Heap,0) Absloc
+      // to represent a definition to a memory absloc
+      aaMap[Absloc(0)] = ap;
     }
     failedTranslate_ = true;
 }
@@ -152,67 +137,139 @@ SymEvalPolicy::convert(PowerpcRegisterClass regtype, int regNum)
 Absloc
 SymEvalPolicy::convert(X86GeneralPurposeRegister r)
 {
-    MachRegister mreg;
-    switch(r)
-    {
-        case x86_gpr_ax:
-            mreg = x86::eax;
-            break;
-        case x86_gpr_cx:
-            mreg = x86::ecx;
-            break;
-        case x86_gpr_dx:
-            mreg = x86::edx;
-            break;
-        case x86_gpr_bx:
-            mreg = x86::ebx;
-            break;
-        case x86_gpr_sp:
-            mreg = x86::esp;
-            break;
-        case x86_gpr_bp:
-            mreg = x86::ebp;
-            break;
-        case x86_gpr_si:
-            mreg = x86::esi;
-            break;
-        case x86_gpr_di:
-            mreg = x86::edi;
-            break;
-        default:
-            break;
-    }
 
-    return Absloc(mreg);
-    ;
+  MachRegister mreg;
+  switch (r) {
+    case x86_gpr_ax:
+      mreg = x86::eax;
+      break;
+    case x86_gpr_cx:
+      mreg = x86::ecx;
+      break;
+    case x86_gpr_dx:
+      mreg = x86::edx;
+      break;
+    case x86_gpr_bx:
+      mreg = x86::ebx;
+      break;
+    case x86_gpr_sp:
+      mreg = x86::esp;
+      break;
+    case x86_gpr_bp:
+      mreg = x86::ebp;
+      break;
+    case x86_gpr_si:
+      mreg = x86::esi;
+      break;
+    case x86_gpr_di:
+      mreg = x86::edi;
+      break;
+    default:
+      break;
+  }
+
+  return Absloc(mreg);;
 }
 
-Absloc
-SymEvalPolicy::convert(X86SegmentRegister r)
+Absloc SymEvalPolicy::convert(X86SegmentRegister r)
 {
-    MachRegister mreg;
-    switch(r)
-    {
-        case x86_segreg_es:
-            mreg = x86::es;
-            break;
-        case x86_segreg_cs:
-            mreg = x86::cs;
-            break;
-        case x86_segreg_ss:
-            mreg = x86::ss;
-            break;
-        case x86_segreg_ds:
-            mreg = x86::ds;
-            break;
-        case x86_segreg_fs:
-            mreg = x86::fs;
-            break;
-        case x86_segreg_gs:
-            mreg = x86::gs;
-            break;
-        default:
-            break;
+  MachRegister mreg;
+  switch (r) {
+    case x86_segreg_es:
+      mreg = x86::es;
+      break;
+    case x86_segreg_cs:
+      mreg = x86::cs;
+      break;
+    case x86_segreg_ss:
+      mreg = x86::ss;
+      break;
+    case x86_segreg_ds:
+      mreg = x86::ds;
+      break;
+    case x86_segreg_fs:
+      mreg = x86::fs;
+      break;
+    case x86_segreg_gs:
+      mreg = x86::gs;
+      break;
+    default:
+      break;
+  }
+
+  return Absloc(mreg);
+}
+
+Absloc SymEvalPolicy::convert(X86Flag f)
+{
+   switch (f) {
+      case x86_flag_cf:
+         return Absloc(x86::cf);
+      case x86_flag_1:
+         return Absloc(x86::flag1);
+      case x86_flag_pf:
+         return Absloc(x86::pf);
+      case x86_flag_3:
+         return Absloc(x86::flag3);
+      case x86_flag_af:
+         return Absloc(x86::af);
+      case x86_flag_5:
+         return Absloc(x86::flag5);
+      case x86_flag_zf:
+         return Absloc(x86::zf);
+      case x86_flag_sf:
+         return Absloc(x86::sf);
+      case x86_flag_tf:
+         return Absloc(x86::tf);
+      case x86_flag_if:
+         return Absloc(x86::if_);
+      case x86_flag_df:
+         return Absloc(x86::df);
+      case x86_flag_of:
+         return Absloc(x86::of);
+      case x86_flag_iopl0:
+         return Absloc(x86::flagc);
+      case x86_flag_iopl1:
+         return Absloc(x86::flagd);
+      case x86_flag_nt:
+         return Absloc(x86::nt_);
+      case x86_flag_15:
+         return Absloc(x86::flagf);
+      default:
+         assert(0);
+         return Absloc();
+  }
+}
+
+       
+SymEvalPolicy_64::SymEvalPolicy_64(Result_t &r,
+                                   Address a,
+				   Dyninst::Architecture ac,
+				   Instruction insn) :
+  res(r),
+  arch(ac),
+  addr(a),
+  ip_(Handle<64>(wrap(Absloc::makePC(arch)))),
+  failedTranslate_(false),
+  insn_(insn) {
+
+  // We also need to build aaMap FTW!!!
+  for (Result_t::iterator iter = r.begin();
+       iter != r.end(); ++iter) {
+    Assignment::Ptr ap = iter->first;
+    // For a different instruction...
+    if (ap->addr() != addr) continue; 
+    AbsRegion &o = ap->out();
+
+    if (o.containsOfType(Absloc::Register)) {
+      // We're assuming this is a single register...
+      //std::cerr << "Marking register " << a << std::endl;
+      aaMap[o.absloc()] = ap;
+    }
+    else {
+      // Use sufficiently-unique (Heap,0) Absloc
+      // to represent a definition to a memory absloc
+      aaMap[Absloc(0)] = ap;
     }
 
     return Absloc(mreg);
@@ -490,32 +547,43 @@ SymEvalPolicy_64::convert(X86SegmentRegister r)
 Absloc
 SymEvalPolicy_64::convert(X86Flag f)
 {
-    switch(f)
-    {
-        case x86_flag_cf:
-            return Absloc(x86_64::cf);
-        case x86_flag_pf:
-            return Absloc(x86_64::pf);
-        case x86_flag_af:
-            return Absloc(x86_64::af);
-        case x86_flag_zf:
-            return Absloc(x86_64::zf);
-        case x86_flag_sf:
-            return Absloc(x86_64::sf);
-        case x86_flag_tf:
-            return Absloc(x86_64::tf);
-        case x86_flag_if:
-            return Absloc(x86_64::if_);
-        case x86_flag_df:
-            return Absloc(x86_64::df);
-        case x86_flag_of:
-            return Absloc(x86_64::of);
-        case x86_flag_nt:
-            return Absloc(x86_64::nt_);
-        default:
-            assert(0);
-            return Absloc();
-    }
+   switch (f) {
+      case x86_flag_cf:
+         return Absloc(x86_64::cf);
+      case x86_flag_1:
+         return Absloc(x86_64::flag1);
+      case x86_flag_pf:
+         return Absloc(x86_64::pf);
+      case x86_flag_3:
+         return Absloc(x86_64::flag3);
+      case x86_flag_af:
+         return Absloc(x86_64::af);
+      case x86_flag_5:
+         return Absloc(x86_64::flag5);
+      case x86_flag_zf:
+         return Absloc(x86_64::zf);
+      case x86_flag_sf:
+         return Absloc(x86_64::sf);
+      case x86_flag_tf:
+         return Absloc(x86_64::tf);
+      case x86_flag_if:
+         return Absloc(x86_64::if_);
+      case x86_flag_df:
+         return Absloc(x86_64::df);
+      case x86_flag_of:
+         return Absloc(x86_64::of);
+      case x86_flag_iopl0:
+         return Absloc(x86_64::FLAGC);
+      case x86_flag_iopl1:
+         return Absloc(x86_64::FLAGD);
+      case x86_flag_nt:
+         return Absloc(x86_64::nt_);
+      case x86_flag_15:
+         return Absloc(x86_64::FLAGF);
+      default:
+         assert(0);
+         return Absloc();
+  }
 }
 
 std::ostream&

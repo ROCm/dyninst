@@ -38,8 +38,14 @@
 #include "ast.h"
 #include "symtabAPI/h/Symtab.h"
 #include "dyninstAPI/src/trapMappings.h"
+#include <assert.h>
+#include <map>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 #include <list>
-
+#include "dyntypes.h"
 #include "common/src/IntervalTree.h"
 
 #include "parseAPI/h/CodeObject.h"
@@ -87,9 +93,7 @@ class PCProcess;
 class trampTrapMappings;
 class baseTramp;
 
-namespace Dyninst
-{
-class MemoryEmulator;
+namespace Dyninst {
 
 namespace InstructionAPI
 {
@@ -454,8 +458,6 @@ public:
     bool getRelocInfo(Address relocAddr, RelocInfo& relocInfo);
     // defensive mode code //
 
-    void causeTemplateInstantiations();
-
     // Debugging method
     bool inEmulatedCode(Address addr);
 
@@ -474,11 +476,6 @@ public:
 
     void addModifiedFunction(func_instance* func);
     void addModifiedBlock(block_instance* block);
-
-    void            updateMemEmulator();
-    bool            isMemoryEmulated() { return emulateMem_; }
-    bool            emulatingPC() { return emulatePC_; }
-    MemoryEmulator* getMemEm();
 
     bool delayRelocation() const;
 
@@ -545,14 +542,6 @@ protected:
     // CallModMap callModifications_;
     // FuncModMap functionReplacements_;
     // FuncModMap functionWraps_;
-
-    void addAllocatedRegion(Address start, unsigned size);
-    void addModifiedRegion(mapped_object* obj);
-
-    MemoryEmulator* memEmulator_;
-
-    bool emulateMem_;
-    bool emulatePC_;
 
     bool delayRelocation_;
 

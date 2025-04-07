@@ -55,9 +55,12 @@
 //  With these two methods the user can specify a tracking data structure that specifies
 //  what kind of code they have provided.
 
-#    include "common/h/dyntypes.h"
-#    include <list>
-#    include "dyninstAPI/src/codegen.h"
+#include "common/h/dyntypes.h"
+#include <assert.h>
+#include <map>
+#include <vector>
+#include <list>
+#include "dyninstAPI/src/codegen.h"
 
 class codeGen;
 
@@ -104,41 +107,57 @@ private:
         // an offset, or an estimated address.
         Address addr;
 
-        static const unsigned INVALID;
+      Label() noexcept
+      : type(Invalid), id(0), iteration(0), addr(0) {}
+      Label(Type a, Id b, Address c)
+      : type(a), id(b), iteration(0), addr(c) { assert(id != INVALID); }
+      bool valid() { return type != Invalid; }
+   };
 
-        Label()
-        : type(Invalid)
-        , id(0)
-        , iteration(0)
-        , addr(0)
-        {}
-        Label(Type a, Id b, Address c)
-        : type(a)
-        , id(b)
-        , iteration(0)
-        , addr(c)
-        {
-            assert(id != INVALID);
-        }
-        bool valid() { return type != Invalid; }
-    };
+   class BufferElement {
+      friend class CodeBuffer;
+     public:
+      BufferElement();
+      BufferElement(const BufferElement&) = delete;
+      BufferElement(BufferElement&&);
+      ~BufferElement();
+      void setLabelID(unsigned id);
+      void addPIC(const unsigned char *input, unsigned size, TrackerElement *tracker);
+      void addPIC(const Buffer &buffer, TrackerElement *tracker);
+      void setPatch(Patch *patch, TrackerElement *tracker);
 
     class BufferElement
     {
         friend class CodeBuffer;
 
-    public:
-        BufferElement();
-        ~BufferElement();
-        void setLabelID(unsigned id);
-        void addPIC(const unsigned char* input, unsigned size, TrackerElement* tracker);
-        void addPIC(const Buffer& buffer, TrackerElement* tracker);
-        void setPatch(Patch* patch, TrackerElement* tracker);
+     private:
+      BufferElement& operator=(BufferElement&) = default;
+      void addTracker(TrackerElement *tracker);
 
-        bool full() { return patch_ != NULL; }
-        bool empty();
-        bool generate(CodeBuffer* buf, codeGen& gen, int& shift, bool& regenerate);
-        bool extractTrackers(CodeTracker* t);
+      Address addr_{};
+      unsigned size_{};
+      Buffer buffer_;
+      Patch *patch_{};
+      unsigned labelID_{Label::INVALID};
+      // Here the Offset is an offset within the buffer, starting at 0.
+      typedef std::map<Offset, TrackerElement *> Trackers;
+      Trackers trackers_;
+   };
+   
+  public:
+   CodeBuffer();
+   ~CodeBuffer();
+   
+   void initialize(const codeGen &templ, unsigned numBlocks);
+   
+   unsigned getLabel();
+   unsigned defineLabel(Address addr);
+   void addPIC(const unsigned char *input, unsigned size, TrackerElement *tracker);
+   void addPIC(const void *input, unsigned size, TrackerElement *tracker);
+   void addPIC(const codeGen &gen, TrackerElement *tracker);
+   void addPIC(const Buffer buf, TrackerElement *tracker);
+   void addPatch(Patch *patch, TrackerElement *tracker);
+   bool extractTrackers(CodeTracker *t);
 
     private:
         void addTracker(TrackerElement* tracker);

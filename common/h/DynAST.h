@@ -31,13 +31,16 @@
 #if !defined(AST_H)
 #    define AST_H
 
-#    include <vector>
-#    include <string>
-#    include <sstream>
-#    include <iostream>
-#    include <map>
-#    include "util.h"
-#    include "boost/enable_shared_from_this.hpp"
+#include <assert.h>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <iostream>
+#include <map>
+#include "util.h"
+#include "boost/enable_shared_from_this.hpp"
+
+namespace Dyninst {
 
 namespace Dyninst
 {

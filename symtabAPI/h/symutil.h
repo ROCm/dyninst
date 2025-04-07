@@ -56,16 +56,14 @@ typedef enum
     anyName     = 7
 } NameType;
 
-typedef enum
-{
-    lang_Unknown,
-    lang_Assembly,
-    lang_C,
-    lang_CPlusPlus,
-    lang_GnuCPlusPlus,
-    lang_Fortran,
-    lang_Fortran_with_pretty_debug,
-    lang_CMFortran
+typedef enum { 
+   lang_Unknown,
+   lang_Assembly,
+   lang_C,
+   lang_CPlusPlus,
+   lang_GnuCPlusPlus,
+   lang_Fortran,
+   lang_CMFortran
 } supportedLanguages;
 
 SYMTAB_EXPORT const char*

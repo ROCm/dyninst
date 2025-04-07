@@ -38,8 +38,7 @@ extern void (*DYNINSTdtors_begin)(void);
 extern void (*DYNINSTctors_end)(void);
 extern void (*DYNINSTdtors_end)(void);
 
-extern void
-DYNINSTBaseInit();
+extern void DYNINSTBaseInit(void);
 
 typedef struct
 {
@@ -65,9 +64,7 @@ typedef struct
  * new .ctors and .dtors sections.
  */
 
-void
-DYNINSTglobal_ctors_handler()
-{
+void DYNINSTglobal_ctors_handler(void) {
     void (**ctor)(void) = &DYNINSTctors_begin;
 
     while(ctor != (&DYNINSTctors_end))
@@ -82,9 +79,7 @@ DYNINSTglobal_ctors_handler()
     DYNINSTBaseInit();
 }
 
-void
-DYNINSTglobal_dtors_handler()
-{
+void DYNINSTglobal_dtors_handler(void) {
     void (**dtor)(void) = &DYNINSTdtors_begin;
 
     // Destructors are called in the forward order that they are listed
@@ -96,21 +91,14 @@ DYNINSTglobal_dtors_handler()
     }
 }
 
-void
-DYNINSTglobal_irel_handler()
-{
-    if(sizeof(long) == 8)
-    {
-        rela_t* rel = 0;
-        for(rel = (rela_t*) (&DYNINSTirel_start); rel != (rela_t*) (&DYNINSTirel_end);
-            ++rel)
-        {
-            long result = 0;
-            if(rel->info != 0x25)
-                continue;
-            result         = (rel->ptr());
-            *(rel->offset) = result;
-        }
+void DYNINSTglobal_irel_handler(void) {
+  if (sizeof(long) == 8) {
+    rela_t *rel = 0;
+    for (rel = (rela_t *)(&DYNINSTirel_start); rel != (rela_t *)(&DYNINSTirel_end); ++rel) {
+      long result = 0;
+      if (rel->info != 0x25) continue;
+      result = (rel->ptr());
+      *(rel->offset) = result;
     }
     else
     {

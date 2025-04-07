@@ -33,7 +33,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../common/src/Types.h"
 #include "BPatch_memoryAccess_NP.h"
 #include "BPatch_Vector.h"
 #include "BPatch_point.h"
@@ -147,7 +146,7 @@ BPatch_memoryAccess::init_tables()
 }
 
 // initializes only the first access; #bytes is a constant
-BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _addr,
+BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction *insn, Dyninst::Address _addr,
                                          bool _isLoad, bool _isStore, unsigned int _bytes,
                                          long _imm, int _ra, int _rb, unsigned int _scale,
                                          int _cond, bool _nt)
@@ -159,13 +158,11 @@ BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _ad
 }
 
 // initializes only the first access; #bytes is an expression w/scale
-BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _addr,
-                                         bool _isLoad, bool _isStore, long _imm_s,
-                                         int _ra_s, int _rb_s, unsigned int _scale_s,
-                                         long _imm_c, int _ra_c, int _rb_c,
-                                         unsigned int _scale_c, int _cond, bool _nt,
-                                         int _preFcn)
-: BPatch_instruction(insn, _addr)
+BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction *insn, Dyninst::Address _addr,
+                    bool _isLoad, bool _isStore, long _imm_s, int _ra_s, int _rb_s,
+                    unsigned int _scale_s, long _imm_c, int _ra_c, int _rb_c, 
+                    unsigned int _scale_c, int _cond, bool _nt, int _preFcn) : 
+   BPatch_instruction(insn, _addr)
 {
     start = new BPatch_addrSpec_NP[nmaxacc_NP];
     count = new BPatch_countSpec_NP[nmaxacc_NP];
@@ -174,11 +171,11 @@ BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _ad
 }
 
 // initializes only the first access; #bytes is an expression
-BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _addr,
-                                         bool _isLoad, bool _isStore, bool _isPrefetch,
-                                         long _imm_s, int _ra_s, int _rb_s, long _imm_c,
-                                         int _ra_c, int _rb_c, unsigned short _preFcn)
-: BPatch_instruction(insn, _addr)
+BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction *insn, Dyninst::Address _addr,
+                    bool _isLoad, bool _isStore, bool _isPrefetch, long _imm_s, 
+                    int _ra_s, int _rb_s, long _imm_c, int _ra_c, int _rb_c,
+                    unsigned short _preFcn) : 
+   BPatch_instruction(insn, _addr)
 {
     start = new BPatch_addrSpec_NP[nmaxacc_NP];
     count = new BPatch_countSpec_NP[nmaxacc_NP];
@@ -186,12 +183,11 @@ BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _ad
     set1st(_isLoad, _isStore, _imm_s, _ra_s, _rb_s, _imm_c, _ra_c, _rb_c, 0, _preFcn);
 }
 
-// initializes only the first access; #bytes is an expression & not a prefetch
-BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _addr,
-                                         bool _isLoad, bool _isStore, long _imm_s,
-                                         int _ra_s, int _rb_s, long _imm_c, int _ra_c,
-                                         int _rb_c)
-: BPatch_instruction(insn, _addr)
+  // initializes only the first access; #bytes is an expression & not a prefetch
+BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction *insn, Dyninst::Address _addr,
+	       bool _isLoad, bool _isStore, long _imm_s, int _ra_s, int _rb_s,
+	       long _imm_c, int _ra_c, int _rb_c) : 
+   BPatch_instruction(insn, _addr)
 {
     start = new BPatch_addrSpec_NP[nmaxacc_NP];
     count = new BPatch_countSpec_NP[nmaxacc_NP];
@@ -234,13 +230,12 @@ BPatch_memoryAccess::set2nd(bool _isLoad, bool _isStore, long _imm_s, int _ra_s,
 }
 
 // initializes both accesses; #bytes is a constant
-BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _addr,
-                                         bool _isLoad, bool _isStore, unsigned int _bytes,
-                                         long _imm, int _ra, int _rb, unsigned int _scale,
-                                         bool _isLoad2, bool _isStore2,
-                                         unsigned int _bytes2, long _imm2, int _ra2,
-                                         int _rb2, unsigned int _scale2)
-: BPatch_instruction(insn, _addr)
+BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction *insn, Dyninst::Address _addr,
+		      bool _isLoad, bool _isStore, unsigned int _bytes,
+            long _imm, int _ra, int _rb, unsigned int _scale,
+            bool _isLoad2, bool _isStore2, unsigned int _bytes2,
+            long _imm2, int _ra2, int _rb2, unsigned int _scale2) : 
+   BPatch_instruction(insn, _addr)
 {
     start = new BPatch_addrSpec_NP[nmaxacc_NP];
     count = new BPatch_countSpec_NP[nmaxacc_NP];
@@ -248,16 +243,14 @@ BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _ad
     set2nd(_isLoad2, _isStore2, _bytes2, _imm2, _ra2, _rb2, _scale2);
 }
 
-// initializes both accesses; #bytes is an expression & not a prefetch
-BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction* insn, Address _addr,
-                                         bool _isLoad, bool _isStore, long _imm_s,
-                                         int _ra_s, int _rb_s, unsigned int _scale_s,
-                                         long _imm_c, int _ra_c, int _rb_c,
-                                         unsigned int _scale_c, bool _isLoad2,
-                                         bool _isStore2, long _imm2_s, int _ra2_s,
-                                         int _rb2_s, unsigned int _scale2_s, long _imm2_c,
-                                         int _ra2_c, int _rb2_c, unsigned int _scale2_c)
-: BPatch_instruction(insn, _addr)
+  // initializes both accesses; #bytes is an expression & not a prefetch
+BPatch_memoryAccess::BPatch_memoryAccess(internal_instruction *insn, Dyninst::Address _addr,
+         bool _isLoad, bool _isStore, long _imm_s, int _ra_s, int _rb_s, 
+         unsigned int _scale_s, long _imm_c, int _ra_c, int _rb_c, 
+         unsigned int _scale_c, bool _isLoad2, bool _isStore2, long _imm2_s, 
+         int _ra2_s, int _rb2_s, unsigned int _scale2_s, long _imm2_c, 
+         int _ra2_c, int _rb2_c, unsigned int _scale2_c) : 
+   BPatch_instruction(insn, _addr)
 {
     start = new BPatch_addrSpec_NP[nmaxacc_NP];
     count = new BPatch_countSpec_NP[nmaxacc_NP];

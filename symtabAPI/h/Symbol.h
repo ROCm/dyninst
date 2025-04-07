@@ -40,9 +40,12 @@
  * header files.
  ************************************************************************/
 
-#    include "symutil.h"
-#    include "Annotatable.h"
-#    include <boost/shared_ptr.hpp>
+#include "symutil.h"
+#include "Annotatable.h"
+#include <iosfwd>
+#include <string>
+#include <vector>
+#include <boost/shared_ptr.hpp>
 
 #    ifndef CASE_RETURN_STR
 #        define CASE_RETURN_STR(x)                                                       \
@@ -78,18 +81,35 @@ class SYMTAB_EXPORT Symbol : public AnnotatableSparse
     friend class Aggregate;
     friend class relocationEntry;
 
-    friend std::string parseStabString(Module*, int linenum, char*, int, typeCommon*);
-
-public:
-    struct Ptr
-    {
-        Ptr(Symbol* s)
-        : m_this(s)
-        {}
-        ~Ptr() {}
-        Symbol* get() const { return m_this; }
-                operator Symbol*() const { return m_this; }
-        Symbol* operator->() const { return m_this; }
+   public:
+   struct Ptr
+   {
+   Ptr(Symbol* s) : m_this(s)
+     {
+     }
+     ~Ptr() 
+     {
+     }
+     Symbol* get() const
+     {
+       return m_this;
+     }
+     operator Symbol*() const
+     {
+       return m_this;
+     }
+     Symbol* operator->() const
+     {
+       return m_this;
+       
+     }
+     
+     Symbol* m_this;
+     
+   };
+   
+   
+   
 
         Symbol* m_this;
     };

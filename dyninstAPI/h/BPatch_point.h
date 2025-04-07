@@ -31,10 +31,14 @@
 #ifndef _BPatch_point_h_
 #define _BPatch_point_h_
 
+#include <string>
+#include <vector>
 #include "BPatch_dll.h"
 #include "BPatch_Vector.h"
 #include "BPatch_Set.h"
 #include "BPatch_enums.h"
+#include "dyntypes.h"
+
 class instPoint;
 class BPatch_thread;
 class BPatch_image;
@@ -148,18 +152,9 @@ private:
     AddressSpace* getAS();
 
 private:
-#if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4251)
-#endif
-    // Disable warning that these vectors cannot be used externally,
-    // which is irrelevant since the vectors are private
-    BPatch_Vector<BPatchSnippetHandle*> preSnippets;
-    BPatch_Vector<BPatchSnippetHandle*> postSnippets;
-    BPatch_Vector<BPatchSnippetHandle*> allSnippets;
-#if defined(_MSC_VER)
-#    pragma warning(pop)
-#endif
+    BPatch_Vector<BPatchSnippetHandle *> preSnippets;
+    BPatch_Vector<BPatchSnippetHandle *> postSnippets;
+    BPatch_Vector<BPatchSnippetHandle *> allSnippets;
 
 public:
     //~BPatch_point() { delete memacc; };

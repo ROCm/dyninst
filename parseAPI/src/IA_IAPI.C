@@ -30,22 +30,23 @@
 
 #include "common/src/vgannotations.h"
 #include "dyntypes.h"
-#include "dyn_regs.h"
+#include "registers/x86_regs.h"
 #include "IA_IAPI.h"
 #include "util.h"
-#include "Register.h"
 #include "Dereference.h"
 #include "Immediate.h"
 #include "BinaryFunction.h"
 #include "debug_parse.h"
 #include "IndirectAnalyzer.h"
 #include "util.h"
-#include "common/src/Types.h"
 #include "dyntypes.h"
+#include "instructionAPI/h/syscalls.h"
+#include "instructionAPI/h/interrupts.h"
 
 #include <deque>
 #include <map>
 
+#include "Register.h"
 #include "IA_x86.h"
 #include "IA_power.h"
 #include "IA_aarch64.h"
@@ -121,9 +122,12 @@ IA_IAPI::makePlatformIA_IAPI(Architecture arch, InstructionDecoder dec_, Address
             return new IA_power(dec_, where_, o, r, isrc, curBlk_);
         case Arch_aarch64:
             return new IA_aarch64(dec_, where_, o, r, isrc, curBlk_);
-        case Arch_amdgpu_vega:
+        case Arch_amdgpu_gfx908:
+        case Arch_amdgpu_gfx90a:
+        case Arch_amdgpu_gfx940:
 
             return new IA_amdgpu(dec_, where_, o, r, isrc, curBlk_);
+ 
         default:
             assert(!"unimplemented architecture");
     }
@@ -135,53 +139,41 @@ std::once_flag IA_IAPI::ptrInit;
 void
 IA_IAPI::initASTs()
 {
-    std::call_once(IA_IAPI::ptrInit, [&] {
-        if(framePtr.empty())
-        {
-            framePtr[Arch_x86] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getFramePointer(Arch_x86)));
-            framePtr[Arch_x86_64] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getFramePointer(Arch_x86_64)));
-            framePtr[Arch_ppc32] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getFramePointer(Arch_ppc32)));
-            framePtr[Arch_ppc64] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getFramePointer(Arch_ppc64)));
-            framePtr[Arch_aarch64] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getFramePointer(Arch_aarch64)));
-            framePtr[Arch_amdgpu_vega] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getFramePointer(Arch_amdgpu_vega)));
-        }
-        if(stackPtr.empty())
-        {
-            stackPtr[Arch_x86] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getStackPointer(Arch_x86)));
-            stackPtr[Arch_x86_64] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getStackPointer(Arch_x86_64)));
-            stackPtr[Arch_ppc32] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getStackPointer(Arch_ppc32)));
-            stackPtr[Arch_ppc64] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getStackPointer(Arch_ppc64)));
-            stackPtr[Arch_aarch64] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getStackPointer(Arch_aarch64)));
-            stackPtr[Arch_amdgpu_vega] = RegisterAST::Ptr(
-                new RegisterAST(MachRegister::getStackPointer(Arch_amdgpu_vega)));
-        }
-        if(thePC.empty())
-        {
-            thePC[Arch_x86] =
-                RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_x86)));
-            thePC[Arch_x86_64] =
-                RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_x86_64)));
-            thePC[Arch_ppc32] =
-                RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_ppc32)));
-            thePC[Arch_ppc64] =
-                RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_ppc64)));
-            thePC[Arch_aarch64] =
-                RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_aarch64)));
-            thePC[Arch_amdgpu_vega] =
-                RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_amdgpu_vega)));
-        }
-        ANNOTATE_HAPPENS_BEFORE(&IA_IAPI::ptrInit);
+    std::call_once(IA_IAPI::ptrInit, [&]{
+            if(framePtr.empty())
+            {
+                framePtr[Arch_x86] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_x86)));
+                framePtr[Arch_x86_64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_x86_64)));
+                framePtr[Arch_ppc32] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_ppc32)));
+                framePtr[Arch_ppc64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_ppc64)));
+                framePtr[Arch_aarch64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_aarch64)));
+                framePtr[Arch_amdgpu_gfx908] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_amdgpu_gfx908)));
+                framePtr[Arch_amdgpu_gfx90a] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_amdgpu_gfx90a)));
+                framePtr[Arch_amdgpu_gfx940] = RegisterAST::Ptr(new RegisterAST(MachRegister::getFramePointer(Arch_amdgpu_gfx940)));
+            }
+            if(stackPtr.empty())
+            {
+                stackPtr[Arch_x86] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_x86)));
+                stackPtr[Arch_x86_64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_x86_64)));
+                stackPtr[Arch_ppc32] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_ppc32)));
+                stackPtr[Arch_ppc64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_ppc64)));
+                stackPtr[Arch_aarch64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_aarch64)));
+                stackPtr[Arch_amdgpu_gfx908] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_amdgpu_gfx908)));
+                stackPtr[Arch_amdgpu_gfx90a] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_amdgpu_gfx90a)));
+                stackPtr[Arch_amdgpu_gfx940] = RegisterAST::Ptr(new RegisterAST(MachRegister::getStackPointer(Arch_amdgpu_gfx940)));
+            }
+            if(thePC.empty())
+            {
+                thePC[Arch_x86] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_x86)));
+                thePC[Arch_x86_64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_x86_64)));
+                thePC[Arch_ppc32] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_ppc32)));
+                thePC[Arch_ppc64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_ppc64)));
+                thePC[Arch_aarch64] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_aarch64)));
+                thePC[Arch_amdgpu_gfx908] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_amdgpu_gfx908)));
+                thePC[Arch_amdgpu_gfx90a] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_amdgpu_gfx90a)));
+                thePC[Arch_amdgpu_gfx940] = RegisterAST::Ptr(new RegisterAST(MachRegister::getPC(Arch_amdgpu_gfx940)));
+            }
+            ANNOTATE_HAPPENS_BEFORE(&IA_IAPI::ptrInit);
     });
     ANNOTATE_HAPPENS_AFTER(&IA_IAPI::ptrInit);
 }
@@ -297,10 +289,6 @@ IA_IAPI::retreat()
 size_t
 IA_IAPI::getSize() const
 {
-    if(!curInsn().isValid())
-        return 0;
-    if(curInsn().getOperation().getID() == e_No_Entry)
-        return 0;
     return curInsn().size();
 }
 
@@ -531,29 +519,7 @@ IA_IAPI::isCall() const
 bool
 IA_IAPI::isInterruptOrSyscall() const
 {
-    return (isInterrupt() && isSyscall());
-}
-
-bool
-IA_IAPI::isSyscall() const
-{
-    static RegisterAST::Ptr gs(new RegisterAST(x86::gs));
-
-    Instruction ci = curInsn();
-
-    return (((ci.getOperation().getID() == e_call) && (ci.getOperation().isRead(gs)) &&
-             (ci.getOperand(0).format(ci.getArch()) == "16")) ||
-            (ci.getOperation().getID() == e_syscall) ||
-            (ci.getOperation().getID() == e_int) ||
-            (ci.getOperation().getID() == power_op_sc));
-}
-
-bool
-IA_IAPI::isInterrupt() const
-{
-    Instruction ci = curInsn();
-    return ((ci.getOperation().getID() == e_int) ||
-            (ci.getOperation().getID() == e_int3));
+    return (Dyninst::InstructionAPI::isSoftwareInterrupt(curInsn()) || Dyninst::InstructionAPI::isSystemCall(curInsn()));
 }
 
 bool
@@ -817,9 +783,7 @@ IA_IAPI::getNewEdges(std::vector<std::pair<Address, EdgeTypeEnum>>& outEdges,
     {
         parseSysEnter(outEdges);
         return;
-    }
-    else if(DEBUGGABLE() && isSyscall())
-    {
+    } else if (DEBUGGABLE() && Dyninst::InstructionAPI::isSystemCall(curInsn())) {
         parseSyscall(outEdges);
         return;
     }

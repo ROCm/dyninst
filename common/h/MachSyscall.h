@@ -4,8 +4,9 @@
 #    include <string>
 #    include "boost/shared_ptr.hpp"
 
-#    include "dyn_regs.h"
-#    include "dyntypes.h"
+#include "Architecture.h"
+#include "registers/MachRegister.h"
+#include "dyntypes.h"
 
 namespace Dyninst
 {

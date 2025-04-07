@@ -36,9 +36,11 @@
 #    include "Symbol.h"
 #    include "Function.h"
 
-#    include <deque>
-#    include <map>
-#    include <vector>
+#include <string>
+#include <utility>
+#include <deque>
+#include <map>
+#include <vector>
 using namespace std;
 
 namespace Dyninst

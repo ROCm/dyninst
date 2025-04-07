@@ -92,21 +92,20 @@ registerSlot::encoding() const
 {
     // Should write this for all platforms when the encoding is done.
 #if defined(arch_power)
-    switch(type)
-    {
-        case GPR:
-            return registerSpace::GPR(number);
-            break;
-        case FPR:
-            return registerSpace::FPR(number);
-            break;
-        case SPR:
-            return registerSpace::SPR(number);
-            break;
-        default:
-            assert(0);
-            return REG_NULL;
-            break;
+    switch (type) {
+    case GPR:
+        return registerSpace::GPR(number);
+        break;
+    case FPR:
+        return registerSpace::FPR(number);
+        break;
+    case SPR:
+        return registerSpace::SPR(number);
+        break;
+    default:
+        assert(0);
+        return Null_Register;
+        break;
     }
 #elif defined(arch_x86) || defined(arch_x86_64)
     // Should do a mapping here from entire register space to "expected" encodings.
@@ -122,7 +121,7 @@ registerSlot::encoding() const
             break;
         default:
             assert(0);
-            return REG_NULL;
+            return Null_Register;
             break;
     }
 #else
@@ -492,8 +491,8 @@ registerSpace::getScratchRegister(codeGen& gen, std::vector<Register>& excluded,
     if(toUse == NULL)
     {
         // Crap.
-        // debugPrint();
-        return REG_NULL;
+      // debugPrint();
+        return Null_Register;
     }
 
     toUse->alloc_num = num_allocs;
@@ -509,21 +508,18 @@ registerSpace::getScratchRegister(codeGen& gen, std::vector<Register>& excluded,
 Register
 registerSpace::allocateRegister(codeGen& gen, bool noCost, bool realReg)
 {
-    regalloc_printf("Allocating and retaining register...\n");
-    Register reg = getScratchRegister(gen, noCost, realReg);
-    regalloc_printf("retaining register %u\n", reg);
-    if(reg == REG_NULL)
-        return REG_NULL;
-    if(realReg)
-    {
-        physicalRegs(reg)->refCount = 1;
-    }
-    else
-    {
-        registers_[reg]->refCount = 1;
-    }
-    regalloc_printf("Allocated register %u\n", reg);
-    return reg;
+  regalloc_printf("Allocating and retaining register...\n");
+  Register reg = getScratchRegister(gen, noCost, realReg);
+  regalloc_printf("retaining register %u\n", reg);
+  if (reg == Null_Register) return Null_Register;
+  if (realReg) {
+    physicalRegs(reg)->refCount = 1;
+  }
+  else {
+    registers_[reg]->refCount = 1;
+  }
+  regalloc_printf("Allocated register %u\n", reg);
+  return reg;
 }
 
 bool
@@ -921,8 +917,7 @@ registerSpace::findRegister(Register source)
 {
     // Oh, oops... we're handed a register number... and we can't tell if it's
     // GPR, FPR, or SPR...
-    if(source == REG_NULL)
-        return NULL;
+    if (source == Null_Register) return NULL;
 
     auto iter = registers_.find(source);
     if(iter == registers_.end())
@@ -1142,12 +1137,10 @@ registerSpace::getAllRegisterNames(std::vector<std::string>& ret)
     }
 }
 
-Register
-registerSpace::getRegByName(const std::string name)
-{
-    map<std::string, Register>::iterator cur = registersByName.find(name);
-    if(cur == registersByName.end())
-        return REG_NULL;
+Register registerSpace::getRegByName(const std::string name) {
+    map<std::string,Register>::iterator cur = registersByName.find(name);
+    if (cur == registersByName.end())
+        return Null_Register;
     return (*cur).second;
 }
 

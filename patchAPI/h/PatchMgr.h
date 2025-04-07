@@ -32,6 +32,10 @@
 #ifndef PATCHAPI_H_PATCHMGR_H_
 #define PATCHAPI_H_PATCHMGR_H_
 
+
+
+#include <utility>
+#include <vector>
 #include "PatchCommon.h"
 #include "Point.h"
 #include "Instrumenter.h"

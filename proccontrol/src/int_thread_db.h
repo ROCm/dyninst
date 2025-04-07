@@ -56,11 +56,13 @@ extern "C"
 #        include "proc_service_wrapper.h"
 }
 
-#        include <map>
-#        include <set>
-#        include <vector>
-#        include <string>
-#        include <deque>
+#include <stddef.h>
+#include <utility>
+#include <map>
+#include <set>
+#include <vector>
+#include <string>
+#include <deque>
 
 using namespace Dyninst;
 using namespace ProcControlAPI;

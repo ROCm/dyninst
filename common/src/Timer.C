@@ -161,11 +161,18 @@ timer::is_running() const
     return (activation_count_ > 0);
 }
 
+
+
 /************************************************************************
  * architecture/operating system specific timer functions.
- ************************************************************************/
+************************************************************************/
+
+
+
 
 #undef HAVE_GET_CURRENT_DEFINITION
+
+
 
 #if defined(os_windows)
 #    if !defined(HAVE_GET_CURRENT_DEFINITION)
@@ -207,8 +214,11 @@ timer::get_current(double& u, double& s, double& w)
     }
 }
 
-#    endif /* !defined(HAVE_GET_CURRENT_DEFINITION) */
-#endif     /* defined(os_windows) */
+#endif /* !defined(HAVE_GET_CURRENT_DEFINITION) */
+#endif /* defined(os_windows) */
+
+
+
 
 #if !defined(HAVE_GET_CURRENT_DEFINITION)
 #    define HAVE_GET_CURRENT_DEFINITION

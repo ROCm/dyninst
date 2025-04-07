@@ -205,8 +205,7 @@ codeRangeTree::deleteFixup(entry* x)
 }
 
 // fails if the key value is already in the tree (happens for shared code)
-codeRangeTree::entry*
-codeRangeTree::treeInsert(Address key, codeRange* value)
+codeRangeTree::entry *codeRangeTree::treeInsert(Dyninst::Address key, codeRange *value)
 {
     entry* y = NULL;
     entry* x = setData;
@@ -263,24 +262,20 @@ codeRangeTree::treeSuccessor(entry* x) const
     return y;
 }
 
-codeRangeTree::entry*
-codeRangeTree::find_internal(Address element) const
-{
-    entry* x = setData;
-    while(x != nil)
-    {
-        if(element < x->key)
-        {
-            x = x->left;
-        }
-        else if(element > x->key)
-        {
-            x = x->right;
-        }
-        else
-            return x;
-    }
-    return NULL;
+
+codeRangeTree::entry *codeRangeTree::find_internal(Dyninst::Address element) const{
+	entry* x = setData;
+	while(x != nil){
+            if (element < x->key) {
+                x = x->left;
+            }
+            else if (element > x->key) {
+                x = x->right;
+            }
+            else
+                return x;
+	}	
+	return NULL;
 }
 
 void
@@ -322,52 +317,58 @@ codeRangeTree::insert(codeRange* value)
         // We're done.
         return;
     }
-    x->color = TREE_RED;
-    while((x != setData) && (x->parent->color == TREE_RED))
-    {
-        if(x->parent == x->parent->parent->left)
-        {
-            entry* y = x->parent->parent->right;
-            if(y->color == TREE_RED)
-            {
-                x->parent->color         = TREE_BLACK;
-                y->color                 = TREE_BLACK;
-                x->parent->parent->color = TREE_RED;
-                x                        = x->parent->parent;
-            }
-            else
-            {
-                if(x == x->parent->right)
-                {
-                    x = x->parent;
-                    leftRotate(x);
-                }
-                x->parent->color         = TREE_BLACK;
-                x->parent->parent->color = TREE_RED;
-                rightRotate(x->parent->parent);
-            }
-        }
-        else
-        {
-            entry* y = x->parent->parent->left;
-            if(y->color == TREE_RED)
-            {
-                x->parent->color         = TREE_BLACK;
-                y->color                 = TREE_BLACK;
-                x->parent->parent->color = TREE_RED;
-                x                        = x->parent->parent;
-            }
-            else
-            {
-                if(x == x->parent->left)
-                {
-                    x = x->parent;
-                    rightRotate(x);
-                }
-                x->parent->color         = TREE_BLACK;
-                x->parent->parent->color = TREE_RED;
-                leftRotate(x->parent->parent);
-            }
+	x->color = TREE_RED;
+	while((x != setData) && (x->parent->color == TREE_RED)){
+		if(x->parent == x->parent->parent->left){
+			entry* y = x->parent->parent->right;
+			if(y->color == TREE_RED){
+				x->parent->color = TREE_BLACK;
+				y->color = TREE_BLACK;
+				x->parent->parent->color = TREE_RED;
+				x = x->parent->parent;
+			}
+			else{
+				if(x == x->parent->right){
+					x = x->parent;
+					leftRotate(x);
+				}
+				x->parent->color = TREE_BLACK;
+				x->parent->parent->color = TREE_RED;
+				rightRotate(x->parent->parent);
+			}
+		}
+		else{
+			entry* y = x->parent->parent->left;
+			if(y->color == TREE_RED){
+				x->parent->color = TREE_BLACK;
+				y->color = TREE_BLACK;
+				x->parent->parent->color = TREE_RED;
+				x = x->parent->parent;
+			}
+			else{
+				if(x == x->parent->left){
+					x = x->parent;
+					rightRotate(x);
+				}
+				x->parent->color = TREE_BLACK;
+				x->parent->parent->color = TREE_RED;
+				leftRotate(x->parent->parent);
+			}
+		}
+	}
+	setData->color = TREE_BLACK;
+}
+
+ void codeRangeTree::remove(Dyninst::Address key){
+	entry* z = find_internal(key);
+    if(!z) { return; }
+    if(z->key != key) { return; }
+
+	entry* y=((z->left == nil)||(z->right == nil)) ? z : treeSuccessor(z);
+	entry* x=(y->left != nil) ? y->left : y->right;
+	x->parent = y->parent;
+	if(!y->parent) {
+		setData = x;
         }
     }
     setData->color = TREE_BLACK;
@@ -411,21 +412,7 @@ codeRangeTree::remove(Address key)
     delete y;
 }
 
-void
-codeRangeTree::destroy(entry* node)
-{
-    if(!node || (node == nil))
-        return;
-    if(node->left != nil)
-        destroy(node->left);
-    if(node->right != nil)
-        destroy(node->right);
-    delete node;
-}
-
-bool
-codeRangeTree::find(Address key, codeRange*& value) const
-{
+bool codeRangeTree::find(Dyninst::Address key, codeRange *& value) const{
     value = NULL;
     if(!precessor(key, value))
         return false;
@@ -465,13 +452,10 @@ codeRangeTree::find(Address key, codeRange*& value) const
 #endif
 }
 
-bool
-codeRangeTree::precessor(Address key, codeRange*& value) const
-{
-    entry* x    = setData;
-    entry* last = nil;
-    while(x != nil)
-    {
+bool codeRangeTree::precessor(Dyninst::Address key, codeRange * &value) const{
+    entry *x = setData;
+    entry *last = nil;
+    while (x != nil) {
         assert(x != NULL);
         if(x->key == key)
         {
@@ -505,15 +489,11 @@ codeRangeTree::precessor(Address key, codeRange*& value) const
     return false;
 }
 
-bool
-codeRangeTree::successor(Address key, codeRange*& value) const
-{
-    entry* x    = setData;
-    entry* last = nil;
-    while(x != nil)
-    {
-        if(x->key == key)
-        {
+bool codeRangeTree::successor(Dyninst::Address key, codeRange * &value) const{
+    entry *x = setData;
+    entry *last = nil;
+    while (x != nil) {
+        if (x->key == key) {
             value = x->value;
             return true;
         }
@@ -574,18 +554,14 @@ codeRangeTree::clear()
     setSize = 0;
 }
 
-#define PRINT_COMMA                                                                      \
-    if(print_comma)                                                                      \
-        fprintf(stderr, ", ");                                                           \
-    print_comma = true
-void codeRange::print_range(Address)
-{
-    bool                   print_comma = false;
-    image*                 img_ptr     = is_image();
-    mapped_object*         mapped_ptr  = is_mapped_object();
-    func_instance*         func_ptr    = is_function();
-    baseTramp*             base_ptr    = NULL;
-    inferiorRPCinProgress* rpc_ptr     = is_inferior_rpc();
+#define PRINT_COMMA if (print_comma) fprintf(stderr, ", "); print_comma = true
+void codeRange::print_range(Dyninst::Address) {
+   bool print_comma = false;
+   image *img_ptr = is_image();
+   mapped_object *mapped_ptr = is_mapped_object();
+	func_instance *func_ptr = is_function();
+   baseTramp *base_ptr = NULL;
+   inferiorRPCinProgress *rpc_ptr = is_inferior_rpc();
 
     /**
      * The is_* functions above won't give us mulitple layers of objects

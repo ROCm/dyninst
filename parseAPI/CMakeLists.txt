@@ -1,6 +1,6 @@
-# CMake configuration for parseAPI directory
+include_guard(GLOBAL)
 
-include_directories(${PROJECT_SOURCE_DIR}/parseAPI/src)
+include(DyninstLibrary)
 
 set(SRC_LIST
     src/ParserDetails.C
@@ -30,7 +30,6 @@ set(SRC_LIST
     src/BoundFactCalculator.C
     src/BoundFactData.C
     src/ThunkData.C
-    ${PROJECT_SOURCE_DIR}/dataflowAPI/src/ABI.C
     src/dominator.C
     src/LoopAnalyzer.C
     src/Loop.C
@@ -38,7 +37,7 @@ set(SRC_LIST
     src/IdiomModelDesc.C
     src/ProbabilisticParser.C)
 
-set(ROSE_SRC
+set(DATAFLOW_SRC
     ${PROJECT_SOURCE_DIR}/dataflowAPI/src/ABI.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/src/Absloc.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/src/AbslocInterface.C
@@ -55,8 +54,9 @@ set(ROSE_SRC
     ${PROJECT_SOURCE_DIR}/dataflowAPI/src/SymbolicExpansion.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/src/SymEval.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/src/SymEvalPolicy.C
-    ${PROJECT_SOURCE_DIR}/dataflowAPI/src/templates.C
-    ${PROJECT_SOURCE_DIR}/dataflowAPI/src/Visitors.C
+    ${PROJECT_SOURCE_DIR}/dataflowAPI/src/Visitors.C)
+
+set(ROSE_SRC
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/ExtentMap.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/rangemap.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/util/Assert.C
@@ -72,7 +72,7 @@ set(ROSE_SRC
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/util/LinearCongruentialGenerator.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/BaseSemantics2.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/DispatcherARM64.C
-    ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/DispatcherAmdgpuVega.C
+    ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/DispatcherAMDGPU.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/DispatcherPowerpc.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/RegisterParts.C
     ${PROJECT_SOURCE_DIR}/dataflowAPI/rose/semantics/Registers.C
@@ -82,35 +82,56 @@ set(ROSE_SRC
 
 # FIXME: Rose needs a bunch of warning cleanup
 set_source_files_properties(${ROSE_SRC} PROPERTIES LANGUAGE CXX COMPILE_FLAGS -w)
-set(SRC_LIST ${SRC_LIST} ${ROSE_SRC})
+set(SRC_LIST ${SRC_LIST} ${DATAFLOW_SRC} ${ROSE_SRC})
 
 if(LIGHTWEIGHT_SYMTAB)
-    list(APPEND SRC_LIST src/SymLiteCodeSource.C)
+  list(APPEND SRC_LIST src/SymLiteCodeSource.C)
 else()
-    list(APPEND SRC_LIST src/SymtabCodeSource.C)
+  list(APPEND SRC_LIST src/SymtabCodeSource.C)
 endif()
+
+file(GLOB parseapi_headers "h/*.h")
+file(GLOB dataflowapi_headers "${PROJECT_SOURCE_DIR}/dataflowAPI/h/*.h")
 
 if(ENABLE_PARSE_API_GRAPHS)
-    list(APPEND SRC_LIST src/GraphAdapter.C)
+  list(APPEND SRC_LIST src/GraphAdapter.C)
 endif()
 
-set(_PRIVATE_COMPILE_DEFS)
-
-if(WIN32)
-    list(APPEND _PRIVATE_COMPILE_DEFS ROSE_UTIL_EXPORTS NOMINMAX)
-endif()
-
-file(GLOB HDR_LIST "${CMAKE_CURRENT_LIST_DIR}/h/*.h"
-     "${PROJECT_SOURCE_DIR}/dataflowAPI/h/*.h")
-
+# cmake-format: off
 dyninst_library(
-    parseAPI
-    OPENMP
-    HEADERS ${HDR_LIST}
-    SOURCES ${SRC_LIST} ${ROSE_SRC}
-    COMPILE_DEFINITIONS PRIVATE PARSER_LIB DATAFLOW_LIB ${_PRIVATE_COMPILE_DEFS}
-    INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/common/h>
-    LINK_LIBRARIES Dyninst::headers Dyninst::common Dyninst::instructionAPI
-                   Dyninst::${SYMREADER} PRIVATE Dyninst::dynWinShlwapi)
+  parseAPI
+  PRIVATE_HEADER_FILES ${parseapi_headers} ${dataflowapi_headers} 
+  SOURCE_FILES ${SRC_LIST} ${ROSE_SRC}
+  DEFINES PARSER_LIB DATAFLOW_LIB
+  DYNINST_DEPS common instructionAPI ${SYMREADER}
+  PUBLIC_DEPS Dyninst::Boost_headers
+  PRIVATE_DEPS OpenMP::OpenMP_CXX
+)
+# cmake-format: on
 
-dyninst_message(STATUS "Architecture is: ${CMAKE_LIBRARY_ARCHITECTURE}")
+foreach(t ${parseAPI_TARGETS})
+  # There is both a common/h/util.h and a parseAPI/h/util.h, so put
+  # the common/h include path first
+  target_include_directories(${t} BEFORE
+                             PRIVATE "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/common/h>")
+
+  target_include_directories(
+    ${t} PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/dataflowAPI/h>")
+
+  set_property(TARGET ${t} PROPERTY PUBLIC_HEADER ${parseapi_headers}
+                                    ${dataflowapi_headers})
+
+  if(DYNINST_OS_Windows)
+    target_compile_definitions(${t} PRIVATE "ROSE_UTIL_EXPORTS" "NOMINMAX")
+    target_link_libraries(parseAPI PRIVATE shlwapi)
+  endif()
+
+  install(TARGETS ${t} PUBLIC_HEADER DESTINATION ${DYNINST_INSTALL_INCLUDEDIR})
+
+  # When using symlite, we still need the symtabAPI headers
+  if(LIGHTWEIGHT_SYMTAB)
+    target_include_directories(
+      ${t} PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/symtabAPI/h>")
+  endif()
+
+endforeach()

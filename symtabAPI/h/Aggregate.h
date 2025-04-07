@@ -39,11 +39,15 @@
 #if !defined(_Aggregate_h_)
 #    define _Aggregate_h_
 
-#    include <iostream>
-#    include "Annotatable.h"
-#    include <boost/iterator/transform_iterator.hpp>
-#    include <functional>
-#    include "concurrent.h"
+#include <string>
+#include <vector>
+#include <iostream>
+#include "Annotatable.h"
+#include <boost/iterator/transform_iterator.hpp>
+#include <functional>
+
+namespace Dyninst{
+namespace SymtabAPI{
 
 namespace Dyninst
 {
@@ -77,11 +81,22 @@ public:
     Module*          getModule() const { return module_; }
     Region*          getRegion() const;
 
-    /***** Symbol Collection Management *****/
-    bool         addSymbol(Symbol* sym);
-    virtual bool removeSymbol(Symbol* sym) = 0;
-    bool         getSymbols(std::vector<Symbol*>& syms) const;
-    Symbol*      getFirstSymbol() const;
+      /***** Symbol naming *****/
+      //std::vector<std::string> getAllMangledNames();
+      //std::vector<std::string> getAllPrettyNames();
+      //std::vector<std::string> getAllTypedNames();
+      using name_iter = boost::transform_iterator<decltype(std::mem_fn(&Symbol::getPrettyName)), std::vector<Symbol*>::const_iterator>;
+      name_iter mangled_names_begin() const;
+      name_iter mangled_names_end() const;
+      name_iter pretty_names_begin() const;
+      name_iter pretty_names_end() const;
+      name_iter typed_names_begin() const;
+      name_iter typed_names_end() const;
+      
+     /***** Aggregate updating *****/
+      virtual bool addMangledName(std::string name, bool isPrimary, bool isDebug=false);
+      virtual bool addPrettyName(std::string name, bool isPrimary, bool isDebug=false);
+      virtual bool addTypedName(std::string name, bool isPrimary, bool isDebug=false);
 
     /***** Symbol naming *****/
     // std::vector<std::string> getAllMangledNames();
@@ -105,7 +120,9 @@ public:
     bool setSize(unsigned size);
     bool setOffset(unsigned offset);
 
-    bool operator==(const Aggregate& a);
+      // Offset comes from a symbol
+      // Module we keep here so we can have the correct "primary"
+      Module *module_;
 
     friend std::ostream& operator<<(std::ostream& os, Aggregate const& a)
     {

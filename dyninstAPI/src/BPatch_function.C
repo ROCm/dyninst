@@ -59,7 +59,6 @@
 #    include "StackMod/StackModChecker.h"
 #endif
 
-#include "common/src/Types.h"
 
 #include "Point.h"
 #include "PatchMgr.h"
@@ -1013,39 +1012,35 @@ BPatch_function::getFunctionRef()
     {
         typestr += (*params_)[i]->getName();
         //  no comma after last parameter
-        if(i <= (params_->size() - 1))
-        {
-            typestr += ",";
-        }
-    }
-    if(params_->size() == 0)
-    {
-        typestr += "void";
-    }
-    typestr += ")";
-
-    BPatch_type* type = addSpace->image->findType(typestr.c_str());
-    // Fallback to general pointer type.
-    if(!type)
-    {
-        type = addSpace->image->findType("void *");
-    }
-    if(!type)
-    {
-        fprintf(stderr, "%s[%d]:  cannot find type '%s'\n", FILE__, __LINE__,
-                typestr.c_str());
-    }
-    assert(type);
-
-    //  In truth it would make more sense for this to be a BPatch_constExpr,
-    //  But since we are adding this as part of the DPCL compatibility process
-    //  we use the IBM API, to eliminate one API difference.
-
-    AstNodePtr ast(AstNode::operandNode(AstNode::Constant, (void*) remoteAddress));
-
-    // the variableExpr owns the ast now.
-    return new BPatch_variableExpr(fname.c_str(), addSpace, lladdSpace, ast, type,
-                                   (void*) remoteAddress);
+     if (i <= (params_->size() - 1)) {
+        typestr +=  ",";
+     }
+  }
+  if(params_->size()==0) {
+      typestr += "void";
+  }
+  typestr += ")";
+  
+  BPatch_type *type = addSpace->image->findType(typestr.c_str());
+  // Fallback to general pointer type.
+  if (!type) {
+    type = addSpace->image->findType("void *");
+  }
+  if (!type) {
+     fprintf(stderr, "%s[%d]:  cannot find type '%s'\n", FILE__, __LINE__, typestr.c_str());
+  }
+  assert(type);
+  
+  //  In truth it would make more sense for this to be a BPatch_constExpr,
+  //  But since we are adding this as part of the DPCL compatibility process
+  //  we use the IBM API, to eliminate one API difference.
+  
+  AstNodePtr ast(AstNode::operandNode(AstNode::operandType::Constant, (void *) remoteAddress));
+  
+  // the variableExpr owns the ast now.
+  return new BPatch_variableExpr(fname.c_str(), addSpace, lladdSpace, ast, 
+                                 type, (void *) remoteAddress);
+  
 
 } /* end getFunctionRef() */
 

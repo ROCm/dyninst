@@ -2,10 +2,14 @@
 // Created by ssunny on 7/1/16.
 //
 
-#include <Register.h>
 #include "SymEvalSemantics.h"
 
+#include "Register.h"
+#include "BaseSemantics2.h"
+#include "dyn_regs.h"
+
 using namespace rose::BinaryAnalysis::InstructionSemantics2;
+using RoseException = BaseSemantics::Exception;
 
 ///////////////////////////////////////////////////////
 //                                           StateAST
@@ -127,64 +131,51 @@ SymEvalSemantics::RegisterStateAST::convert(const RegisterDescriptor& reg)
                          "specific, should not call this base class method.");
 }
 
-Dyninst::Absloc
-SymEvalSemantics::RegisterStateAST_AMDGPU_VEGA::convert(const RegisterDescriptor& reg)
-{
+Dyninst::Absloc SymEvalSemantics::RegisterStateAST_amdgpu_gfx908::convert(const RegisterDescriptor &reg) {
     Dyninst::MachRegister mreg;
 
     unsigned int major  = reg.get_major();
     unsigned int minor  = reg.get_minor();
     unsigned int size   = reg.get_nbits();
     unsigned int offset = reg.get_offset();
-    // std::cout << "in func " << __func__ << " major = " << major  << " minor = " <<
-    // minor << std::endl;
+    //std::cout << "in func " << __func__ << " major = " << major  << " minor = " << minor << std::endl;
     bool found = false;
-    switch(major)
-    {
-        case amdgpu_regclass_sgpr_vec2: {
-            Dyninst::MachRegister base = Dyninst::amdgpu_vega::sgpr_vec2_0;
+    switch (major) {
+    case amdgpu_regclass_sgpr : {
+        Dyninst::MachRegister base = Dyninst::amdgpu_gfx908::s0;
+        //std::cout << "dealing with sgpr pair in , offset = " << minor << std::endl;
+        mreg  = Dyninst::MachRegister(base.val() + minor) ;
 
-            // std::cout << "dealing with sgpr pair in , offset = " << minor << std::endl;
-            mreg  = Dyninst::MachRegister(base.val() + minor);
-            found = true;
-            break;
-        }
-        case amdgpu_regclass_sgpr: {
-            Dyninst::MachRegister base = Dyninst::amdgpu_vega::sgpr0;
-            // std::cout << "dealing with sgpr pair in , offset = " << minor << std::endl;
-            mreg = Dyninst::MachRegister(base.val() + minor);
+        found = true;
+        break;
+    }
+    case amdgpu_regclass_pc : {
+        mreg = Dyninst::amdgpu_gfx908::pc_all;
 
-            found = true;
-            break;
-        }
-        case amdgpu_regclass_pc: {
-            mreg = Dyninst::amdgpu_vega::pc;
-
-            found = true;
-            break;
-        }
-        case amdgpu_regclass_hwr: {
-            switch(minor)
-            {
-                case amdgpu_status: {
-                    switch(offset)
-                    {
-                        case 0:
-                            mreg  = Dyninst::amdgpu_vega::scc;
-                            found = true;
-                            break;
-                        default:
-                            break;
-                    }
-                    break;
-                }
-                default:
-                    break;
+        found = true;
+        break;
+    }
+    case amdgpu_regclass_hwr : {
+        switch(minor){
+        case amdgpu_status:{
+            switch (offset) {
+            case 0:
+                mreg = Dyninst::amdgpu_gfx908::src_scc;
+                found = true;
+                break;
+            default:
+                break;
             }
             break;
         }
         default:
-            ASSERT_always_forbid("Unexpected register major type.");
+            break;
+
+        }
+        break;
+    }
+    default:
+        ASSERT_always_forbid("Unexpected register major type.");
     }
     if(found)
         return Dyninst::Absloc(mreg);
@@ -192,9 +183,112 @@ SymEvalSemantics::RegisterStateAST_AMDGPU_VEGA::convert(const RegisterDescriptor
     ASSERT_always_forbid("Unexpected register major type.");
 }
 
-Dyninst::Absloc
-SymEvalSemantics::RegisterStateASTARM64::convert(const RegisterDescriptor& reg)
-{
+Dyninst::Absloc SymEvalSemantics::RegisterStateAST_amdgpu_gfx90a::convert(const RegisterDescriptor &reg) {
+    Dyninst::MachRegister mreg;
+
+    unsigned int major = reg.get_major();
+    unsigned int minor = reg.get_minor();
+    unsigned int size = reg.get_nbits();
+    unsigned int offset = reg.get_offset();
+    //std::cout << "in func " << __func__ << " major = " << major  << " minor = " << minor << std::endl;
+    bool found = false;
+    switch (major) {
+    case amdgpu_regclass_sgpr : {
+        Dyninst::MachRegister base = Dyninst::amdgpu_gfx90a::s0;
+        //std::cout << "dealing with sgpr pair in , offset = " << minor << std::endl;
+        mreg  = Dyninst::MachRegister(base.val() + minor) ;
+
+        found = true;
+        break;
+    }
+    case amdgpu_regclass_pc : {
+        mreg = Dyninst::amdgpu_gfx90a::pc_all;
+
+        found = true;
+        break;
+    }
+    case amdgpu_regclass_hwr : {
+        switch(minor){
+        case amdgpu_status:{
+            switch (offset) {
+            case 0:
+                mreg = Dyninst::amdgpu_gfx90a::src_scc;
+                found = true;
+                break;
+            default:
+                break;
+            }
+            break;
+        }
+        default:
+            break;
+
+        }
+        break;
+    }
+    default:
+        ASSERT_always_forbid("Unexpected register major type.");
+    }
+    if(found)
+        return Dyninst::Absloc(mreg);
+
+    ASSERT_always_forbid("Unexpected register major type.");
+}
+
+Dyninst::Absloc SymEvalSemantics::RegisterStateAST_amdgpu_gfx940::convert(const RegisterDescriptor &reg) {
+    Dyninst::MachRegister mreg;
+
+    unsigned int major = reg.get_major();
+    unsigned int minor = reg.get_minor();
+    unsigned int size = reg.get_nbits();
+    unsigned int offset = reg.get_offset();
+    //std::cout << "in func " << __func__ << " major = " << major  << " minor = " << minor << std::endl;
+    bool found = false;
+    switch (major) {
+    case amdgpu_regclass_sgpr : {
+        Dyninst::MachRegister base = Dyninst::amdgpu_gfx940::s0;
+        //std::cout << "dealing with sgpr pair in , offset = " << minor << std::endl;
+        mreg  = Dyninst::MachRegister(base.val() + minor) ;
+
+        found = true;
+        break;
+    }
+    case amdgpu_regclass_pc : {
+        mreg = Dyninst::amdgpu_gfx940::pc_all;
+
+        found = true;
+        break;
+    }
+    case amdgpu_regclass_hwr : {
+        switch(minor){
+        case amdgpu_status:{
+            switch (offset) {
+            case 0:
+                mreg = Dyninst::amdgpu_gfx940::src_scc;
+                found = true;
+                break;
+            default:
+                break;
+            }
+            break;
+        }
+        default:
+            break;
+
+        }
+        break;
+    }
+    default:
+        ASSERT_always_forbid("Unexpected register major type.");
+    }
+    if(found)
+        return Dyninst::Absloc(mreg);
+
+    ASSERT_always_forbid("Unexpected register major type.");
+}
+
+
+Dyninst::Absloc SymEvalSemantics::RegisterStateASTARM64::convert(const RegisterDescriptor &reg) {
     Dyninst::MachRegister mreg;
 
     unsigned int major = reg.get_major();
@@ -247,7 +341,7 @@ SymEvalSemantics::RegisterStateASTARM64::convert(const RegisterDescriptor& reg)
                     base = Dyninst::aarch64::q0;
                     break;
                 default:
-                    assert(!"invalid size of RegisterDescriptor!");
+                    throw RoseException("invalid size of RegisterDescriptor!", nullptr);
                     break;
             }
             mreg = Dyninst::MachRegister(base.val() + (minor - armv8_simdfpr_v0));
@@ -308,79 +402,65 @@ SymEvalSemantics::RegisterStateASTPPC32::convert(const RegisterDescriptor& reg)
             // registers
             mreg = Dyninst::MachRegister(base.val() + minor);
         }
-        break;
-        case powerpc_regclass_fpr: {
-            Dyninst::MachRegister base  = Dyninst::ppc32::fpr0;
-            unsigned int          minor = reg.get_minor();
-            mreg                        = Dyninst::MachRegister(base.val() + minor);
-        }
-        break;
-
-        case powerpc_regclass_cr: {
-            unsigned int offset = reg.get_offset();
-            if(size == 32)
-            {
-                mreg = Dyninst::ppc32::cr;
-            }
-            if(size == 4)
-            {
-                Dyninst::MachRegister base = Dyninst::ppc32::cr0;
-                mreg = Dyninst::MachRegister(base.val() + offset / 4);
-            }
-            else if(size == 1)
-            {
-                Dyninst::MachRegister base = Dyninst::ppc32::cr0l;
-                mreg                       = Dyninst::MachRegister(base.val() + offset);
-            }
-            else
-            {
-                assert(!"bad cr register size");
-            }
-        }
-        break;
-
-        case powerpc_regclass_fpscr:
-            assert(!"not implemented register class fpscr");
             break;
+	    
+	case powerpc_regclass_cr: {
+	    unsigned int offset = reg.get_offset();
+	    if (size == 32) {
+	        mreg = Dyninst::ppc32::cr;
+	    }if (size == 4) {
+	        Dyninst::MachRegister base = Dyninst::ppc32::cr0;
+		mreg = Dyninst::MachRegister(base.val() + offset / 4);
+	    } else if (size == 1) {
+	        Dyninst::MachRegister base = Dyninst::ppc32::cr0l;
+		mreg = Dyninst::MachRegister(base.val() + offset);
+	    } else {
+	        throw RoseException("bad cr register size", nullptr);
+	    }
+	}
+	    break;
+	
+	case powerpc_regclass_fpscr:
+	    throw RoseException("not implemented register class fpscr", nullptr);
+	    break;
 
-        case powerpc_regclass_spr: {
-            unsigned int minor = reg.get_minor();
-            switch(minor)
-            {
-                case powerpc_spr_xer:
-                    mreg = Dyninst::ppc32::xer;
-                    break;
-                case powerpc_spr_lr:
-                    mreg = Dyninst::ppc32::lr;
-                    break;
-                case powerpc_spr_ctr:
-                    mreg = Dyninst::ppc32::ctr;
-                    break;
-                case powerpc_spr_dsisr:
-                    mreg = Dyninst::ppc32::dsisr;
-                    break;
-                case powerpc_spr_dar:
-                    mreg = Dyninst::ppc32::dar;
-                    break;
-                case powerpc_spr_dec:
-                    mreg = Dyninst::ppc32::dec;
-                    break;
-                default:
-                    assert(!"not implemented special register");
-            }
-        }
-        break;
-        case powerpc_regclass_tbr:
-            assert(!"not implemented regclass tbr");
-            break;
-
-        case powerpc_regclass_msr:
-            mreg = Dyninst::ppc32::msr;
-            break;
-
-        case powerpc_regclass_sr:
-            assert(!"not implemented regclass sr");
-            break;
+	case powerpc_regclass_spr: {
+	    unsigned int minor = reg.get_minor();
+	    switch (minor) {
+	        case powerpc_spr_xer: 
+		    mreg = Dyninst::ppc32::xer;
+		    break;
+		case powerpc_spr_lr:
+		    mreg = Dyninst::ppc32::lr;
+		    break;
+		case powerpc_spr_ctr:
+		    mreg = Dyninst::ppc32::ctr;
+		    break;
+		case powerpc_spr_dsisr:
+		    mreg = Dyninst::ppc32::dsisr;
+		    break;
+		case powerpc_spr_dar:
+		    mreg = Dyninst::ppc32::dar;
+		    break;
+		case powerpc_spr_dec:
+		    mreg = Dyninst::ppc32::dec;
+		    break;
+		default:
+		    throw RoseException("not implemented special register", nullptr);
+	    }
+	}
+	    break;
+	case powerpc_regclass_tbr:
+	    throw RoseException("not implemented regclass tbr", nullptr);
+	    break;
+	
+	case powerpc_regclass_msr:
+	    mreg = Dyninst::ppc32::msr;
+	    break;
+	    
+	case powerpc_regclass_sr:
+	    throw RoseException("not implemented regclass sr", nullptr);
+	    break;
 
         case powerpc_regclass_iar:
             mreg = Dyninst::ppc32::pc;
@@ -414,79 +494,65 @@ SymEvalSemantics::RegisterStateASTPPC64::convert(const RegisterDescriptor& reg)
             // registers
             mreg = Dyninst::MachRegister(base.val() + minor);
         }
-        break;
-        case powerpc_regclass_fpr: {
-            Dyninst::MachRegister base  = Dyninst::ppc64::fpr0;
-            unsigned int          minor = reg.get_minor();
-            mreg                        = Dyninst::MachRegister(base.val() + minor);
-        }
-        break;
-
-        case powerpc_regclass_cr: {
-            unsigned int offset = reg.get_offset();
-            if(size == 32)
-            {
-                mreg = Dyninst::ppc64::cr;
-            }
-            else if(size == 4)
-            {
-                Dyninst::MachRegister base = Dyninst::ppc64::cr0;
-                mreg = Dyninst::MachRegister(base.val() + offset / 4);
-            }
-            else if(size == 1)
-            {
-                Dyninst::MachRegister base = Dyninst::ppc64::cr0l;
-                mreg                       = Dyninst::MachRegister(base.val() + offset);
-            }
-            else
-            {
-                assert(!"bad cr register size");
-            }
-        }
-        break;
-
-        case powerpc_regclass_fpscr:
-            assert(!"not implemented register class fpscr");
             break;
+	    
+	case powerpc_regclass_cr: {
+	    unsigned int offset = reg.get_offset();
+	    if (size == 32) {
+	        mreg = Dyninst::ppc64::cr;
+	    } else if (size == 4) {
+	        Dyninst::MachRegister base = Dyninst::ppc64::cr0;
+		mreg = Dyninst::MachRegister(base.val() + offset / 4);
+	    } else if (size == 1) {
+	        Dyninst::MachRegister base = Dyninst::ppc64::cr0l;
+		mreg = Dyninst::MachRegister(base.val() + offset);
+	    } else {
+	        throw RoseException("bad cr register size", nullptr);
+	    }
+	}
+	    break;
+	
+	case powerpc_regclass_fpscr:
+	    throw RoseException("not implemented register class fpscr", nullptr);
+	    break;
 
-        case powerpc_regclass_spr: {
-            unsigned int minor = reg.get_minor();
-            switch(minor)
-            {
-                case powerpc_spr_xer:
-                    mreg = Dyninst::ppc64::xer;
-                    break;
-                case powerpc_spr_lr:
-                    mreg = Dyninst::ppc64::lr;
-                    break;
-                case powerpc_spr_ctr:
-                    mreg = Dyninst::ppc64::ctr;
-                    break;
-                case powerpc_spr_dsisr:
-                    mreg = Dyninst::ppc64::dsisr;
-                    break;
-                case powerpc_spr_dar:
-                    mreg = Dyninst::ppc64::dar;
-                    break;
-                case powerpc_spr_dec:
-                    mreg = Dyninst::ppc64::dec;
-                    break;
-                default:
-                    assert(!"not implemented special register");
-            }
-        }
-        break;
-        case powerpc_regclass_tbr:
-            assert(!"not implemented regclass tbr");
-            break;
-
-        case powerpc_regclass_msr:
-            mreg = Dyninst::ppc64::msr;
-            break;
-
-        case powerpc_regclass_sr:
-            assert(!"not implemented regclass sr");
-            break;
+	case powerpc_regclass_spr: {
+	    unsigned int minor = reg.get_minor();
+	    switch (minor) {
+	        case powerpc_spr_xer: 
+		    mreg = Dyninst::ppc64::xer;
+		    break;
+		case powerpc_spr_lr:
+		    mreg = Dyninst::ppc64::lr;
+		    break;
+		case powerpc_spr_ctr:
+		    mreg = Dyninst::ppc64::ctr;
+		    break;
+		case powerpc_spr_dsisr:
+		    mreg = Dyninst::ppc64::dsisr;
+		    break;
+		case powerpc_spr_dar:
+		    mreg = Dyninst::ppc64::dar;
+		    break;
+		case powerpc_spr_dec:
+		    mreg = Dyninst::ppc64::dec;
+		    break;
+		default:
+		    throw RoseException("not implemented special register", nullptr);
+	    }
+	}
+	    break;
+	case powerpc_regclass_tbr:
+	    throw RoseException("not implemented regclass tbr", nullptr);
+	    break;
+	
+	case powerpc_regclass_msr:
+	    mreg = Dyninst::ppc64::msr;
+	    break;
+	    
+	case powerpc_regclass_sr:
+	    throw RoseException("not implemented regclass sr", nullptr);
+	    break;
 
         case powerpc_regclass_iar:
             mreg = Dyninst::ppc64::pc;

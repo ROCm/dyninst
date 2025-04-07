@@ -42,14 +42,7 @@ int sym_debug_types     = 0;
 int sym_debug_translate = 0;
 int sym_debug_rewrite   = 0;
 
-#if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4996)
-#endif
-
-bool
-init_debug_symtabAPI()
-{
+bool init_debug_symtabAPI() {
     static bool initialized = false;
     if(initialized)
         return true;
@@ -179,7 +172,3 @@ rewrite_printf(const char* format, ...)
 
     return ret;
 }
-
-#if defined(_MSC_VER)
-#    pragma warning(pop)
-#endif

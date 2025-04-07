@@ -1,6 +1,11 @@
 #ifndef Rose_SMTSolver_H
 #define Rose_SMTSolver_H
 
+#include <iosfwd>
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <vector>
 #include "BinarySymbolicExpr.h"
 #include <boost/thread/mutex.hpp>
 
@@ -19,7 +24,7 @@ namespace rose {
         class SMTSolver {
         public:
             struct Exception {
-                Exception(const std::string &mesg) : mesg(mesg) { }
+                Exception(const std::string &mesg_) : mesg(mesg_) { }
 
                 friend std::ostream &operator<<(std::ostream &, const SMTSolver::Exception &);
 
@@ -75,7 +80,7 @@ namespace rose {
             virtual SymbolicExpr::Ptr evidence_for_variable(uint64_t varno) {
                 char buf[64];
                 //FIXME
-                snprintf(buf, sizeof(buf), "v%llu"/*PRIu64*/, varno);
+                snprintf(buf, sizeof(buf), "v%" PRIu64, varno);
                 return evidence_for_name(buf);
             }
 
@@ -141,7 +146,7 @@ namespace rose {
 
             /** Parses evidence of satisfiability.  Some solvers can emit information about what variable bindings satisfy the
              *  expression.  This information is parsed by this function and added to a mapping of variable to value. */
-            virtual void parse_evidence() { };
+            virtual void parse_evidence() { }
 
             /** Additional output obtained by satisfiable(). */
             std::string output_text;

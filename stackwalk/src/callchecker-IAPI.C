@@ -32,6 +32,7 @@
 #include "stackwalk/src/sw.h"
 
 #include "instructionAPI/h/InstructionDecoder.h"
+#include "unaligned_memory_access.h"
 
 using namespace Dyninst;
 using namespace Stackwalker;
@@ -85,13 +86,13 @@ CallChecker::isPrevInstrACall(Address addr, Address& target)
 
         // prevInsn was the last valid instruction found
         // is it (a) aligned and (b) a call?
-        if((aligned == size) && (prevInsn.getOperation().getID() == e_call))
-        {
-            int disp = *((int*) (bufferPtr + (size - prevInsn.size() + 2)));
-            target   = addr + disp;
-            sw_printf(
-                "[%s:%d] - Found call encoded by %d to %lx (addr = %lx, disp = %x)\n",
-                FILE__, __LINE__, buffer[0], target, addr, (unsigned int) disp);
+        if ( (aligned == size) && 
+             (prevInsn.getOperation().getID() == e_call) ) {
+            int disp = Dyninst::read_memory_as<int32_t>(bufferPtr+(size-prevInsn.size() + 2));
+            target = addr + disp;
+            sw_printf("[%s:%d] - Found call encoded by %d to %lx (addr = %lx, disp = %x)\n",
+                    FILE__, __LINE__,
+                    buffer[0], target, addr, (unsigned int)disp);
             return true;
         }
         else

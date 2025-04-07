@@ -117,158 +117,87 @@ PatchFunction::exitBlocks()
     return exit_blocks_;
 }
 
-const PatchFunction::Blockset&
-PatchFunction::callBlocks()
-{
-    // Compute the list if it's empty or if the list of function blocks
-    // has grown
-    if(call_blocks_.empty() && !func_->callEdges().empty())
-    {
-        const ParseAPI::Function::edgelist& callEdges = func_->callEdges();
-        for(ParseAPI::Function::edgelist::iterator iter = callEdges.begin();
-            iter != callEdges.end(); ++iter)
-        {
-            ParseAPI::Block* src   = (*iter)->src();
-            PatchBlock*      block = obj()->getBlock(src);
-            assert(block);
-            call_blocks_.insert(block);
-        }
-    }
-    return call_blocks_;
-}
-
-PatchFunction::~PatchFunction() {}
-
-void
-PatchFunction::removeBlock(PatchBlock* b)
-{
-    if(all_blocks_.empty() && exit_blocks_.empty() && call_blocks_.empty())
-        return;
-
-    // Otherwise pull b from all_blocks_, exit_blocks_, and call_blocks_.
-    all_blocks_.erase(b);
-    exit_blocks_.erase(b);
-    call_blocks_.erase(b);
-
-    // pull all of b's points from blockPoints_
-    destroyBlockPoints(b);
-    cb()->remove_block(this, b);
-}
-
-static bool
-hasSingleIndirectSinkEdge(PatchBlock* b)
-{
-    fprintf(stderr, "hasSingleIndirectSinkEdge(%lx)=", b->start());
-    const ParseAPI::Block::edgelist& trgs = b->block()->targets();
-    if(trgs.size() == 1)
-    {
-        ParseAPI::Edge* edge = *trgs.begin();
-        if(edge->sinkEdge() && edge->type() == ParseAPI::INDIRECT)
-        {
-            fprintf(stderr, "true\n");
-            return true;
-        }
-    }
-    fprintf(stderr, "false\n");
-    return false;
-}
-
-void
-PatchFunction::addBlock(PatchBlock* b)
-{
-    if(all_blocks_.empty() && exit_blocks_.empty() && call_blocks_.empty())
-        return;
-
-    all_blocks_.insert(b);
-
-    if(!call_blocks_.empty())
-    {
-        if(b->containsCall())
-        {
-            call_blocks_.insert(b);
-        }
-        else if(hasSingleIndirectSinkEdge(b))
-        {
-            // don't know what the edge will resolve to, until then the
-            // call_blocks_ vector shouldn't be considered complete
-            call_blocks_.clear();
-        }
-    }
-
-    if(0 < b->numRetEdges() && !exit_blocks_.empty())
-    {
-        exit_blocks_.insert(b);
-    }
-
-    cb()->add_block(this, b);
-}
-
-Point*
-PatchFunction::findPoint(Location loc, Point::Type type, bool create)
-{
-    PointMaker* maker = obj_->addrSpace()->mgr()->pointMaker();
-    PatchMgrPtr mgr   = obj_->addrSpace()->mgr();
-
-    if(loc.func != this)
-    {
-        return NULL;
-    }
-    Point* ret = NULL;
-    if((type & Point::BlockTypes) || (type & Point::InsnTypes))
-    {
-        if(!loc.block)
+   if (loc.func != this) {
+      return NULL;
+   }
+   Point *ret = NULL;
+   if ((type & Point::BlockTypes) || (type & Point::InsnTypes)) {
+      if (!loc.block) return NULL;
+      std::map<PatchBlock *, BlockPoints>::iterator iter = blockPoints_.find(loc.block);
+      if (iter == blockPoints_.end()) {
+         if (!create) return NULL;
+         BlockPoints bp;
+         iter = blockPoints_.insert(blockPoints_.begin(), std::make_pair(loc.block, std::move(bp)));
+      }
+      switch (type) {
+         case Point::BlockEntry:
+            if (!iter->second.entry && create) {
+               iter->second.entry = maker->createPoint(loc, type);
+            }
+            return iter->second.entry;
+            break;
+         case Point::BlockExit:
+            if (!iter->second.exit && create) {
+               iter->second.exit = maker->createPoint(loc, type);
+            }
+            return iter->second.exit;
+            break;
+         case Point::BlockDuring:
+            if (!iter->second.during && create) {
+               iter->second.during = maker->createPoint(loc, type);
+            }
+            return iter->second.during;
+            break;
+         case Point::PreInsn: {
+            if (!loc.addr || !loc.insn.isValid()) {
+               assert(0);
+            }
+            InsnPoints::iterator iter2 = iter->second.preInsn.find(loc.addr);
+            if (iter2 == iter->second.preInsn.end()) {
+               if (!create) return NULL;
+               ret = maker->createPoint(loc, type);
+               iter->second.preInsn[loc.addr] = ret;
+               return ret;
+            }
+            else {
+               return iter2->second;
+            }
+            break;
+         }
+         case Point::PostInsn: {
+            if (!loc.addr || !loc.insn.isValid()) return NULL;
+            InsnPoints::iterator iter2 = iter->second.postInsn.find(loc.addr);
+            if (iter2 == iter->second.postInsn.end()) {
+               if (!create) return NULL;
+               ret = maker->createPoint(loc, type);
+               iter->second.postInsn[loc.addr] = ret;
+               return ret;
+            }
+            else return iter2->second;
+            break;
+         }
+         default:
             return NULL;
-        std::map<PatchBlock*, BlockPoints>::iterator iter = blockPoints_.find(loc.block);
-        if(iter == blockPoints_.end())
-        {
-            if(!create)
-                return NULL;
-            BlockPoints bp;
-            iter =
-                blockPoints_.insert(blockPoints_.begin(), std::make_pair(loc.block, bp));
-        }
-        switch(type)
-        {
-            case Point::BlockEntry:
-                if(!iter->second.entry && create)
-                {
-                    iter->second.entry = maker->createPoint(loc, type);
-                }
-                return iter->second.entry;
-                break;
-            case Point::BlockExit:
-                if(!iter->second.exit && create)
-                {
-                    iter->second.exit = maker->createPoint(loc, type);
-                }
-                return iter->second.exit;
-                break;
-            case Point::BlockDuring:
-                if(!iter->second.during && create)
-                {
-                    iter->second.during = maker->createPoint(loc, type);
-                }
-                return iter->second.during;
-                break;
-            case Point::PreInsn: {
-                if(!loc.addr || !loc.insn.isValid())
-                {
-                    assert(0);
-                }
-                InsnPoints::iterator iter2 = iter->second.preInsn.find(loc.addr);
-                if(iter2 == iter->second.preInsn.end())
-                {
-                    if(!create)
-                        return NULL;
-                    ret                            = maker->createPoint(loc, type);
-                    iter->second.preInsn[loc.addr] = ret;
-                    return ret;
-                }
-                else
-                {
-                    return iter2->second;
-                }
-                break;
+      }
+   }
+   else if (type & Point::EdgeTypes) {
+      if (!loc.edge) return NULL;
+      std::map<PatchEdge *, EdgePoints>::iterator iter = edgePoints_.find(loc.edge);
+      if (iter == edgePoints_.end()) {
+         if (!create) return NULL;
+         EdgePoints ep;
+         iter = edgePoints_.insert(edgePoints_.begin(), std::make_pair(loc.edge, std::move(ep)));
+      }
+      if (!iter->second.during && create) {
+         iter->second.during = maker->createPoint(loc, type);
+      }
+      return iter->second.during;
+   }
+   else {
+      switch(type) {
+         case Point::FuncEntry:
+            if (!points_.entry && create) {
+               points_.entry = maker->createPoint(loc, type);
             }
             case Point::PostInsn: {
                 if(!loc.addr || !loc.insn.isValid())

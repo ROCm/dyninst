@@ -29,20 +29,20 @@
  */
 
 #if !defined(IBSTREE_FAST_H)
-#    define IBSTREE_FAST_H
-#    include "IBSTree.h"
-#    include <boost/multi_index_container.hpp>
-#    include <boost/multi_index/ordered_index.hpp>
-#    include <boost/multi_index/mem_fun.hpp>
-#    include <boost/multi_index/identity.hpp>
-#    include <boost/multi_index/member.hpp>
-#    include <boost/multi_index/composite_key.hpp>
-#    include <boost/mpl/insert_range.hpp>
-#    include <boost/mpl/inherit_linearly.hpp>
-#    include <boost/mpl/inherit.hpp>
-#    include <iostream>
-
-#    include "concurrent.h"
+#define IBSTREE_FAST_H
+#include "IBSTree.h"
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/mem_fun.hpp>
+#include <boost/multi_index/identity.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/composite_key.hpp>
+#include <boost/mpl/insert_range.hpp>
+#include <boost/mpl/inherit_linearly.hpp>
+#include <boost/mpl/inherit.hpp>
+#include <assert.h>
+#include <set>
+#include <iostream>
 
 namespace Dyninst
 {

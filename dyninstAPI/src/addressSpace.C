@@ -50,7 +50,6 @@
 #include "Relocation/Transformers/Include.h"
 #include "Relocation/CodeTracker.h"
 
-#include "MemoryEmulator/memEmulator.h"
 #include "parseAPI/h/CodeObject.h"
 #include <boost/tuple/tuple.hpp>
 
@@ -65,6 +64,7 @@
 
 #include "dynThread.h"
 #include "pcEventHandler.h"
+#include "unaligned_memory_access.h"
 
 // Implementations of non-virtual functions in the address space
 // class.
@@ -78,51 +78,34 @@ using PatchAPI::DynRemoveSnipCommand;
 using PatchAPI::Patcher;
 using PatchAPI::PatchMgr;
 
-AddressSpace::AddressSpace()
-: trapMapping(this)
-, new_func_cb(NULL)
-, new_instp_cb(NULL)
-, heapInitialized_(false)
-, useTraps_(true)
-, sigILLTrampoline_(false)
-, trampGuardBase_(NULL)
-, up_ptr_(NULL)
-, costAddr_(0)
-, installedSpringboards_(new Relocation::InstalledSpringboards())
-, memEmulator_(NULL)
-, emulateMem_(false)
-, emulatePC_(false)
-, delayRelocation_(false)
+AddressSpace::AddressSpace () :
+    trapMapping(this),
+    new_func_cb(NULL),
+    new_instp_cb(NULL),
+    heapInitialized_(false),
+    useTraps_(true),
+    sigILLTrampoline_(false),
+    trampGuardBase_(NULL),
+    up_ptr_(NULL),
+    costAddr_(0),
+    installedSpringboards_(new Relocation::InstalledSpringboards()),
+    delayRelocation_(false)
 {
-#if 0
-   // Disabled for now; used by defensive mode
-   if ( getenv("DYNINST_EMULATE_MEMORY") ) {
-       printf("emulating memory & pc\n");
-       memEmulator_ = new MemoryEmulator(this);
-       emulateMem_ = true;
-       emulatePC_ = true;
+   // Historically, we only use SIGTRAP as the signal for tramopline.
+   // However, SIGTRAP is always intercepted by GDB, causing it is 
+   // almost impossible to debug through signal trampolines.
+   // Here, we add a new environment variable DYNINST_SIGNAL_TRAMPOLINE_SIGILL
+   // to control whether we use SIGILL as the signal for trampolines.
+   // In the case of binary rewriting, DYNINST_SIGNAL_TRAMPOLINE_SIGILL should be 
+   // consistently set or unset for rewriting the binary and running the rewritten binaries. 
+   if (getenv("DYNINST_SIGNAL_TRAMPOLINE_SIGILL")) {
+      sigILLTrampoline_ = true;
    }
-#endif
-    // Historically, we only use SIGTRAP as the signal for tramopline.
-    // However, SIGTRAP is always intercepted by GDB, causing it is
-    // almost impossible to debug through signal trampolines.
-    // Here, we add a new environment variable DYNINST_SIGNAL_TRAMPOLINE_SIGILL
-    // to control whether we use SIGILL as the signal for trampolines.
-    // In the case of binary rewriting, DYNINST_SIGNAL_TRAMPOLINE_SIGILL should be
-    // consistently set or unset for rewriting the binary and running the rewritten
-    // binaries.
-    if(getenv("DYNINST_SIGNAL_TRAMPOLINE_SIGILL"))
-    {
-        sigILLTrampoline_ = true;
-    }
 }
 
-AddressSpace::~AddressSpace()
-{
-    if(memEmulator_)
-        delete memEmulator_;
-    if(mgr_)
-        static_cast<DynAddrSpace*>(mgr_->as())->removeAddrSpace(this);
+AddressSpace::~AddressSpace() {
+    if (mgr_)
+       static_cast<DynAddrSpace*>(mgr_->as())->removeAddrSpace(this);
 
     deleteAddressSpace();
 }
@@ -261,11 +244,6 @@ AddressSpace::copyAddressSpace(AddressSpace* parent)
         func_instance* to   = findFunction(SCAST_FI(iter->second.first)->ifunc());
         fwm[from]           = std::make_pair(to, iter->second.second);
     }
-
-    if(memEmulator_)
-        assert(0 && "FIXME!");
-    emulateMem_ = parent->emulateMem_;
-    emulatePC_  = parent->emulatePC_;
 }
 
 void
@@ -300,12 +278,8 @@ AddressSpace::deleteAddressSpace()
     trampGuardBase_ = NULL;
     trampGuardAST_  = AstNodePtr();
 
-    // up_ptr_ is untouched
-    costAddr_ = 0;
-
-    if(memEmulator_)
-        delete memEmulator_;
-    memEmulator_ = NULL;
+   // up_ptr_ is untouched
+   costAddr_ = 0;
 }
 
 // Returns the named symbol from the image or a shared object
@@ -340,8 +314,12 @@ AddressSpace::inferiorFreeCompact()
     std::vector<heapItem*>& freeList = heap_.heapFree;
     unsigned                i, nbuf = freeList.size();
 
-    /* sort buffers by address */
-    std::sort(freeList.begin(), freeList.end(), ptr_fun(heapItemLessByAddr));
+void AddressSpace::inferiorFreeCompact() {
+   std::vector<heapItem *> &freeList = heap_.heapFree;
+   unsigned i, nbuf = freeList.size();
+
+   /* sort buffers by address */
+    std::sort(freeList.begin(), freeList.end(), heapItemLessByAddr);
 
     /* combine adjacent buffers */
     bool needToCompact = false;
@@ -396,34 +374,16 @@ AddressSpace::inferiorFreeCompact()
     }
 }
 
-int
-AddressSpace::findFreeIndex(unsigned size, int type, Address lo, Address hi)
-{
-    // type is a bitmask: match on any bit in the mask
-    std::vector<heapItem*>& freeList = heap_.heapFree;
+void AddressSpace::addHeap(heapItem *h) {
+   heap_.bufferPool.push_back(h);
+   heapItem *h2 = new heapItem(h);
+   h2->status = HEAPfree;
+   heap_.heapFree.push_back(h2);
+    
+   /* When we add an item to heapFree, make sure it remains in sorted order */
+   std::sort(heap_.heapFree.begin(), heap_.heapFree.end(), heapItemLessByAddr);
 
-    int best = -1;
-    for(unsigned i = 0; i < freeList.size(); i++)
-    {
-        heapItem* h = freeList[i];
-        // check if free block matches allocation constraints
-        // Split out to facilitate debugging
-        infmalloc_printf("%s[%d]: comparing heap %u: 0x%lx-0x%lx/%d to desired %u bytes "
-                         "in 0x%lx-0x%lx/%d\n",
-                         FILE__, __LINE__, i, h->addr, h->addr + h->length, h->type, size,
-                         lo, hi, type);
-        if(h->addr >= lo && (h->addr + size - 1) <= hi && h->length >= size &&
-           h->type & type)
-        {
-            if(best == -1)
-                best = i;
-            // check for better match
-            if(h->length < freeList[best]->length)
-                best = i;
-        }
-    }
-    infmalloc_printf("%s[%d]: returning match %d\n", FILE__, __LINE__, best);
-    return best;
+   heap_.totalFreeMemAvailable += h2->length;
 }
 
 void
@@ -501,8 +461,8 @@ AddressSpace::inferiorMallocInternal(unsigned size, Address lo, Address hi,
         heap_.heapFree.resize(last - 1);
     }
 
-    /* When we update an item in heapFree, make sure it remains in sorted order */
-    std::sort(heap_.heapFree.begin(), heap_.heapFree.end(), ptr_fun(heapItemLessByAddr));
+   /* When we update an item in heapFree, make sure it remains in sorted order */
+   std::sort(heap_.heapFree.begin(), heap_.heapFree.end(), heapItemLessByAddr);
 
     // add allocated block to active list
     h->length                 = size;
@@ -531,9 +491,8 @@ AddressSpace::inferiorFreeInternal(Address block)
     // Remove from the active list
     heap_.heapActive.erase(iter);
 
-    // Add to the free list
-    h->status = HEAPfree;
-    heap_.heapFree.push_back(h);
+   /* When we add an item to heapFree, make sure it remains in sorted order */
+   std::sort(heap_.heapFree.begin(), heap_.heapFree.end(), heapItemLessByAddr);
 
     /* When we add an item to heapFree, make sure it remains in sorted order */
     std::sort(heap_.heapFree.begin(), heap_.heapFree.end(), ptr_fun(heapItemLessByAddr));
@@ -598,7 +557,9 @@ AddressSpace::inferiorShrinkBlock(heapItem* h, Address block, unsigned newSize)
     Address succAddr  = h->addr + h->length;
     int     shrink    = h->length - newSize;
 
-    assert(shrink > 0);
+      /* When we add an item to heapFree, make sure it remains sorted */
+      std::sort(heap_.heapFree.begin(), heap_.heapFree.end(), heapItemLessByAddr);
+   }
 
     h->length = newSize;
 
@@ -1119,9 +1080,71 @@ AddressSpace::getAllModules(std::vector<mapped_module*>& mods)
 
 // Acts like findTargetFuncByAddr, but also finds the function if addr
 // is an indirect jump to a function.
-// I know this is an odd function, but darn I need it.
-func_instance*
-AddressSpace::findJumpTargetFuncByAddr(Address addr)
+//I know this is an odd function, but darn I need it.
+func_instance *AddressSpace::findJumpTargetFuncByAddr(Address addr) {
+
+   Address addr2 = 0;
+   func_instance *f = findOneFuncByAddr(addr);
+   if (f)
+      return f;
+
+   if (!findObject(addr)) return NULL;
+
+   using namespace Dyninst::InstructionAPI;
+   InstructionDecoder decoder((const unsigned char*)getPtrToInstruction(addr),
+                              InstructionDecoder::maxInstructionLength,
+                              getArch());
+   Instruction curInsn = decoder.decode();
+    
+   Expression::Ptr target = curInsn.getControlFlowTarget();
+   RegisterAST thePC = RegisterAST::makePC(getArch());
+   target->bind(&thePC, Result(u32, addr));
+   Result cft = target->eval();
+   if(cft.defined)
+   {
+      switch(cft.type)
+      {
+         case u32:
+            addr2 = cft.val.u32val;
+            break;
+         case s32:
+            addr2 = cft.val.s32val;
+            break;
+         default:
+            assert(!"Not implemented for non-32 bit CFTs yet!");
+            break;
+      }
+   }
+   return findOneFuncByAddr(addr2);
+}
+
+AstNodePtr AddressSpace::trampGuardAST() {
+   if (!trampGuardBase_) {
+      // Don't have it yet....
+      return AstNodePtr();
+   }
+
+   if (trampGuardAST_) return trampGuardAST_;
+
+   trampGuardAST_ = AstNode::operandNode(AstNode::operandType::variableAddr, trampGuardBase_->ivar());
+   return trampGuardAST_;
+}
+
+
+trampTrapMappings::trampTrapMappings(AddressSpace *a) :
+   needs_updating(false),
+   as(a),
+   trapTableUsed(NULL),
+   trapTableVersion(NULL),
+   trapTable(NULL),
+   trapTableSorted(NULL),
+   table_version(0),
+   table_used(0),
+   table_allocated(0),
+   table_mutatee_size(0),
+   current_table(0x0),
+   table_header(0x0),
+   blockFlushes(false)
 {
     Address        addr2 = 0;
     func_instance* f     = findOneFuncByAddr(addr);
@@ -1289,32 +1312,25 @@ mapping_sort(const trampTrapMappings::tramp_mapping_t* lhs,
     return lhs->from_addr < rhs->from_addr;
 }
 
+void trampTrapMappings::writeToBuffer(unsigned char *buffer, unsigned long val,
+                                      unsigned addr_width)
+{
+   //Deal with the case when mutatee word size != mutator word size
+   if (addr_width != sizeof(Address)) {
+      //Currently only support 64-bit mutators with 32-bit mutatees
+      assert(addr_width == 4);
+      assert(sizeof(Address) == 8);
 #if defined(cap_32_64)
-void
-trampTrapMappings::writeToBuffer(unsigned char* buffer, unsigned long val,
-                                 unsigned addr_width)
-{
-    // Deal with the case when mutatee word size != mutator word size
-    if(addr_width != sizeof(Address))
-    {
-        // Currently only support 64-bit mutators with 32-bit mutatees
-        assert(addr_width == 4);
-        assert(sizeof(Address) == 8);
-        *((uint32_t*) buffer) = (uint32_t) val;
-        return;
-    }
-    *((unsigned long*) buffer) = val;
-}
-#else
-void
-trampTrapMappings::writeToBuffer(unsigned char* buffer, unsigned long val, unsigned)
-{
-    *((unsigned long*) (void*) buffer) = val;
-}
+      assert(val <= numeric_limits<uint32_t>::max() && "val more than 32 bits");
+      write_memory_as(buffer, static_cast<uint32_t>(val));
+      return;
 #endif
+   }
+   write_memory_as(buffer, static_cast<uint64_t>(val));
+}
 
-void
-trampTrapMappings::writeTrampVariable(const int_variable* var, unsigned long val)
+void trampTrapMappings::writeTrampVariable(const int_variable *var, 
+                                           unsigned long val)
 {
     unsigned char buffer[16];
     unsigned      aw = proc()->getAddressWidth();
@@ -1999,7 +2015,12 @@ AddressSpace::relocate()
 
     updateMemEmulator();
 
-    modifiedFunctions_.clear();
+     Address middle = (iter->first->codeAbs() + (iter->first->imageSize() / 2));
+     
+     if (!relocateInt(iter->second.begin(), iter->second.end(), middle)) {
+        ret = false;
+     }
+  }
 
     for(std::map<func_instance*, Dyninst::SymtabAPI::Symbol*>::iterator foo =
             wrappedFunctionWorklist_.begin();
@@ -2009,7 +2030,19 @@ AddressSpace::relocate()
     }
     wrappedFunctionWorklist_.clear();
 
-    return ret;
+     
+  
+
+
+  modifiedFunctions_.clear();
+
+  for (std::map<func_instance *, Dyninst::SymtabAPI::Symbol *>::iterator foo = wrappedFunctionWorklist_.begin();
+       foo != wrappedFunctionWorklist_.end(); ++foo) {
+      wrapFunctionPostPatch(foo->first, foo->second);
+  }
+  wrappedFunctionWorklist_.clear();
+
+  return ret;
 }
 
 // iter is some sort of functions
@@ -2169,18 +2202,10 @@ AddressSpace::transform(CodeMover::Ptr cm)
         cm->transform(pc);
     }
 
-#if defined(cap_mem_emulation)
-    if(emulateMem_)
-    {
-        MemEmulatorTransformer m;
-        cm->transform(m);
-    }
-#endif
-
-    // Add instrumentation
-    relocation_cerr << "Inst transformer" << endl;
-    Instrumenter i;
-    cm->transform(i);
+  // Add instrumentation
+  relocation_cerr << "Inst transformer" << endl;
+  Instrumenter i;
+  cm->transform(i);
 
     Modification mod(mgr()->instrumenter()->callModMap(),
                      mgr()->instrumenter()->funcRepMap(),
@@ -2190,8 +2215,141 @@ AddressSpace::transform(CodeMover::Ptr cm)
     return true;
 }
 
-Address
-AddressSpace::generateCode(CodeMover::Ptr cm, Address nearTo)
+Address AddressSpace::generateCode(CodeMover::Ptr cm, Address nearTo) {
+  // And now we start the relocation process.
+  // This is at heart an iterative process, using the following
+  // algorithm
+  // size = code size estimate
+  // done = false
+  // While (!done), do
+  //   addr = inferiorMalloc(size)
+  //   cm.relocate(addr)
+  //   if ((cm.size <= size) || (inferiorRealloc(addr, cm.size)))
+  //     done = true
+  //   else
+  //     size = cm.size
+  //     inferiorFree(addr)
+  // In effect, we keep trying until we get a code generation that fits
+  // in the space we have allocated.
+  Address baseAddr = 0;
+
+  codeGen genTemplate;
+  genTemplate.setAddrSpace(this);
+  // Set the code emitter?
+  
+  if (!cm->initialize(genTemplate)) {
+    return 0;
+  }
+
+  while (1) {
+     relocation_cerr << "   Attempting to allocate " << cm->size() << "bytes" << endl;
+    unsigned size = cm->size();
+    if (!size) {
+        // This can happen if the only thing being moved are control flow instructions
+        // (or other things that are _only_ patches)
+        // inferiorMalloc horks if we hand it zero, so make sure it's non-zero.
+        size = 1;
+    }
+    baseAddr = inferiorMalloc(size, anyHeap, nearTo);
+    
+    
+    relocation_cerr << "   Calling CodeMover::relocate" << endl;
+    if (!cm->relocate(baseAddr)) {
+       // Whoa
+       relocation_cerr << "   ERROR: CodeMover failed relocation!" << endl;
+       return 0;
+    }
+    
+    // Either attempt to expand or shrink...
+    relocation_cerr << "   Calling inferiorRealloc to fit new size " << cm->size() 
+		    << ", current base addr is " 
+		    << std::hex << baseAddr << std::dec << endl;
+    if (!inferiorRealloc(baseAddr, cm->size())) {
+      relocation_cerr << "   ... inferiorRealloc failed, trying again" << endl;
+      inferiorFree(baseAddr);
+      continue;
+    }
+    else {
+      relocation_cerr << "   ... inferiorRealloc succeeded, finished" << endl;
+      break;
+    }
+  }
+  
+  if (!cm->finalize()) {
+     return 0;
+  }
+
+  //addrMap.debug();
+
+  return baseAddr;
+}
+
+bool AddressSpace::patchCode(CodeMover::Ptr cm,
+			     SpringboardBuilder::Ptr spb) {
+   SpringboardMap &p = cm->sBoardMap(this);
+  
+  // A SpringboardMap has three priority sets: Required, Suggested, and
+  // NotRequired. We care about:
+  // Required: all
+  // Suggested: function entries
+  // NotRequired: none
+
+  std::list<codeGen> patches;
+
+  if (!spb->generate(patches, p)) {
+      springboard_cerr << "Failed springboard generation, ret false" << endl;
+    return false;
+  }
+
+  springboard_cerr << "Installing " << patches.size() << " springboards!" << endl;
+  for (std::list<codeGen>::iterator iter = patches.begin();
+       iter != patches.end(); ++iter) 
+  {
+      springboard_cerr << "Writing springboard @ " << hex << iter->startAddr() << endl;
+      if (!writeTextSpace((void *)iter->startAddr(),
+          iter->used(),
+          iter->start_ptr())) 
+      {
+	springboard_cerr << "\t FAILED to write springboard @ " << hex << iter->startAddr() << endl;
+         // HACK: code modification will make this happen...
+         return false;
+      }
+  }
+
+  return true;
+}
+
+void AddressSpace::getRelocAddrs(Address orig, 
+                                 block_instance *block,
+                                 func_instance *func,
+                                 std::list<Address> &relocs,
+                                 bool getInstrumentationAddrs) const {
+  springboard_cerr << "getRelocAddrs for orig addr " << hex << orig << " /w/ block start " << block->start() << dec << endl;
+  for (CodeTrackers::const_iterator iter = relocatedCode_.begin();
+       iter != relocatedCode_.end(); ++iter) {
+    Relocation::CodeTracker::RelocatedElements reloc;
+    //springboard_cerr << "\t Checking CodeTracker " << hex << *iter << dec << endl;
+    if ((*iter)->origToReloc(orig, block, func, reloc)) {
+      // Pick instrumentation if it's there, otherwise use the reloc instruction
+       //springboard_cerr << "\t\t ... match" << endl;
+       if (!reloc.instrumentation.empty() && getInstrumentationAddrs) {
+          for (std::map<instPoint *, Address>::iterator iter2 = reloc.instrumentation.begin();
+               iter2 != reloc.instrumentation.end(); ++iter2) {
+             relocs.push_back(iter2->second);
+          }
+      }
+      else {
+        assert(reloc.instruction);
+        relocs.push_back(reloc.instruction);
+      }
+    }
+  }
+}      
+
+bool AddressSpace::getAddrInfo(Address relocAddr,
+                               Address &origAddr,
+                               vector<func_instance *> &origFuncs,
+                               baseTramp *&baseT) 
 {
     // And now we start the relocation process.
     // This is at heart an iterative process, using the following
@@ -2424,99 +2582,9 @@ AddressSpace::inEmulatedCode(Address addr)
     return false;
 }
 
-void
-AddressSpace::addModifiedFunction(func_instance* func)
-{
-    assert(func->obj());
-
-    modifiedFunctions_[func->obj()].insert(func);
-}
-
-void
-AddressSpace::addModifiedBlock(block_instance* block)
-{
-    // TODO someday this will decouple from functions. Until
-    // then...
-    std::list<func_instance*> tmp;
-    block->getFuncs(std::back_inserter(tmp));
-    for(std::list<func_instance*>::iterator iter = tmp.begin(); iter != tmp.end(); ++iter)
-    {
-        addModifiedFunction(*iter);
-    }
-}
-
-void
-AddressSpace::addDefensivePad(block_instance* callBlock, func_instance* callFunc,
-                              Address padStart, unsigned size)
-{
-    // We want to register these in terms of a block_instance that the pad ends, but
-    // the CFG can change out from under us; therefore, for lookup we use an instPoint
-    // as they are invariant.
-    instPoint* point = instPoint::preCall(callFunc, callBlock);
-    if(!point)
-    {
-        mal_printf("Error: no preCall point for %s\n", callBlock->long_format().c_str());
-        return;
-    }
-
-    mal_printf("Adding pad for callBlock [%lx %lx), pad at 0%lx\n", callBlock->start(),
-               callBlock->end(), padStart);
-
-    forwardDefensiveMap_[callBlock->last()][callFunc].insert(
-        std::make_pair(padStart, size));
-    std::pair<func_instance*, Address> padContext;
-    padContext.first  = callFunc;
-    padContext.second = callBlock->last();
-    reverseDefensiveMap_.insert(padStart, padStart + size, padContext);
-}
-
-void
-AddressSpace::getPreviousInstrumentationInstances(baseTramp*                   bt,
-                                                  std::set<Address>::iterator& b,
-                                                  std::set<Address>::iterator& e)
-{
-    b = instrumentationInstances_[bt].begin();
-    e = instrumentationInstances_[bt].end();
-    return;
-}
-
-void
-AddressSpace::addInstrumentationInstance(baseTramp* bt, Address a)
-{
-    instrumentationInstances_[bt].insert(a);
-}
-
-void
-AddressSpace::addAllocatedRegion(Address start, unsigned size)
-{
-    if(memEmulator_)
-        memEmulator_->addAllocatedRegion(start, size);
-}
-
-void
-AddressSpace::addModifiedRegion(mapped_object* obj)
-{
-    if(memEmulator_)
-        memEmulator_->addRegion(obj);
-    return;
-}
-
-void
-AddressSpace::updateMemEmulator()
-{
-    if(memEmulator_)
-        memEmulator_->update();
-}
-
-MemoryEmulator*
-AddressSpace::getMemEm()
-{
-    return memEmulator_;
-}
-
-void
-updateSrcListAndVisited(ParseAPI::Edge* e, std::list<ParseAPI::Edge*>& srcList,
-                        std::set<ParseAPI::Edge*>& visited)
+void updateSrcListAndVisited(ParseAPI::Edge* e,
+			     std::list<ParseAPI::Edge*>& srcList,
+			     std::set<ParseAPI::Edge*>& visited)			     
 {
     if(visited.find(e) == visited.end())
     {

@@ -33,8 +33,8 @@
 #include "dwarfFrameParser.h"
 #include "ProcReader.h"
 #include "dyntypes.h"
-#include "dyn_regs.h"
-#include "Types.h"
+#include "registers/MachRegister.h"
+#include "registers/abstract_regs.h"
 #include "debug_common.h"
 #include <iostream>
 #include "debug_common.h"
@@ -43,12 +43,7 @@ using namespace Dyninst;
 using namespace DwarfDyninst;
 using namespace std;
 
-#define CHECK_OPER(n)                                                                    \
-    if(operands.size() < n)                                                              \
-    {                                                                                    \
-        error = true;                                                                    \
-        break;                                                                           \
-    }
+#define CHECK_OPER(n) do { if (operands.size() < (n)) { error = true; return; } } while (0)
 
 void
 SymbolicDwarfResult::pushReg(MachRegister reg)

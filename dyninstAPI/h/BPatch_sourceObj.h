@@ -45,7 +45,6 @@ typedef enum BPatch_language
     BPatch_fortran,
     BPatch_fortran77,
     BPatch_fortran90,
-    BPatch_f90_demangled_stabstr,
     BPatch_fortran95,
     BPatch_assembly,
     BPatch_mixed,
@@ -84,10 +83,36 @@ public:
     // char *getName(char *buf, unsigned int len);
     // int getNameLen();
 
-protected:
-    enum BPatch_sourceType _srcType;
-    BPatch_language        _srcLanguage;
-    void                   setLanguage(BPatch_language lang) { _srcLanguage = lang; }
+      //BPatch_Vector<BPatch_variableExpr *> *findVariable(const char *name);
+      BPatch_language getLanguage() { return _srcLanguage; }
+      const char *getLanguageStr() {return strLanguage(_srcLanguage);}
+      //BPatch_type *getType(char *name);
+      //BPatch_Vector<char *> *getLoadedFileNames();
+      //char *getName(char *buf, unsigned int len);
+      //int getNameLen();
+
+ protected:
+      enum BPatch_sourceType _srcType;
+      BPatch_language _srcLanguage;
+      void setLanguage(BPatch_language lang) { _srcLanguage = lang; }
+
+    const char *strLanguage(BPatch_language l) {
+	switch(l) {
+	case BPatch_c: return "BPatch_c";
+	case BPatch_cPlusPlus: return "BPatch_cPlusPlus";
+	case BPatch_fortran: return "BPatch_fortran";
+	case BPatch_fortran77: return "BPatch_fortran77";
+	case BPatch_fortran90: return "BPatch_fortran90";
+        case BPatch_fortran95: return "BPatch_fortran95";
+	case BPatch_assembly: return "BPatch_assembly";
+	case BPatch_mixed: return "BPatch_mixed";
+	case BPatch_hpf: return "BPatch_hpf";
+	case BPatch_java: return "BPatch_java";
+	case BPatch_unknownLanguage: return "BPatch_unknownLanguage";
+	default: return "strLanguage:  bad conversion -- FIXME";
+	}
+	return "strLanguage:  bad conversion -- FIXME";
+      }
 
     const char* strLanguage(BPatch_language l)
     {

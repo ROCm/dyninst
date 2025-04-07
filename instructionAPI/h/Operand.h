@@ -111,31 +111,24 @@ public:
 
     const Operand& operator=(const Operand& rhs)
     {
-        op_value           = rhs.op_value;
-        m_isRead           = rhs.m_isRead;
-        m_isWritten        = rhs.m_isWritten;
-        m_isImplicit       = rhs.m_isImplicit;
-        m_isTruePredicate  = rhs.m_isTruePredicate;
-        m_isFalsePredicate = rhs.m_isFalsePredicate;
-        return *this;
-    }
+    public:
+        typedef boost::shared_ptr<Operand> Ptr;
+      /// \brief Create an operand from a %Expression and flags describing whether the %ValueComputation
+      /// is read, written or both.
+      /// \param val Reference-counted pointer to the %Expression that will be contained in the %Operand being constructed
+      /// \param read True if this operand is read
+      /// \param written True if this operand is written
+      // An instruction can be true predicated, false predicated, or not predicated at all
+      explicit Operand(Expression::Ptr val = {}, bool read = false, bool written = false, bool implicit = false,
+              bool trueP = false, bool falseP = false) noexcept :
+          op_value(val), m_isRead(read), m_isWritten(written), m_isImplicit(implicit), m_isTruePredicate(trueP), m_isFalsePredicate(falseP) {}
 
-    /// \brief Get the registers read by this operand
-    /// \param regsRead Has the registers read inserted into it
-    INSTRUCTION_EXPORT void getReadSet(std::set<RegisterAST::Ptr>& regsRead) const;
-    /// \brief Get the registers written by this operand
-    /// \param regsWritten Has the registers written  inserted into it
-    INSTRUCTION_EXPORT void getWriteSet(std::set<RegisterAST::Ptr>& regsWritten) const;
-
-    INSTRUCTION_EXPORT RegisterAST::Ptr getPredicate() const;
-
-    /// Returns true if this operand is read
-    INSTRUCTION_EXPORT bool isRead(Expression::Ptr candidate) const;
-    /// Returns true if this operand is written
-    INSTRUCTION_EXPORT bool isWritten(Expression::Ptr candidate) const;
-
-    INSTRUCTION_EXPORT bool isRead() const { return m_isRead; }
-    INSTRUCTION_EXPORT bool isWritten() const { return m_isWritten; }
+      /// \brief Get the registers read by this operand
+      /// \param regsRead Has the registers read inserted into it
+      INSTRUCTION_EXPORT void getReadSet(std::set<RegisterAST::Ptr>& regsRead) const;
+      /// \brief Get the registers written by this operand
+      /// \param regsWritten Has the registers written  inserted into it
+      INSTRUCTION_EXPORT void getWriteSet(std::set<RegisterAST::Ptr>& regsWritten) const;
 
     INSTRUCTION_EXPORT bool isImplicit() const { return m_isImplicit; }
     INSTRUCTION_EXPORT void setImplicit(bool i) { m_isImplicit = i; }
@@ -171,11 +164,23 @@ private:
     bool            m_isWritten;
     bool            m_isImplicit;
 
-    // Used for GPU instructions with predicates
-    bool m_isTruePredicate;
-    bool m_isFalsePredicate;
-};
-}  // namespace InstructionAPI
-}  // namespace Dyninst
+      /// The \c getValue method returns an %Expression::Ptr to the AST contained by the operand.
+      INSTRUCTION_EXPORT Expression::Ptr getValue() const;
+      
+    private:
+      Expression::Ptr op_value{};
+      bool m_isRead{};
+      bool m_isWritten{};
+      bool m_isImplicit{};
 
-#endif  //! defined(OPERAND_H)
+      // Used for GPU instructions with predicates
+      bool m_isTruePredicate{};
+      bool m_isFalsePredicate{};
+    };
+  }
+}
+
+
+
+
+#endif //!defined(OPERAND_H)

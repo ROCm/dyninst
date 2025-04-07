@@ -106,7 +106,7 @@ printSysError(unsigned errNo)
         fprintf(stderr, "Couldn't print error message\n");
         printSysError(GetLastError());
     }
-    fprintf(stderr, "*** System error [%d]: %s\n", errNo, buf);
+    fprintf(stderr, "*** System error [%u]: %s\n", errNo, buf);
     fflush(stderr);
 }
 
@@ -175,7 +175,7 @@ AddressTranslateWin::AddressTranslateWin(PID pid, PROC_HANDLE phandle_)
 : AddressTranslate(pid, phandle_)
 , no_proc(false)
 {
-    init();
+	AddressTranslateWin::init();
 }
 
 Address

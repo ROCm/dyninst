@@ -35,7 +35,7 @@
 #include "../rose/SgAsmx86Instruction.h"
 #include "../rose/SgAsmPowerpcInstruction.h"
 #include "../rose/SgAsmArmv8Instruction.h"
-#include "../rose/SgAsmAmdgpuVegaInstruction.h"
+#include "../rose/SgAsmAMDGPUInstruction.h"
 #include "external/rose/rose-compat.h"
 #include "../rose/RegisterDescriptor.h"
 #include "../rose/x86InstructionSemantics.h"
@@ -882,16 +882,15 @@ SgAsmFloatValueExpression::variantT() const
 
 SgAsmFloatValueExpression::~SgAsmFloatValueExpression() {}
 
-SgAsmFloatValueExpression::SgAsmFloatValueExpression(double value, SgAsmType* type)
-{
-    p_nativeValue        = value;
+}
+
+SgAsmFloatValueExpression::SgAsmFloatValueExpression(double value, SgAsmType * /*type*/) {
+    p_nativeValue = value;
     p_nativeValueIsValid = true;
 }
 
-SgAsmFloatValueExpression::SgAsmFloatValueExpression(
-    const Sawyer::Container::BitVector& bv, SgAsmType* type)
-{
-    p_nativeValue        = 0.0;
+SgAsmFloatValueExpression::SgAsmFloatValueExpression(const Sawyer::Container::BitVector &bv, SgAsmType * /*type*/) {
+    p_nativeValue = 0.0;
     p_nativeValueIsValid = false;
     p_bitVector          = bv;
 }
@@ -971,13 +970,10 @@ SgAsmBinaryAdd::SgAsmBinaryAdd(SgAsmExpression* lhs, SgAsmExpression* rhs)
 : SgAsmBinaryExpression(lhs, rhs)
 {}
 
-SgAsmType*
-SgAsmBinaryAdd::get_type() const
-{
-    SgAsmBinaryExpression* addExpr = &(*(const_cast<SgAsmBinaryAdd*>(this)));
-    SgAsmBinaryExpression  binExpr = *addExpr;
-    return (&binExpr)->get_type();
-    // return ((SgAsmBinaryExpression *) this)->get_type();
+}
+
+SgAsmType *SgAsmBinaryAdd::get_type() const {
+    return SgAsmBinaryExpression::get_type();
 }
 
 std::string
@@ -1024,9 +1020,11 @@ SgAsmBinaryMultiply::get_type() const
     return ((SgAsmBinaryExpression*) this)->get_type();
 }
 
-std::string
-SgAsmBinaryMultiply::class_name() const
-{
+SgAsmType *SgAsmBinaryMultiply::get_type() const {
+    return SgAsmBinaryExpression::get_type();
+}
+
+std::string SgAsmBinaryMultiply::class_name() const {
     return "SgAsmBinaryMultiply";
 }
 
@@ -1670,43 +1668,36 @@ SgAsmInstruction::get_size() const
     return p_raw_bytes.size();
 }
 
-// defs for SgAsmAmdgpuVegaInstruction
-std::string
-SgAsmAmdgpuVegaInstruction::class_name() const
-{
-    return "SgAsmAmdgpuVegaInstruction";
+// defs for SgAsmAMDGPUInstruction
+SgAsmAMDGPUInstruction *isSgAsmAMDGPUInstruction(SgNode *s) {
+    return dynamic_cast<SgAsmAMDGPUInstruction *>(s);
 }
 
-VariantT
-SgAsmAmdgpuVegaInstruction::variantT() const
-{
-    return V_SgAsmAmdgpuVegaInstruction;
+std::string SgAsmAMDGPUInstruction::class_name() const {
+    return "SgAsmAMDGPUGfx90aInstruction";
 }
 
-SgAsmAmdgpuVegaInstruction::SgAsmAmdgpuVegaInstruction(rose_addr_t               address,
-                                                       std::string               mnemonic,
-                                                       AmdgpuVegaInstructionKind kind)
-: SgAsmInstruction(address, mnemonic)
-{
+VariantT SgAsmAMDGPUInstruction::variantT() const {
+    return V_SgAsmAMDGPUInstruction;
+}
+
+SgAsmAMDGPUInstruction::SgAsmAMDGPUInstruction(rose_addr_t address, std::string mnemonic, AMDGPUInstructionKind kind) :
+        SgAsmInstruction(address, mnemonic) {
     p_kind = kind;
 }
 
-AmdgpuVegaInstructionKind
-SgAsmAmdgpuVegaInstruction::get_kind() const
-{
+AMDGPUInstructionKind SgAsmAMDGPUInstruction::get_kind() const {
     return p_kind;
 }
 
-void
-SgAsmAmdgpuVegaInstruction::set_kind(AmdgpuVegaInstructionKind kind)
-{
+void SgAsmAMDGPUInstruction::set_kind(AMDGPUInstructionKind kind) {
     p_kind = kind;
 }
 
-SgAsmAmdgpuVegaInstruction::~SgAsmAmdgpuVegaInstruction()
-{
+SgAsmAMDGPUInstruction::~SgAsmAMDGPUInstruction() {
     p_kind = rose_amdgpu_op_INVALID;
 }
+
 
 // defs for SgAsmArmv8Instruction
 std::string
@@ -2043,16 +2034,9 @@ isSgAsmArmv8Instruction(SgNode* s)
     return dynamic_cast<SgAsmArmv8Instruction*>(s);
 }
 
-SgAsmAmdgpuVegaInstruction*
-isSgAsmAmdgpuVegaInstruction(SgNode* s)
-{
-    return dynamic_cast<SgAsmAmdgpuVegaInstruction*>(s);
-}
 
-SgAsmPowerpcInstruction*
-isSgAsmPowerpcInstruction(SgNode* s)
-{
-    return dynamic_cast<SgAsmPowerpcInstruction*>(s);
+SgAsmPowerpcInstruction *isSgAsmPowerpcInstruction(SgNode *s) {
+    return dynamic_cast<SgAsmPowerpcInstruction *>(s);
 }
 
 SgAsmNode*

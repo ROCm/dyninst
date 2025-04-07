@@ -36,14 +36,14 @@
 #include "InstructionCategories.h"
 #include "InstructionDecoder.h"
 #include "Expression.h"
-#include "Register.h"
 #include "Result.h"
 #include "Dereference.h"
 #include "Immediate.h"
 #include "BinaryFunction.h"
 
 #include "CFG.h"
-
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
 #include "ABI.h"
 #include "slicing.h"
 #include "SymEval.h"
@@ -56,25 +56,24 @@ using namespace Dyninst;
 std::string
 StackAccess::printStackAccessType(StackAccess::StackAccessType t)
 {
-    switch(t)
-    {
-        case(StackAccess::READ):
+    switch(t) {
+        case StackAccess::StackAccessType::READ:
             return "READ";
-        case(StackAccess::WRITE):
+        case StackAccess::StackAccessType::WRITE:
             return "WRITE";
-        case(StackAccess::SAVED):
+        case StackAccess::StackAccessType::SAVED:
             return "SAVED";
-        case(StackAccess::READWRITE):
+        case StackAccess::StackAccessType::READWRITE:
             return "READWRITE";
-        case(StackAccess::REGHEIGHT):
+        case StackAccess::StackAccessType::REGHEIGHT:
             return "REGHEIGHT";
-        case(StackAccess::DEBUGINFO_LOCAL):
+        case StackAccess::StackAccessType::DEBUGINFO_LOCAL:
             return "DEBUGINFO_LOCAL";
-        case(StackAccess::DEBUGINFO_PARAM):
+        case StackAccess::StackAccessType::DEBUGINFO_PARAM:
             return "DEBUGINFO_PARAM";
-        case(StackAccess::UNKNOWN):
+        case StackAccess::StackAccessType::UNKNOWN:
             return "UNKNOWN";
-        case(StackAccess::MISUNDERSTOOD):
+        case StackAccess::StackAccessType::MISUNDERSTOOD:
             return "MISUNDERSTOOD";
         default:
             return "NOT RECOGNIZED ACCESS TYPE";
@@ -94,7 +93,8 @@ StackAccess::format()
 bool
 isDebugType(StackAccess::StackAccessType t)
 {
-    return (t == StackAccess::DEBUGINFO_LOCAL || t == StackAccess::DEBUGINFO_PARAM);
+    return (t==StackAccess::StackAccessType::DEBUGINFO_LOCAL ||
+            t==StackAccess::StackAccessType::DEBUGINFO_PARAM);
 }
 
 int
@@ -699,27 +699,19 @@ getMemoryOffset(ParseAPI::Function* func, ParseAPI::Block* block, Instruction in
     bool        isOffsetSet = false;
 
     // Determine how memory is accessed
-    StackAccess::StackAccessType type = StackAccess::UNKNOWN;
-    if(analyzeDefinition)
-    {
-        type = StackAccess::DEFINITION;
-    }
-    else if(insn.readsMemory() && insn.writesMemory())
-    {
-        type = StackAccess::READWRITE;
-    }
-    else if(insn.readsMemory())
-    {
-        type = StackAccess::READ;
-    }
-    else if(insn.writesMemory())
-    {
-        type = StackAccess::WRITE;
+    StackAccess::StackAccessType type = StackAccess::StackAccessType::UNKNOWN;
+    if (analyzeDefinition) {
+        type = StackAccess::StackAccessType::DEFINITION;
+    } else if (insn.readsMemory() && insn.writesMemory()) {
+        type = StackAccess::StackAccessType::READWRITE;
+    } else if (insn.readsMemory()) {
+        type = StackAccess::StackAccessType::READ;
+    } else if (insn.writesMemory()) {
+        type = StackAccess::StackAccessType::WRITE;
     }
 
     // If memory is not accessed, no need to find an offset
-    if(type == StackAccess::UNKNOWN)
-    {
+    if (type == StackAccess::StackAccessType::UNKNOWN) {
         return false;
     }
 
@@ -816,8 +808,7 @@ getMemoryOffset(ParseAPI::Function* func, ParseAPI::Block* block, Instruction in
                 }
 
                 stackmods_printf("\t\t\t\t found offset %ld, disp = %ld, "
-                                 "type = %d\n",
-                                 offset, disp, type);
+                    "type = %d\n", offset, disp, static_cast<int>(type));
             }
         }
     }
@@ -859,7 +850,7 @@ getMemoryOffset(ParseAPI::Function* func, ParseAPI::Block* block, Instruction in
                 width = 8;
             ret->setRegHeight(ret->regHeight() - width);
             ret->setReadHeight(ret->readHeight() - width);
-            ret->setType(StackAccess::SAVED);
+            ret->setType(StackAccess::StackAccessType::SAVED);
         }
     }
 

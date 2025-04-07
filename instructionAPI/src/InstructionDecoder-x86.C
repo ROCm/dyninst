@@ -30,7 +30,6 @@
 
 #define INSIDE_INSTRUCTION_API
 
-#include "common/src/Types.h"
 #include "InstructionDecoder-x86.h"
 #include "Expression.h"
 #include "common/src/arch-x86.h"
@@ -39,6 +38,10 @@
 #include "Immediate.h"
 #include "BinaryFunction.h"
 #include "common/src/singleton_object_pool.h"
+#include "unaligned_memory_access.h"
+#include "registers/x86_regs.h"
+#include "registers/x86_64_regs.h"
+#include "registers/abstract_regs.h"
 
 // #define VEX_DEBUG
 
@@ -53,42 +56,100 @@ readsOperand(unsigned int opsema, unsigned int i)
 {
     switch(opsema)
     {
-        case s1R2R:
-            return (i == 0 || i == 1);
-        case s1R:
-        case s1RW:
-            return i == 0;
-        case s1W:
-            return false;
-        case s1W2RW:
-        case s1W2R:  // second operand read, first operand written (e.g. mov)
-            return i == 1;
-        case s1RW2R:   // two operands read, first written (e.g. add)
-        case s1RW2RW:  // e.g. xchg
-        case s1R2RW:
-            return i == 0 || i == 1;
-        case s1W2R3R:   // e.g. imul
-        case s1W2RW3R:  // some mul
-        case s1W2R3RW:  // (stack) push & pop
-            return i == 1 || i == 2;
-        case s1W2W3R:  // e.g. les
-            return i == 2;
-        case s1RW2R3RW:
-        case s1RW2R3R:   // shld/shrd
-        case s1RW2RW3R:  // [i]div, cmpxch8b
-        case s1R2R3R:
-            return i == 0 || i == 1 || i == 2;
-        case s1W2R3R4R:
-            return i == 1 || i == 2 || i == 3;
-        case s1RW2R3R4R:
-            return i == 0 || i == 1 || i == 2 || i == 3;
-        case sNONE:
-            return false;
-        default:
-            return false;
-            // printf("OPSEMA: %d\n", opsema);
-            assert(!"Unknown opsema!");
-            return false;
+    
+        bool readsOperand(unsigned int opsema, unsigned int i)
+        {
+            switch(opsema) {
+                case s1R2R:
+                    return (i == 0 || i == 1);
+                case s1R:
+                case s1RW:
+                    return i == 0;
+                case s1W:
+                    return false;
+                case s1W2RW:
+                case s1W2R:   // second operand read, first operand written (e.g. mov)
+                    return i == 1;
+                case s1RW2R:  // two operands read, first written (e.g. add)
+                case s1RW2RW: // e.g. xchg
+                case s1R2RW:
+                    return i == 0 || i == 1;
+                case s1W2R3R: // e.g. imul
+                case s1W2RW3R: // some mul
+                case s1W2R3RW: // (stack) push & pop
+                    return i == 1 || i == 2;
+                case s1W2W3R: // e.g. les
+                    return i == 2;
+                case s1RW2R3RW:
+                case s1RW2R3R: // shld/shrd
+                case s1RW2RW3R: // [i]div, cmpxch8b
+                case s1R2R3R:
+                    return i == 0 || i == 1 || i == 2;
+                case s1W2R3R4R:
+                    return i == 1 || i == 2 || i == 3;
+                case s1RW2R3R4R:
+                    return i == 0 || i == 1 || i == 2 || i == 3;
+                case sNONE:
+                    return false;
+                default:
+                    return false;
+                    // printf("OPSEMA: %d\n", opsema);
+                    assert(!"Unknown opsema!");
+                    return false;
+            }
+      
+        }
+      
+        bool writesOperand(unsigned int opsema, unsigned int i)
+        {
+            switch(opsema) {
+                case s1R2R:
+                case s1R:
+                    return false;
+                case s1RW:
+                case s1W:
+                case s1W2R:   // second operand read, first operand written (e.g. mov)
+                case s1RW2R:  // two operands read, first written (e.g. add)
+                case s1W2R3R: // e.g. imul
+                case s1RW2R3R: // shld/shrd
+                case s1RW2R3R4R:
+                  return i == 0;
+                case s1R2RW:
+                  return i == 1;
+                case s1W2RW:
+                case s1RW2RW: // e.g. xchg
+                case s1W2RW3R: // some mul
+                case s1W2W3R: // e.g. les
+                case s1RW2RW3R: // [i]div, cmpxch8b
+                  return i == 0 || i == 1;
+                case s1W2R3RW: // (stack) push & pop
+                  return i == 0 || i == 2;
+                case s1RW2R3RW:
+                  return i == 0 || i == 2;
+                case sNONE:
+                default:
+                  return false;
+                    // printf("OPSEMA: %d\n", opsema);
+                  assert(!"Unknown opsema!");
+                  return false;
+            }
+        }
+
+        bool implicitOperand(unsigned int implicit_operands, unsigned int i)
+        {
+            return sGetImplicitOP(implicit_operands, i) != 0x0;
+        }
+
+
+    INSTRUCTION_EXPORT InstructionDecoder_x86::InstructionDecoder_x86(Architecture a) :
+      InstructionDecoderImpl(a),
+      locs(NULL),
+      decodedInstruction(NULL),
+      sizePrefixPresent(false),
+      addrSizePrefixPresent(false)
+    {
+      if(a == Arch_x86_64) InstructionDecoder_x86::setMode(true);
+      
     }
 }
 
@@ -289,14 +350,203 @@ InstructionDecoder_x86::makeModRMExpression(const InstructionDecoder::buffer& b,
             if(opType == op_lea)
                 return e;
 
-            return makeDereferenceExpression(e, makeSizeType(opType));
-        case 3:
-            return makeRegisterExpression(
-                makeRegisterID(locs->modrm_rm, opType, locs->rex_b));
-        default:
-            /* This should never happen */
-            assert(0);
-            return Expression::Ptr();
+             return makeDereferenceExpression(e, makeSizeType(opType));
+          case 3:
+             return makeRegisterExpression(makeRegisterID(locs->modrm_rm, opType, locs->rex_b));
+          default:
+             /* This should never happen */
+             assert(0);
+             return Expression::Ptr();
+
+       };
+
+       // can't get here, but make the compiler happy...
+       assert(0);
+       return Expression::Ptr();
+    }
+
+    Expression::Ptr InstructionDecoder_x86::decodeImmediate(unsigned int opType, const unsigned char* immStart, 
+							    bool isSigned)
+    {
+        // rex_w indicates we need to sign-extend also.
+        isSigned = isSigned || locs->rex_w;
+	
+        switch(opType)
+        {
+            case op_b:
+                return Immediate::makeImmediate(Result(isSigned ? s8 : u8 ,*(const byte_t*)(immStart)));
+                break;
+            case op_d:
+                return Immediate::makeImmediate(Result(isSigned ? s32 : u32,Dyninst::read_memory_as<dword_t>(immStart)));
+            case op_w:
+                return Immediate::makeImmediate(Result(isSigned ? s16 : u16,Dyninst::read_memory_as<word_t>(immStart)));
+                break;
+            case op_q:
+                return Immediate::makeImmediate(Result(isSigned ? s64 : u64,Dyninst::read_memory_as<int64_t>(immStart)));
+                break;
+            case op_v:
+                if (locs->rex_w || isDefault64Insn()) {
+                    return Immediate::makeImmediate(Result(isSigned ? s64 : u64,Dyninst::read_memory_as<int64_t>(immStart)));
+                }
+                //if(!sizePrefixPresent)
+                //{
+                    return Immediate::makeImmediate(Result(isSigned ? s32 : u32,Dyninst::read_memory_as<dword_t>(immStart)));
+		    //}
+		    //else
+		    //{
+                    //return Immediate::makeImmediate(Result(isSigned ? s16 : u16,*(const word_t*)(immStart)));
+		    //}
+		break;
+            case op_z:
+                // 32 bit mode & no prefix, or 16 bit mode & prefix => 32 bit
+                // 16 bit mode, no prefix or 32 bit mode, prefix => 16 bit
+                //if(!addrSizePrefixPresent)
+                //{
+                    return Immediate::makeImmediate(Result(isSigned ? s32 : u32,Dyninst::read_memory_as<dword_t>(immStart)));
+		    //}
+		    //else
+		    //{
+                    //return Immediate::makeImmediate(Result(isSigned ? s16 : u16,*(const word_t*)(immStart)));
+		    //}
+                break;
+            case op_p:
+                // 32 bit mode & no prefix, or 16 bit mode & prefix => 48 bit
+                // 16 bit mode, no prefix or 32 bit mode, prefix => 32 bit
+                if(!sizePrefixPresent)
+                {
+                    return Immediate::makeImmediate(Result(isSigned ? s48 : u48,Dyninst::read_memory_as<int64_t>(immStart)));
+                }
+                else
+                {
+                    return Immediate::makeImmediate(Result(isSigned ? s32 : u32,Dyninst::read_memory_as<dword_t>(immStart)));
+                }
+
+                break;
+            case op_a:
+            case op_dq:
+            case op_pd:
+            case op_ps:
+            case op_s:
+            case op_si:
+            case op_lea:
+            case op_allgprs:
+            case op_512:
+            case op_c:
+                assert(!"Can't happen: opType unexpected for valid ways to decode an immediate");
+                return Expression::Ptr();
+            default:
+                assert(!"Can't happen: opType out of range");
+                return Expression::Ptr();
+        }
+    }
+    
+    Expression::Ptr InstructionDecoder_x86::getModRMDisplacement(const InstructionDecoder::buffer& b)
+    {
+        int disp_pos;
+
+        if(locs->sib_position != -1)
+            disp_pos = locs->sib_position + 1;
+        else disp_pos = locs->modrm_position + 1;
+
+        switch(locs->modrm_mod)
+        {
+            case 1:
+                return make_shared(singleton_object_pool<Immediate>::construct(Result(s8, Dyninst::read_memory_as<byte_t>(b.start +
+                                        disp_pos))));
+                break;
+            case 2:
+                if(0 && sizePrefixPresent)
+                {
+                    return make_shared(singleton_object_pool<Immediate>::construct(Result(s16, Dyninst::read_memory_as<word_t>(b.start +
+                                            disp_pos))));
+                }
+                else
+                {
+                    return make_shared(singleton_object_pool<Immediate>::construct(Result(s32, Dyninst::read_memory_as<dword_t>(b.start +
+                                            disp_pos))));
+                }
+                break;
+            case 0:
+                // In 16-bit mode, the word displacement is modrm r/m 6
+                if(sizePrefixPresent && !is64BitMode)
+                {
+                    if(locs->modrm_rm == 6)
+                    {
+                        return make_shared(singleton_object_pool<Immediate>::construct(Result(s16,
+                        	Dyninst::read_memory_as<dword_t>(b.start + disp_pos))));
+                    }
+                    // TODO FIXME; this was decoding wrong, but I'm not sure
+                    // why...
+                    else if (locs->modrm_rm == 5) {
+                        assert(b.start + disp_pos + 4 <= b.end);
+                        return make_shared(singleton_object_pool<Immediate>::construct(Result(s32,
+                        	Dyninst::read_memory_as<dword_t>(b.start + disp_pos))));
+                    } else {
+                        assert(b.start + disp_pos + 1 <= b.end);
+                        return make_shared(singleton_object_pool<Immediate>::construct(Result(s8, 0)));
+                    }
+                    break;
+                }
+                // ...and in 32-bit mode, the dword displacement is modrm r/m 5
+                else
+                {
+                    if(locs->modrm_rm == 5)
+                    {
+                        if (b.start + disp_pos + 4 <= b.end)
+                            return make_shared(singleton_object_pool<Immediate>::construct(Result(s32,
+                        	    Dyninst::read_memory_as<dword_t>(b.start + disp_pos))));
+                        else
+                            return make_shared(singleton_object_pool<Immediate>::construct(Result()));
+                    }
+                    else
+                    {
+                        if (b.start + disp_pos + 1 <= b.end)
+                            return make_shared(singleton_object_pool<Immediate>::construct(Result(s8, 0)));
+                        else
+                        {
+                            return make_shared(singleton_object_pool<Immediate>::construct(Result()));
+                        }
+                    }
+                    break;
+                }
+            default:
+                assert(b.start + disp_pos + 1 <= b.end);
+                return make_shared(singleton_object_pool<Immediate>::construct(Result(s8, 0)));
+        }
+    }
+
+    enum intelRegBanks
+    {
+        b_8bitNoREX = 0,
+        b_16bit,
+        b_32bit,
+        b_segment,
+        b_64bit,
+        b_xmm_set0, /* XMM0 -> XMM 7 */
+        b_xmm_set1, /* XMM8 -> XMM 15 */
+        b_xmm_set2, /* XMM16 -> XMM 23 */
+        b_xmm_set3, /* XMM24 -> XMM 31 */
+        b_ymm_set0, /* YMM0 -> YMM 7 */
+        b_ymm_set1, /* YMM8 -> YMM 15 */
+        b_ymm_set2, /* YMM16 -> YMM 23 */
+        b_ymm_set3, /* YMM24 -> YMM 31 */
+        b_zmm_set0, /* ZMM0 -> ZMM 7 */
+        b_zmm_set1, /* ZMM8 -> ZMM 15 */
+        b_zmm_set2, /* ZMM16 -> ZMM 23 */
+        b_zmm_set3, /* ZMM24 -> ZMM 31 */
+		b_kmask,
+        b_mm,
+        b_cr,
+        b_dr,
+        b_tr,
+        b_amd64ext,
+        b_8bitWithREX,
+        b_fpstack,
+	    amd64_ext_8,
+	    amd64_ext_16,
+	    amd64_ext_32,
+
+        b_invalid /* should remain the final entry */
     };
 
     // can't get here, but make the compiler happy...
@@ -1598,16 +1848,28 @@ InstructionDecoder_x86::decodeOneOperand(const InstructionDecoder::buffer& b,
                                  operand.admet))
                         return false;
 
-                    insn_to_complete->appendOperand(
-                        makeRegisterExpression(IntelRegTable(m_Arch, bank, bank_index)),
-                        isRead, isWritten, isImplicit);
-                    break;
-                default:
-                    assert(!"2-bit value modrm_mod out of range");
-                    break;
-            }
-            break;
-        case am_XW: /* Must be XMM (must be VEX) */
+                }
+                break;
+            case am_tworeghack:
+                if(optype == op_edxeax)
+                {
+                    Expression::Ptr edx(makeRegisterExpression(m_Arch == Arch_x86 ? x86::edx : x86_64::edx));
+                    Expression::Ptr eax(makeRegisterExpression(m_Arch == Arch_x86 ? x86::eax : x86_64::eax));
+                    Expression::Ptr highAddr = makeMultiplyExpression(edx, Immediate::makeImmediate(Result(u64, 1LL << 32)), u64);
+                    Expression::Ptr addr = makeAddExpression(highAddr, eax, u64);
+                    Expression::Ptr op = makeDereferenceExpression(addr, u64);
+                    insn_to_complete->appendOperand(op, isRead, isWritten, isImplicit);
+                } else if (optype == op_ecxebx)
+                {
+                    Expression::Ptr ecx(makeRegisterExpression(m_Arch == Arch_x86 ? x86::ecx : x86_64::ecx));
+                    Expression::Ptr ebx(makeRegisterExpression(m_Arch == Arch_x86 ? x86::ebx : x86_64::ebx));
+                    Expression::Ptr highAddr = makeMultiplyExpression(ecx,
+                            Immediate::makeImmediate(Result(u64, 1LL << 32)), u64);
+                    Expression::Ptr addr = makeAddExpression(highAddr, ebx, u64);
+                    Expression::Ptr op = makeDereferenceExpression(addr, u64);
+                    insn_to_complete->appendOperand(op, isRead, isWritten, isImplicit);
+                }
+                break;
 
             /* Make sure this vex is okay */
             if(!AVX_TYPE_OKAY(avx_type) || !pref.vex_present)
@@ -1846,20 +2108,170 @@ InstructionDecoder_x86::decodeOneOperand(const InstructionDecoder::buffer& b,
                 if(sizePrefixPresent && (r.regClass() == (unsigned int) x86::GPR) &&
                    r.size() >= 4)
                 {
-                    r = MachRegister((r.val() & ~x86::FULL) | x86::W_REG);
-                    assert(r.name() != "<INVALID_REG>");
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::eax), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::ecx), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::edx), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::ebx), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::esp), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::ebp), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::esi), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86::edi), isRead, isWritten, isImplicit);
+                } else {
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::eax), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::ecx), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::edx), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::ebx), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::esp), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::ebp), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::esi), isRead, isWritten, isImplicit);
+                    insn_to_complete->appendOperand(makeRegisterExpression(x86_64::edi), isRead, isWritten, isImplicit);
                 }
-            }
-            Expression::Ptr op(makeRegisterExpression(r));
-            insn_to_complete->appendOperand(op, isRead, isWritten, isImplicit);
+                break;
+            case am_ImplImm:
+                insn_to_complete->appendOperand(Immediate::makeImmediate(Result(makeSizeType(optype), 1)), isRead, isWritten, isImplicit);
+                break;
+            default:
+                printf("decodeOneOperand() called with unknown addressing method %u\n", operand.admet);
+                // assert(0);
+                return false;
         }
-        break;
-        case am_stackH:
-        case am_stackP:
-            // handled elsewhere
-            break;
-        case am_allgprs:
-            if(m_Arch == Arch_x86)
+
+        return true;
+    }
+
+    void InstructionDecoder_x86::doIA32Decode(InstructionDecoder::buffer& b)
+    {
+        if(decodedInstruction == NULL)
+        {
+            decodedInstruction = reinterpret_cast<ia32_instruction*>(malloc(sizeof(ia32_instruction)));
+            assert(decodedInstruction);
+        }
+        if(locs == NULL)
+        {
+            locs = reinterpret_cast<ia32_locations*>(malloc(sizeof(ia32_locations)));
+            assert(locs);
+        }
+        locs = new(locs) ia32_locations; //reinit();
+        assert(locs->sib_position == -1);
+        decodedInstruction = new (decodedInstruction) ia32_instruction(NULL, NULL, locs);
+        ia32_decode(IA32_DECODE_PREFIXES, b.start, *decodedInstruction, is64BitMode);
+
+        static ia32_entry invalid = { e_No_Entry, 0, 0, false, { {0,0}, {0,0}, {0,0} }, 0, 0, 0 };
+        if(decodedInstruction->getLegacyType() == ILLEGAL) {
+        	m_Operation = Operation(&invalid, nullptr, nullptr, m_Arch);
+        	return;
+        }
+
+        sizePrefixPresent = (decodedInstruction->getPrefix()->getOperSzPrefix() == 0x66);
+        if (decodedInstruction->getPrefix()->rexW()) {
+            // as per 2.2.1.2 - rex.w overrides 66h
+            sizePrefixPresent = false;
+        }
+        addrSizePrefixPresent = (decodedInstruction->getPrefix()->getAddrSzPrefix() == 0x67);
+
+        if(decodedInstruction->getEntry()) {
+            // check prefix validity
+            // lock prefix only allowed on certain insns.
+            // TODO: refine further to check memory written operand
+            if(decodedInstruction->getPrefix()->getPrefix(0) == PREFIX_LOCK)
+            {
+                switch(decodedInstruction->getEntry()->id)
+                {
+                    case e_add:
+                    case e_adc:
+                    case e_and:
+                    case e_btc:
+                    case e_btr:
+                    case e_bts:
+                    case e_cmpxchg:
+                    case e_cmpxchg8b:
+                    case e_dec:
+                    case e_inc:
+                    case e_neg:
+                    case e_not:
+                    case e_or:
+                    case e_sbb:
+                    case e_sub:
+                    case e_xor:
+                    case e_xadd:
+                    case e_xchg:
+                        break;
+                    default:
+                        m_Operation = Operation(&invalid,
+                                    decodedInstruction->getPrefix(), locs, m_Arch);
+                        return;
+                }
+            } else if (decodedInstruction->getPrefix()->getPrefix(0) == PREFIX_REP &&
+                        *(b.start+1) == (unsigned char)(0x0F) && *(b.start+2) == (unsigned char)(0x1E)) {
+                // handling ENDBR family
+                if (*(b.start+3) == (unsigned char)(0xFB)) {
+                    m_Operation = Operation(e_endbr32, entryNames_IAPI[e_endbr32], m_Arch);
+                    return;
+                } else if (*(b.start+3) == (unsigned char)(0xFA)) {
+                    m_Operation = Operation(e_endbr64, entryNames_IAPI[e_endbr64], m_Arch);
+                    return;
+                }
+            } 
+            m_Operation = Operation(decodedInstruction->getEntry(),
+                        decodedInstruction->getPrefix(), locs, m_Arch);
+
+        } else {
+            // Gap parsing can trigger this case; in particular, when it encounters prefixes in an invalid order.
+            // Notably, if a REX prefix (0x40-0x48) appears followed by another prefix (0x66, 0x67, etc)
+            // we'll reject the instruction as invalid and send it back with no entry.  Since this is a common
+            // byte sequence to see in, for example, ASCII strings, we want to simply accept this and move on, not
+            // yell at the user.
+            m_Operation = Operation(&invalid,
+                        decodedInstruction->getPrefix(), locs, m_Arch);
+        }
+
+    }
+    
+    void InstructionDecoder_x86::decodeOpcode(InstructionDecoder::buffer& b)
+    {
+        doIA32Decode(b);
+
+        // Do not move through the buffer if a bad instruction was encountered
+        if(m_Operation.getID() == e_No_Entry) return;
+
+        b.start += decodedInstruction->getSize();
+    }
+    
+	bool InstructionDecoder_x86::decodeOperands(const Instruction* insn_to_complete)
+    {
+        int imm_index = 0; // handle multiple immediate operands
+        if(!decodedInstruction || !decodedInstruction->getEntry()) return false;
+        unsigned int opsema = decodedInstruction->getEntry()->opsema;
+        unsigned int semantics = opsema & 0xFF;
+        unsigned int implicit_operands =
+            sGetImplicitOPs(decodedInstruction->getEntry()->impl_dec);
+        InstructionDecoder::buffer b(insn_to_complete->ptr(), insn_to_complete->size());
+
+        if (decodedInstruction->getEntry()->getID() == e_ret_near ||
+            decodedInstruction->getEntry()->getID() == e_ret_far) {
+           Expression::Ptr ret_addr = makeDereferenceExpression(makeRegisterExpression(is64BitMode ? x86_64::rsp : x86::esp),
+                                                                is64BitMode ? u64 : u32);
+           insn_to_complete->addSuccessor(ret_addr, false, true, false, false, true);
+	    }
+        if (insn_to_complete->getOperation().getID() == e_endbr32 ||
+            insn_to_complete->getOperation().getID() == e_endbr64) {
+            insn_to_complete->m_Operands.clear();
+            return true;
+        }
+
+        for(int i = 0; i < 3; i++)
+        {
+            if(decodedInstruction->getEntry()->operands[i].admet == 0 && 
+                    decodedInstruction->getEntry()->operands[i].optype == 0)
+                break;
+
+            if(!decodeOneOperand(b,
+                        decodedInstruction->getEntry()->operands[i],
+                        imm_index,
+                        insn_to_complete,
+                        readsOperand(semantics, i),
+                        writesOperand(semantics, i),
+                        implicitOperand(implicit_operands, i)))
             {
                 insn_to_complete->appendOperand(makeRegisterExpression(x86::eax), isRead,
                                                 isWritten, isImplicit);

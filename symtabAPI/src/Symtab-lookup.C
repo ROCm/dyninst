@@ -48,7 +48,7 @@
 #include "Function.h"
 #include "Variable.h"
 #include "annotations.h"
-
+#include "symtab_impl.hpp"
 #include "symtabAPI/src/Object.h"
 
 #include <boost/iterator/function_output_iterator.hpp>
@@ -68,10 +68,10 @@ pattern_match(const char* p, const char* s, bool checkCase);
 std::vector<Symbol*>
 Symtab::findSymbolByOffset(Offset o)
 {
-    indexed_symbols::by_offset_t::const_accessor oa;
-    if(everyDefinedSymbol.by_offset.find(oa, o))
-        return oa->second;
-    return std::vector<Symbol*>();
+   decltype(impl->everyDefinedSymbol)::by_offset_t::const_accessor oa;
+   if(impl->everyDefinedSymbol.by_offset.find(oa, o))
+       return oa->second;
+   return std::vector<Symbol*>();
 }
 
 bool
@@ -86,53 +86,41 @@ Symtab::findSymbol(std::vector<Symbol*>& ret, const std::string& name,
     if(!isRegex)
     {
         // Easy case
-        if(nameType & mangledName)
-        {
-            {
-                indexed_symbols::by_name_t::const_accessor ma;
-                if(everyDefinedSymbol.by_mangled.find(ma, name))
-                    candidates.insert(candidates.end(), ma->second.begin(),
-                                      ma->second.end());
-            }
-            if(includeUndefined)
-            {
-                indexed_symbols::by_name_t::const_accessor ma;
-                if(undefDynSyms.by_mangled.find(ma, name))
-                    candidates.insert(candidates.end(), ma->second.begin(),
-                                      ma->second.end());
-            }
+        if (nameType & mangledName) {
+          {
+            decltype(impl->everyDefinedSymbol)::by_name_t::const_accessor ma;
+            if(impl->everyDefinedSymbol.by_mangled.find(ma, name))
+              candidates.insert(candidates.end(), ma->second.begin(), ma->second.end());
+          }
+          if(includeUndefined) {
+            decltype(impl->undefDynSyms)::by_name_t::const_accessor ma;
+            if(impl->undefDynSyms.by_mangled.find(ma, name))
+              candidates.insert(candidates.end(), ma->second.begin(), ma->second.end());
+          }
         }
-        if(nameType & prettyName)
-        {
-            {
-                indexed_symbols::by_name_t::const_accessor pa;
-                if(everyDefinedSymbol.by_pretty.find(pa, name))
-                    candidates.insert(candidates.end(), pa->second.begin(),
-                                      pa->second.end());
-            }
-            if(includeUndefined)
-            {
-                indexed_symbols::by_name_t::const_accessor pa;
-                if(undefDynSyms.by_pretty.find(pa, name))
-                    candidates.insert(candidates.end(), pa->second.begin(),
-                                      pa->second.end());
-            }
+        if (nameType & prettyName) {
+          {
+            decltype(impl->everyDefinedSymbol)::by_name_t::const_accessor pa;
+            if(impl->everyDefinedSymbol.by_pretty.find(pa, name))
+              candidates.insert(candidates.end(), pa->second.begin(), pa->second.end());
+          }
+          if(includeUndefined) {
+            decltype(impl->undefDynSyms)::by_name_t::const_accessor pa;
+            if(impl->undefDynSyms.by_pretty.find(pa, name))
+              candidates.insert(candidates.end(), pa->second.begin(), pa->second.end());
+          }
         }
-        if(nameType & typedName)
-        {
-            {
-                indexed_symbols::by_name_t::const_accessor ta;
-                if(everyDefinedSymbol.by_typed.find(ta, name))
-                    candidates.insert(candidates.end(), ta->second.begin(),
-                                      ta->second.end());
-            }
-            if(includeUndefined)
-            {
-                indexed_symbols::by_name_t::const_accessor ta;
-                if(undefDynSyms.by_typed.find(ta, name))
-                    candidates.insert(candidates.end(), ta->second.begin(),
-                                      ta->second.end());
-            }
+        if (nameType & typedName) {
+          {
+            decltype(impl->everyDefinedSymbol)::by_name_t::const_accessor ta;
+            if(impl->everyDefinedSymbol.by_typed.find(ta, name))
+              candidates.insert(candidates.end(), ta->second.begin(), ta->second.end());
+          }
+          if(includeUndefined) {
+            decltype(impl->undefDynSyms)::by_name_t::const_accessor ta;
+            if(impl->undefDynSyms.by_typed.find(ta, name))
+              candidates.insert(candidates.end(), ta->second.begin(), ta->second.end());
+          }
         }
     }
     else
@@ -144,24 +132,21 @@ Symtab::findSymbol(std::vector<Symbol*>& ret, const std::string& name,
             cerr << "Warning: regex search of undefined symbols is not supported" << endl;
         }
 
-        for(auto i = everyDefinedSymbol.begin(); i != everyDefinedSymbol.end(); i++)
-        {
-            if(nameType & mangledName)
-            {
-                if(regexEquiv(name, (*i)->getMangledName(), checkCase))
-                    candidates.push_back(*i);
-            }
-            if(nameType & prettyName)
-            {
-                if(regexEquiv(name, (*i)->getPrettyName(), checkCase))
-                    candidates.push_back(*i);
-            }
-            if(nameType & typedName)
-            {
-                if(regexEquiv(name, (*i)->getTypedName(), checkCase))
-                    candidates.push_back(*i);
-            }
-        }
+       for (auto i = impl->everyDefinedSymbol.begin(); i != impl->everyDefinedSymbol.end(); i++) {
+          if (nameType & mangledName) {
+	    if (regexEquiv(name, (*i)->getMangledName(), checkCase))
+                candidates.push_back(*i);
+
+          }
+          if (nameType & prettyName) {
+	    if (regexEquiv(name, (*i)->getPrettyName(), checkCase))
+                candidates.push_back(*i);
+          }
+          if (nameType & typedName) {
+	    if (regexEquiv(name, (*i)->getTypedName(), checkCase))
+                candidates.push_back(*i);
+          }
+       }
     }
 
     std::set<Symbol*> matches;
@@ -194,18 +179,15 @@ Symtab::findSymbol(std::vector<Symbol*>& ret, const std::string& name,
 bool
 Symtab::getAllSymbols(std::vector<Symbol*>& ret)
 {
-    std::copy(everyDefinedSymbol.begin(), everyDefinedSymbol.end(), back_inserter(ret));
-    std::copy(undefDynSyms.begin(), undefDynSyms.end(), back_inserter(ret));
-
-    if(ret.size() > 0)
-    {
-        return true;
-    }
-    else
-    {
-        setSymtabError(No_Such_Symbol);
-        return false;
-    }
+  std::copy(impl->everyDefinedSymbol.begin(), impl->everyDefinedSymbol.end(), back_inserter(ret));
+  std::copy(impl->undefDynSyms.begin(), impl->undefDynSyms.end(), back_inserter(ret));
+  
+  if(ret.size() > 0) {
+    return true;
+  } else {
+    setSymtabError(No_Such_Symbol);
+    return false;
+  }
 }
 
 bool
@@ -217,19 +199,19 @@ Symtab::getAllSymbolsByType(std::vector<Symbol*>& ret, Symbol::SymbolType sType)
     unsigned old_size = ret.size();
 
     // Filter by the given type
-    for(auto i = everyDefinedSymbol.begin(); i != everyDefinedSymbol.end(); i++)
-    {
-        if((*i)->getType() == sType)
-        {
-            ret.push_back(*i);
-        }
+    for (auto i = impl->everyDefinedSymbol.begin(); i != impl->everyDefinedSymbol.end(); i++) {
+      if ((*i)->getType() == sType) 
+      {
+	ret.push_back(*i);
+      }
+      
     }
-    for(auto j = undefDynSyms.begin(); j != undefDynSyms.end(); j++)
-    {
-        if((*j)->getType() == sType)
-        {
-            ret.push_back(*j);
-        }
+    for (auto j = impl->undefDynSyms.begin(); j != impl->undefDynSyms.end(); j++) {
+      if ((*j)->getType() == sType) 
+      {
+	ret.push_back(*j);
+      }
+      
     }
 
     if(ret.size() > old_size)
@@ -248,7 +230,7 @@ Symtab::getAllDefinedSymbols(std::vector<Symbol*>& ret)
 {
     ret.clear();
 
-    std::copy(everyDefinedSymbol.begin(), everyDefinedSymbol.end(), back_inserter(ret));
+  std::copy(impl->everyDefinedSymbol.begin(), impl->everyDefinedSymbol.end(), back_inserter(ret));
 
     if(ret.size() > 0)
         return true;
@@ -261,7 +243,7 @@ Symtab::getAllUndefinedSymbols(std::vector<Symbol*>& ret)
 {
     unsigned size = ret.size();
 
-    ret.insert(ret.end(), undefDynSyms.begin(), undefDynSyms.end());
+    ret.insert(ret.end(), impl->undefDynSyms.begin(), impl->undefDynSyms.end());
 
     if(ret.size() > size)
         return true;
@@ -279,9 +261,8 @@ Symtab::findFuncByEntryOffset(Function*& ret, const Offset entry)
      * This discrepancy is not taken into account here.
      */
     {
-        dyn_c_hash_map<Offset, Function*>::const_accessor ca;
-        if(funcsByOffset.find(ca, entry))
-        {
+        dyn_c_hash_map<Offset,Function*>::const_accessor ca;
+        if (impl->funcsByOffset.find(ca, entry)) {
             ret = ca->second;
             return true;
         }
@@ -350,9 +331,8 @@ Symtab::findVariablesByOffset(std::vector<Variable*>& ret, const Offset offset)
      * relocatable files -- this discrepancy applies here as well.
      */
     {
-        VarsByOffsetMap::const_accessor ca;
-        if(varsByOffset.find(ca, offset))
-        {
+        decltype(impl->varsByOffset)::const_accessor ca;
+        if (impl->varsByOffset.find(ca, offset)) {
             ret = ca->second;
             return true;
         }
@@ -404,68 +384,28 @@ Symtab::getAllVariables(std::vector<Variable*>& ret)
 bool
 Symtab::getAllModules(std::vector<Module*>& ret)
 {
-    dyn_mutex::unique_lock l(im_lock);
-    if(indexed_modules.size() > 0)
-    {
-        std::copy(indexed_modules.begin(), indexed_modules.end(),
-                  std::back_inserter(ret));
-        return true;
-    }
-
-    return false;
+  auto const size = ret.size();
+  std::copy(impl->modules.begin(), impl->modules.end(), std::back_inserter(ret));
+  return ret.size() != size;
 }
 
 bool
 Symtab::findModuleByOffset(Module*& ret, Offset off)
 {
-    dyn_mutex::unique_lock l(im_lock);
-    std::set<ModRange*>    mods;
-    mod_lookup()->find(off, mods);
-    if(!mods.empty())
-    {
-        ret = (*mods.begin())->id();
-    }
-    return !mods.empty();
+   ret = findModuleByOffset(off);
+   return ret != nullptr;
 }
 
-bool
-Symtab::findModuleByOffset(std::set<Module*>& ret, Offset off)
-{
-    dyn_mutex::unique_lock l(im_lock);
-    std::set<ModRange*>    mods;
-    ret.clear();
-    mod_lookup()->find(off, mods);
-    for(auto i = mods.begin(); i != mods.end(); ++i)
-    {
-        ret.insert((*i)->id());
-    }
-    return !ret.empty();
+Module* Symtab::findModuleByOffset(Offset offset) const {
+  return impl->modules.find(offset);
 }
 
-bool
-Symtab::findModuleByName(Module*& ret, const std::string name)
-{
-    dyn_mutex::unique_lock l(im_lock);
-    auto                   loc = indexed_modules.get<3>().find(name);
+std::vector<Module*> Symtab::findModulesByName(std::string const& name) const {
+  return impl->modules.find(name);
+}
 
-    if(loc != indexed_modules.get<3>().end())
-    {
-        ret = *(loc);
-        return true;
-    }
-
-    std::string tmp = extract_pathname_tail(name);
-
-    auto loc2 = indexed_modules.get<2>().find(tmp);
-
-    if(loc2 != indexed_modules.get<2>().end())
-    {
-        ret = *loc2;
-        return true;
-    }
-
-    ret = NULL;
-    return false;
+Module* Symtab::getContainingModule(Offset offset) const {
+  return impl->getContainingModule(offset);
 }
 
 bool
@@ -777,29 +717,32 @@ Symtab::addFunctionRange(FunctionBase* func, Dyninst::Offset next_start)
     Dyninst::Offset sym_low, sym_high;
     bool            found_sym_range = false;
 
-    sym_low = func->getOffset();
-    if(func->getSize())
-        sym_high = sym_low + func->getSize();
-    else if(next_start)
-    {
-        sym_high = next_start;
-    }
-    else
-    {
-        // Inlined symbol, no real way to get size estimates.  Have to rely
-        // on debug info.
-        sym_low = sym_high = 0;
-    }
+   sym_low = func->getOffset();
+   if (func->getSize())
+      sym_high = sym_low + func->getSize();
+   else if (next_start) {
+      sym_high = next_start;
+   }
+   else {
+      //Inlined symbol, no real way to get size estimates.  Have to rely 
+      // on debug info.
+      sym_low = sym_high = 0;
+   }
+   
+   //Add dwarf/debug info ranges to func_lookup
+   FuncRangeCollection &ranges = const_cast<FuncRangeCollection &>(func->getRanges());
+   for (FuncRangeCollection::iterator i = ranges.begin(); i != ranges.end(); i++) {
+      FuncRange &range = *i;
+      if (range.low() == sym_low && range.high() == sym_high)
+         found_sym_range = true;      
+      impl->func_lookup.insert(&range);
+   }
 
-    // Add dwarf/debug info ranges to func_lookup
-    FuncRangeCollection& ranges = const_cast<FuncRangeCollection&>(func->getRanges());
-    for(FuncRangeCollection::iterator i = ranges.begin(); i != ranges.end(); i++)
-    {
-        FuncRange& range = *i;
-        if(range.low() == sym_low && range.high() == sym_high)
-            found_sym_range = true;
-        func_lookup->insert(&range);
-    }
+   //Add symbol range to func_lookup, if present and not already added
+   if (!found_sym_range && sym_low && sym_high) {
+      FuncRange *frange = new FuncRange(sym_low, sym_high - sym_low, func);      
+      impl->func_lookup.insert(frange);
+   }
 
     // Add symbol range to func_lookup, if present and not already added
     if(!found_sym_range && sym_low && sym_high)
@@ -820,9 +763,7 @@ Symtab::addFunctionRange(FunctionBase* func, Dyninst::Offset next_start)
 bool
 Symtab::parseFunctionRanges()
 {
-    parseTypesNow();
-    assert(!func_lookup);
-    func_lookup = new FuncRangeLookup();
+   parseTypesNow();
 
     if(everyFunction.size() && !sorted_everyFunction)
     {
@@ -860,111 +801,92 @@ Symtab::parseFunctionRanges()
 bool
 Symtab::getContainingFunction(Offset offset, Function*& func)
 {
-    if(!isCode(offset))
-    {
-        return false;
-    }
-    if(everyFunction.size() && !sorted_everyFunction)
-    {
-        std::sort(everyFunction.begin(), everyFunction.end(), SymbolCompareByAddr());
-        sorted_everyFunction = true;
-    }
+   if (!isCode(offset)) {
+      return false;
+   }
 
-    unsigned low      = 0;
-    unsigned high     = everyFunction.size();
-    unsigned last_mid = high + 1;
-    unsigned mid;
-
-    if(!high)
-        return false;
-    for(;;)
-    {
-        mid = (low + high) / 2;
-        if(last_mid == mid)
-            break;
-        last_mid   = mid;
-        Offset cur = everyFunction[mid]->getOffset();
-        if(cur > offset)
-        {
-            high = mid;
-            continue;
-        }
-        if(cur < offset)
-        {
-            low = mid;
-            continue;
-        }
-        if(cur == offset)
-        {
-            func = everyFunction[mid];
-            return true;
-        }
-    }
-    if((everyFunction[low]->getOffset() <= offset) &&
-       ((low + 1 == everyFunction.size()) ||
-        (everyFunction[low + 1]->getOffset() > offset)))
-    {
-        func = everyFunction[low];
-        return true;
-    }
-    return false;
+   // Lazily parse the function ranges, but ensure we only do it once.
+   std::call_once(impl->funcRangesAreParsed, [this](){ this->parseFunctionRanges(); });
+   
+   unsigned low = 0;
+   unsigned high = everyFunction.size();
+   unsigned last_mid = high+1;
+   unsigned mid;
+   
+   if (!high) return false;
+   for (;;)
+   {
+      mid = (low + high) / 2;
+      if (last_mid == mid)
+         break;
+      last_mid = mid;
+      Offset cur = everyFunction[mid]->getOffset();
+      if (cur > offset) {
+         high = mid;
+         continue;
+      }
+      if (cur < offset) {
+         low = mid;
+         continue;
+      }
+      if (cur == offset) {
+         func = everyFunction[mid];
+         return true;
+      }
+   }
+   if ((everyFunction[low]->getOffset() <= offset) &&
+       ((low+1 == everyFunction.size()) || 
+        (everyFunction[low+1]->getOffset() > offset)))
+   {
+      func = everyFunction[low];
+      return true;
+   }
+   return false;      
 }
 
-bool
-Symtab::getContainingInlinedFunction(Offset offset, FunctionBase*& func)
-{
-    if(!func_lookup)
-        parseFunctionRanges();
-    assert(func_lookup);
+bool Symtab::getContainingInlinedFunction(Offset offset, FunctionBase* &func)
+{   
+   // Lazily parse the function ranges, but ensure we only do it once.
+   std::call_once(impl->funcRangesAreParsed, [this](){ this->parseFunctionRanges(); });
+   
+   set<FuncRange *> ranges;
+   int num_found = impl->func_lookup.find(offset, ranges);
+   if (num_found == 0) {
+      func = NULL;
+      return false;
+   }
+   if (num_found == 1) {
+      func = (*ranges.begin())->container;
+      return true;
+   }
 
-    set<FuncRange*> ranges;
-    int             num_found = func_lookup->find(offset, ranges);
-    if(num_found == 0)
-    {
-        func = NULL;
-        return false;
-    }
-    if(num_found == 1)
-    {
-        func = (*ranges.begin())->container;
-        return true;
-    }
-
-    // Theoretically, if an address is inlined through a call chain,
-    // There should be only one call chain that contains this address.
-    // However, due to bad DWARF generated by old compilers regarding
-    // OpenMP outlined code regions, it is possible that an address
-    // is included in multiple disjointed call chains.
-    // From one call chain, it looks like the address is not inlined.
-    // From the other, it looks like the address is inlined.
-    // Therefore, here we heuristicaly prefer the deeper call chain
-    // to reflect inlining information.
-    int maxDepth = 0;
-    for(auto range : ranges)
-    {
-        FunctionBase* cur_func = range->container;
-        int           depth    = 0;
-        while(cur_func)
-        {
-            depth++;
-            cur_func = cur_func->getInlinedParent();
-        }
-        if(depth > maxDepth)
-        {
-            maxDepth = depth;
-            func     = range->container;
-        }
-    }
-    return true;
+   // Theoretically, if an address is inlined through a call chain,
+   // There should be only one call chain that contains this address.
+   // However, due to bad DWARF generated by old compilers regarding
+   // OpenMP outlined code regions, it is possible that an address
+   // is included in multiple disjointed call chains.
+   // From one call chain, it looks like the address is not inlined.
+   // From the other, it looks like the address is inlined.
+   // Therefore, here we heuristicaly prefer the deeper call chain
+   // to reflect inlining information.
+   int maxDepth = 0;
+   for (auto range : ranges) {      
+      FunctionBase *cur_func = range->container;
+      int depth = 0;
+      while (cur_func) {
+         depth++;
+         cur_func = cur_func->getInlinedParent();
+      }
+      if (depth > maxDepth) {
+         maxDepth = depth;
+         func = range->container;
+      }
+   }   
+   return true;
 }
 
-Module*
-Symtab::getDefaultModule()
-{
-    dyn_mutex::unique_lock l(im_lock);
-    if(indexed_modules.empty())
-        createDefaultModule();
-    return indexed_modules[0];
+Module *Symtab::getDefaultModule() const {
+    return impl->default_module;
 }
 
 unsigned

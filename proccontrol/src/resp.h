@@ -31,10 +31,11 @@
 #if !defined(RESP_H_)
 #    define RESP_H_
 
-#    include "response.h"
-#    include "int_process.h"
-#    include <map>
-#    include <string>
+#include "response.h"
+#include "int_process.h"
+#include <map>
+#include <string>
+#include <vector>
 
 /**
  * The Resp class is a second implementation of the response

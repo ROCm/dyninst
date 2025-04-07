@@ -33,6 +33,8 @@
 
 #include "util.h"
 #include <memory>
+#include <stddef.h>
+#include <vector>
 #include <boost/atomic.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition_variable.hpp>
@@ -40,6 +42,7 @@
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/concurrent_queue.h>
+#include <boost/functional/hash.hpp>
 
 namespace Dyninst
 {
@@ -67,6 +70,52 @@ class dyn_c_hash_map
     typedef tbb::concurrent_hash_map<K, V, tbb::tbb_hash_compare<K>,
                                      std::allocator<std::pair<K, V>>>
         base;
+
+namespace concurrent {
+  template <typename K>
+  struct hasher {
+    size_t operator()(K const& k) const {
+      return boost::hash<K>{}(k);
+    }
+  };
+
+  namespace detail {
+    template <bool, typename Key>
+    class hash_compare;
+
+    // New style tbb_hash_compare concept (TBB_VERSION_MAJOR >= 2021)
+    template<typename Key>
+    class hash_compare<true, Key> {
+    	hasher<Key> my_hasher;
+    public:
+    	size_t hash(Key const& k) const {
+    		return my_hasher(k);
+    	}
+    	bool equal(Key const& k1, Key const& k2) const {
+    		return k1 == k2;
+    	}
+    };
+
+    // Old style tbb_hash_compare concept
+    template<typename Key>
+    class hash_compare<false, Key> {
+    public:
+    	static size_t hash(Key const& k) {
+    		return hasher<Key>{}(k);
+    	}
+    	static bool equal(Key const& k1, Key const& k2) {
+    		return k1 == k2;
+    	}
+    };
+  }
+}
+
+template<typename K, typename V>
+class dyn_c_hash_map : protected tbb::concurrent_hash_map<K, V,
+    concurrent::detail::hash_compare<TBB_VERSION_MAJOR >= 2021, K>> {
+
+	using base = tbb::concurrent_hash_map<K, V,
+			concurrent::detail::hash_compare<TBB_VERSION_MAJOR >= 2021, K>>;
 
 public:
     using typename base::key_type;
@@ -238,10 +287,7 @@ public:
     using shared_lock = boost::shared_lock<dyn_rwlock>;
 };
 
-class COMMON_EXPORT dyn_thread
-{
-    int myid;
-
+class COMMON_EXPORT dyn_thread {
 public:
     dyn_thread();
     unsigned int        getId();

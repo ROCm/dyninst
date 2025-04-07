@@ -46,12 +46,13 @@
 #include "Collections.h"
 #include "Function.h"
 #include "Variable.h"
-
+#include "pathName.h"
 #include "annotations.h"
 
 #include "debug.h"
 
 #include "symtabAPI/src/Object.h"
+#include "symtab_impl.hpp"
 
 #if !defined(os_windows)
 #    include <dlfcn.h>
@@ -68,7 +69,7 @@ using namespace Dyninst;
 using namespace Dyninst::SymtabAPI;
 using namespace std;
 
-static std::string errMsg;
+static thread_local std::string errMsg;
 
 static const int Symtab_major_version       = DYNINST_MAJOR_VERSION;
 static const int Symtab_minor_version       = DYNINST_MINOR_VERSION;
@@ -179,81 +180,66 @@ Symtab::setupBuiltinTypes()
     boost::shared_ptr<builtInTypeCollection> builtInTypes =
         boost::shared_ptr<builtInTypeCollection>(new builtInTypeCollection);
 
-    // NOTE: integral type  mean twos-complement
-    // -1  int, 32 bit signed integral type
-    // in stab document, size specified in bits, system size is in bytes
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-1, 4, "int", true));
-    // -2  char, 8 bit type holding a character. GDB treats as signed
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-2, 1, "char", true));
-    // -3  short, 16 bit signed integral type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-3, 2, "short", true));
-    // -4  long, 32/64 bit signed integral type
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-4, sizeof(long), "long", true));
-    // -5  unsigned char, 8 bit unsigned integral type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-5, 1, "unsigned char"));
-    // -6  signed char, 8 bit signed integral type
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-6, 1, "signed char", true));
-    // -7  unsigned short, 16 bit unsigned integral type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-7, 2, "unsigned short"));
-    // -8  unsigned int, 32 bit unsigned integral type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-8, 4, "unsigned int"));
-    // -9  unsigned, 32 bit unsigned integral type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-9, 4, "unsigned"));
-    // -10 unsigned long, 32 bit unsigned integral type
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-10, sizeof(unsigned long), "unsigned long"));
-    // -11 void, type indicating the lack of a value
-    //  XXX-size may not be correct jdd 4/22/99
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-11, 0, "void", false));
-    // -12 float, IEEE single precision
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-12, sizeof(float), "float", true));
-    // -13 double, IEEE double precision
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-13, sizeof(double), "double", true));
-    // -14 long double, IEEE double precision, size may increase in future
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-14, sizeof(long double), "long double", true));
-    // -15 integer, 32 bit signed integral type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-15, 4, "integer", true));
-    // -16 boolean, 32 bit type. GDB/GCC 0=False, 1=True, all other values
-    //  have unspecified meaning
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-16, sizeof(bool), "boolean"));
-    // -17 short real, IEEE single precision
-    //  XXX-size may not be correct jdd 4/22/99
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-17, sizeof(float), "short real", true));
-    // -18 real, IEEE double precision XXX-size may not be correct jdd 4/22/99
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-18, sizeof(double), "real", true));
-    // -19 stringptr XXX- size of void * -- jdd 4/22/99
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-19, sizeof(void*), "stringptr"));
-    // -20 character, 8 bit unsigned character type
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-20, 1, "character"));
-    // -21 logical*1, 8 bit type (Fortran, used for boolean or unsigned int)
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-21, 1, "logical*1"));
-    // -22 logical*2, 16 bit type (Fortran, some for boolean or unsigned int)
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-22, 2, "logical*2"));
-    // -23 logical*4, 32 bit type (Fortran, some for boolean or unsigned int)
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-23, 4, "logical*4"));
-    // -24 logical, 32 bit type (Fortran, some for boolean or unsigned int)
-    builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-24, 4, "logical"));
-    // -25 complex, consists of 2 IEEE single-precision floating point values
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-25, sizeof(float) * 2, "complex", true));
-    // -26 complex, consists of 2 IEEE double-precision floating point values
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-26, sizeof(double) * 2, "complex*16", true));
-    // -27 integer*1, 8 bit signed integral type
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-27, 1, "integer*1", true));
-    // -28 integer*2, 16 bit signed integral type
-    builtInTypes->addBuiltInType(
-        Type::make_shared<typeScalar>(-28, 2, "integer*2", true));
+   // NOTE: integral type  mean twos-complement
+   // -1  int, 32 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-1, 4, "int", true));
+   // -2  char, 8 bit type holding a character. GDB treats as signed
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-2, 1, "char", true));
+   // -3  short, 16 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-3, 2, "short", true));
+   // -4  long, 32/64 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-4, sizeof(long), "long", true));
+   // -5  unsigned char, 8 bit unsigned integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-5, 1, "unsigned char"));
+   // -6  signed char, 8 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-6, 1, "signed char", true));
+   // -7  unsigned short, 16 bit unsigned integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-7, 2, "unsigned short"));
+   // -8  unsigned int, 32 bit unsigned integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-8, 4, "unsigned int"));
+   // -9  unsigned, 32 bit unsigned integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-9, 4, "unsigned"));
+   // -10 unsigned long, 32 bit unsigned integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-10, sizeof(unsigned long), "unsigned long"));
+   // -11 void, type indicating the lack of a value
+   //  XXX-size may not be correct jdd 4/22/99
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-11, 0, "void", false));
+   // -12 float, IEEE single precision
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-12, sizeof(float), "float", true));
+   // -13 double, IEEE double precision
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-13, sizeof(double), "double", true));
+   // -14 long double, IEEE double precision, size may increase in future
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-14, sizeof(long double), "long double", true));
+   // -15 integer, 32 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-15, 4, "integer", true));
+   // -16 boolean, 32 bit type. GDB/GCC 0=False, 1=True, all other values
+   //  have unspecified meaning
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-16, sizeof(bool), "boolean"));
+   // -17 short real, IEEE single precision
+   //  XXX-size may not be correct jdd 4/22/99
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-17, sizeof(float), "short real", true));
+   // -18 real, IEEE double precision XXX-size may not be correct jdd 4/22/99
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-18, sizeof(double), "real", true));
+   // -19 stringptr XXX- size of void * -- jdd 4/22/99
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-19, sizeof(void *), "stringptr"));
+   // -20 character, 8 bit unsigned character type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-20, 1, "character"));
+   // -21 logical*1, 8 bit type (Fortran, used for boolean or unsigned int)
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-21, 1, "logical*1"));
+   // -22 logical*2, 16 bit type (Fortran, some for boolean or unsigned int)
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-22, 2, "logical*2"));
+   // -23 logical*4, 32 bit type (Fortran, some for boolean or unsigned int)
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-23, 4, "logical*4"));
+   // -24 logical, 32 bit type (Fortran, some for boolean or unsigned int)
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-24, 4, "logical"));
+   // -25 complex, consists of 2 IEEE single-precision floating point values
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-25, sizeof(float)*2, "complex", true));
+   // -26 complex, consists of 2 IEEE double-precision floating point values
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-26, sizeof(double)*2, "complex*16", true));
+   // -27 integer*1, 8 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-27, 1, "integer*1", true));
+   // -28 integer*2, 16 bit signed integral type
+   builtInTypes->addBuiltInType(Type::make_shared<typeScalar>(-28, 2, "integer*2", true));
 
     /* Quick hack to make integer*4 compatible with int for Fortran
        jnb 6/20/01 */
@@ -327,110 +313,12 @@ Symtab::getABIVersion(int& major, int& minor) const
     return obj_private->getABIVersion(major, minor);
 }
 
-SYMTAB_EXPORT bool
-Symtab::isBigEndianDataEncoding() const
-{
-    return obj_private->isBigEndianDataEncoding();
-}
-
-SYMTAB_EXPORT
-Symtab::Symtab(MappedFile* mf_)
-: AnnotatableSparse()
-, member_offset_(0)
-, parentArchive_(NULL)
-, mf(mf_)
-, mfForDebugInfo(NULL)
-, imageOffset_(0)
-, imageLen_(0)
-, dataOffset_(0)
-, dataLen_(0)
-, is_a_out(false)
-, main_call_addr_(0)
-, address_width_(sizeof(int))
-, code_ptr_(NULL)
-, data_ptr_(NULL)
-, entry_address_(0)
-, base_address_(0)
-, load_address_(0)
-, object_type_(obj_Unknown)
-, is_eel_(false)
-, no_of_sections(0)
-, newSectionInsertPoint(0)
-, no_of_symbols(0)
-, sorted_everyFunction(false)
-, isTypeInfoValid_(false)
-, nlines_(0)
-, fdptr_(0)
-, lines_(NULL)
-, stabstr_(NULL)
-, nstabs_(0)
-, stabs_(NULL)
-, stringpool_(NULL)
-, hasRel_(false)
-, hasRela_(false)
-, hasReldyn_(false)
-, hasReladyn_(false)
-, hasRelplt_(false)
-, hasRelaplt_(false)
-, isStaticBinary_(false)
-, isDefensiveBinary_(false)
-, func_lookup(NULL)
-, mod_lookup_(NULL)
-, obj_private(NULL)
-, _ref_cnt(1)
-{
+SYMTAB_EXPORT Symtab::Symtab() :
+   LookupInterface(),
+   AnnotatableSparse(),
+   impl{std::unique_ptr<symtab_impl>(new symtab_impl{})}
+{  
     init_debug_symtabAPI();
-}
-
-SYMTAB_EXPORT
-Symtab::Symtab()
-: LookupInterface()
-, AnnotatableSparse()
-, member_offset_(0)
-, parentArchive_(NULL)
-, mf(NULL)
-, mfForDebugInfo(NULL)
-, imageOffset_(0)
-, imageLen_(0)
-, dataOffset_(0)
-, dataLen_(0)
-, is_a_out(false)
-, main_call_addr_(0)
-, address_width_(sizeof(int))
-, code_ptr_(NULL)
-, data_ptr_(NULL)
-, entry_address_(0)
-, base_address_(0)
-, load_address_(0)
-, object_type_(obj_Unknown)
-, is_eel_(false)
-, no_of_sections(0)
-, newSectionInsertPoint(0)
-, no_of_symbols(0)
-, sorted_everyFunction(false)
-, isTypeInfoValid_(false)
-, nlines_(0)
-, fdptr_(0)
-, lines_(NULL)
-, stabstr_(NULL)
-, nstabs_(0)
-, stabs_(NULL)
-, stringpool_(NULL)
-, hasRel_(false)
-, hasRela_(false)
-, hasReldyn_(false)
-, hasReladyn_(false)
-, hasRelplt_(false)
-, hasRelaplt_(false)
-, isStaticBinary_(false)
-, isDefensiveBinary_(false)
-, func_lookup(NULL)
-, mod_lookup_(NULL)
-, obj_private(NULL)
-, _ref_cnt(1)
-{
-    init_debug_symtabAPI();
-    create_printf("%s[%d]: Created symtab via default constructor\n", FILE__, __LINE__);
 }
 
 SYMTAB_EXPORT bool
@@ -504,19 +392,7 @@ Symtab::fixup_code_and_data(Offset newImageOffset, Offset newImageLength,
     // Should we update the underlying Object?
 }
 
-/*
-SYMTAB_EXPORT char* Symtab::image_ptr ()  const
-{
-   return code_ptr_;
-}
-
-SYMTAB_EXPORT char* Symtab::data_ptr ()  const
-{
-   return data_ptr_;
-}
-*/
-SYMTAB_EXPORT const char*
-Symtab::getInterpreterName() const
+SYMTAB_EXPORT const char*  Symtab::getInterpreterName() const 
 {
     if(interpreter_name_.length())
         return interpreter_name_.c_str();
@@ -566,89 +442,6 @@ Symtab::getDefaultNamespacePrefix() const
     return defaultNamespacePrefix;
 }
 
-// Operations on the indexed_symbols compound table.
-bool
-Symtab::indexed_symbols::insert(Symbol* s)
-{
-    Offset             o = s->getOffset();
-    master_t::accessor a;
-    if(master.insert(a, std::make_pair(s, o)))
-    {
-        {
-            by_offset_t::accessor oa;
-            by_offset.insert(oa, o);
-            oa->second.push_back(s);
-        }
-        {
-            by_name_t::accessor ma;
-            by_mangled.insert(ma, s->getMangledName());
-            ma->second.push_back(s);
-        }
-        {
-            by_name_t::accessor pa;
-            by_pretty.insert(pa, s->getPrettyName());
-            pa->second.push_back(s);
-        }
-        {
-            by_name_t::accessor ta;
-            by_typed.insert(ta, s->getTypedName());
-            ta->second.push_back(s);
-        }
-
-        return true;
-    }
-    return false;
-}
-
-void
-Symtab::indexed_symbols::clear()
-{
-    master.clear();
-    by_offset.clear();
-    by_mangled.clear();
-    by_pretty.clear();
-    by_typed.clear();
-}
-
-void
-Symtab::indexed_symbols::erase(Symbol* s)
-{
-    if(master.erase(s))
-    {
-        {
-            by_offset_t::accessor oa;
-            if(!by_offset.find(oa, s->getOffset()))
-            {
-                assert(!"by_offset.find(oa, s->getOffset())");
-            }
-            std::remove(oa->second.begin(), oa->second.end(), s);
-        }
-        {
-            by_name_t::accessor ma;
-            if(!by_mangled.find(ma, s->getMangledName()))
-            {
-                assert(!"by_mangled.find(ma, s->getMangledName())");
-            }
-            std::remove(ma->second.begin(), ma->second.end(), s);
-        }
-        {
-            by_name_t::accessor pa;
-            if(!by_pretty.find(pa, s->getPrettyName()))
-            {
-                assert(!"by_pretty.find(pa, s->getPrettyName())");
-            }
-            std::remove(pa->second.begin(), pa->second.end(), s);
-        }
-        {
-            by_name_t::accessor ta;
-            if(!by_typed.find(ta, s->getTypedName()))
-            {
-                assert(!"by_typed.find(ta, s->getTypedName())");
-            }
-            std::remove(ta->second.begin(), ta->second.end(), s);
-        }
-    }
-}
 
 /*
  * extractSymbolsFromFile
@@ -674,32 +467,31 @@ Symtab::extractSymbolsFromFile(Object* linkedFile, std::vector<Symbol*>& raw_sym
             return true;
         }
 
-        // If a symbol starts with "." we want to skip it. These indicate labels in the
-        // code.
-
-        // removed 1/09: this should be done in Dyninst, not Symtab
-
-        // Have to do this before the undef check, below.
-        fixSymRegion(sym);
-
-        // check for undefined dynamic symbols. Used when rewriting relocation section.
-        // relocation entries have references to these undefined dynamic symbols.
-        // We also have undefined symbols for the static binary case.
-        if(sym->getRegion() == NULL && !sym->isAbsolute() && !sym->isCommonStorage())
-        {
-            undefDynSyms.insert(sym);
-            continue;
-        }
-
-        // Check whether this symbol has a valid offset. If they do not we have a
-        // consistency issue. This should be a null check.
-
-        // Symbols can have an offset of 0 if they don't refer to things within a file.
-
-        raw_syms.push_back(sym);
-    }
-
-    return true;
+      // If a symbol starts with "." we want to skip it. These indicate labels in the
+      // code. 
+      
+      // removed 1/09: this should be done in Dyninst, not Symtab
+      
+      // Have to do this before the undef check, below. 
+      fixSymRegion(sym);
+      
+      // check for undefined dynamic symbols. Used when rewriting relocation section.
+      // relocation entries have references to these undefined dynamic symbols.
+      // We also have undefined symbols for the static binary case.
+      if (sym->getRegion() == NULL && !sym->isAbsolute() && !sym->isCommonStorage()) {
+         impl->undefDynSyms.insert(sym);
+         continue;
+      }
+      
+      // Check whether this symbol has a valid offset. If they do not we have a
+      // consistency issue. This should be a null check.
+      
+      // Symbols can have an offset of 0 if they don't refer to things within a file.
+      
+      raw_syms.push_back(sym);
+   }
+   
+   return true;
 }
 
 bool
@@ -735,9 +527,9 @@ Symtab::fixSymModules(std::vector<Symbol*>& raw_syms)
     {
         return false;
     }
-    for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
-    {
-        (*i)->finalizeRanges();
+
+    if(!impl->default_module) {
+	createDefaultModule();
     }
 
     //    const std::vector<std::pair<std::string, Offset> > &mods = obj->modules_;
@@ -781,7 +573,7 @@ Symtab::createIndices(std::vector<Symbol*>& raw_syms, bool undefined)
 bool
 Symtab::createAggregates()
 {
-    std::vector<Symbol*> syms(everyDefinedSymbol.begin(), everyDefinedSymbol.end());
+  std::vector<Symbol*> syms(impl->everyDefinedSymbol.begin(), impl->everyDefinedSymbol.end());
 
 #pragma omp parallel for
     for(size_t i = 0; i < syms.size(); ++i)
@@ -797,10 +589,8 @@ Symtab::createAggregates()
 bool
 Symtab::fixSymModule(Symbol*& sym)
 {
-    Module* mod = NULL;
-    findModuleByOffset(mod, sym->getOffset());
-    if(!mod)
-        mod = getDefaultModule();
+    Module* mod = getContainingModule(sym->getOffset());
+    if(!mod) mod = getDefaultModule();
     sym->setModule(mod);
     return true;
 }
@@ -808,99 +598,95 @@ Symtab::fixSymModule(Symbol*& sym)
 bool
 Symtab::addSymbolToIndices(Symbol*& sym, bool undefined)
 {
-    assert(sym);
-    if(!undefined)
-    {
-        everyDefinedSymbol.insert(sym);
-    }
-    else
-    {
-        // multi-index container should handle duplication
-        undefDynSyms.insert(sym);
-    }
-
+   assert(sym);
+   if (!undefined) {
+       impl->everyDefinedSymbol.insert(sym);
+   }
+   else {
+       // multi-index container should handle duplication
+       impl->undefDynSyms.insert(sym);
+   }
+   
     return true;
 }
 
 bool
 Symtab::addSymbolToAggregates(const Symbol* sym_tmp)
 {
-    Symbol* sym = const_cast<Symbol*>(sym_tmp);
+  Symbol* sym = const_cast<Symbol*>(sym_tmp);
+  
+    switch(sym->getType()) {
+    case Symbol::ST_FUNCTION: 
+    case Symbol::ST_INDIRECT:
+      {
+        // We want to do the following:
+        // If no function exists, create and add. 
+        // Combine this information
+        //   Add this symbol's names to the function.
+        //   Keep module information
 
-    switch(sym->getType())
-    {
-        case Symbol::ST_FUNCTION:
-        case Symbol::ST_INDIRECT: {
-            // We want to do the following:
-            // If no function exists, create and add.
-            // Combine this information
-            //   Add this symbol's names to the function.
-            //   Keep module information
+        auto add_func = [this](Function *f) {
+	  boost::unique_lock<dyn_rwlock> l(symbols_rwlock);
+	  everyFunction.push_back(f);
+	  sorted_everyFunction = false;
+        };
 
-            Function* func  = NULL;
-            bool      found = false;
-            {
-                dyn_c_hash_map<Offset, Function*>::accessor a;
-                found = !funcsByOffset.insert(a, sym->getOffset());
-                if(found)
-                    func = a->second;
-                else
-                {
-                    // Create a new function
-                    // Also, update the symbol to point to this function.
-                    func      = new Function(sym);
-                    a->second = func;
-                }
-            }  // Release the lock on the offset/function pair
-            if(found)
-            {
-                /* XXX
-                 * For relocatable files, the offset of a symbol is relative to the
-                 * beginning of a Region. Therefore, a symbol in a relocatable file
-                 * is not uniquely identifiable by its offset, but it is uniquely
-                 * identifiable by its Region and its offset.
-                 *
-                 * For now, do not add these functions to funcsByOffset collection.
-                 */
+        Function *func = NULL;
+        bool found = false;
+        {
+            dyn_c_hash_map<Offset,Function*>::accessor a;
+            found = !impl->funcsByOffset.insert(a, sym->getOffset());
+            if(found){
+        	    func = a->second;
+            } else {
+                // Create a new function
+                // Also, update the symbol to point to this function.
+                func = new Function(sym);
+                a->second = func;
+            }
+        }
 
-                if(func->getRegion() != sym->getRegion())
-                {
-                    func = new Function(sym);
-                    boost::unique_lock<dyn_rwlock> l(symbols_rwlock);
-                    everyFunction.push_back(func);
-                    sorted_everyFunction = false;
-                }
+        if(found) {
+            /* XXX 
+             * For relocatable files, the offset of a symbol is relative to the
+             * beginning of a Region. Therefore, a symbol in a relocatable file
+             * is not uniquely identifiable by its offset, but it is uniquely
+             * identifiable by its Region and its offset.
+             *
+             * For now, do not add these functions to funcsByOffset collection.
+             */
+
+            if( func->getRegion() != sym->getRegion() ) {
+                func = new Function(sym);
+                add_func(func);
+            } else {
+        	// The function has an additional name
+        	// e.g., two symbols aliasing the same code location
                 func->addSymbol(sym);
             }
-            else
-            {
-                boost::unique_lock<dyn_rwlock> l(symbols_rwlock);
-                everyFunction.push_back(func);
-                sorted_everyFunction = false;
-            }
-            sym->setFunction(func);
-
-            break;
+        } else {
+            add_func(func);
         }
-        case Symbol::ST_TLS:
-        case Symbol::ST_OBJECT: {
-            // The same as the above, but with variables.
-            Variable* var   = NULL;
-            bool      found = false;
-            {
-                VarsByOffsetMap::accessor a;
-                found = !varsByOffset.insert(a, sym->getOffset());
-                VarsByOffsetMap::mapped_type& vars = a->second;
-                if(found)
-                {
-                    found = false;
-                    for(auto v : vars)
-                    {
-                        if(v->getSize() == sym->getSize())
-                        {
-                            found = true;
-                            var   = v;
-                        }
+
+        sym->setFunction(func);
+
+        break;
+    }
+    case Symbol::ST_TLS:
+    case Symbol::ST_OBJECT: {
+        // The same as the above, but with variables.
+        Variable *var = NULL;
+        bool found = false;
+        {
+            decltype(impl->varsByOffset)::accessor a;
+            found = !impl->varsByOffset.insert(a, sym->getOffset());
+            decltype(impl->varsByOffset)::mapped_type &vars = a->second;
+            if (found)  {
+                found = false;
+                for (auto v: vars)  {
+                    if (v->getSize() == sym->getSize())  {
+                        found = true;
+                        var = v;
                     }
                 }
                 if(!found)
@@ -991,92 +777,23 @@ Symtab::doNotAggregate(const Symbol* sym)
     return false;
 }
 
-/* Add the new name to the appropriate symbol index */
-
-bool
-Symtab::updateIndices(Symbol* /*sym*/, std::string /*newName*/, NameType /*nameType*/)
-{
-#if 0
-     if (nameType & mangledName) {
-        // Add this symbol under the given name (as mangled)
-        symsByMangledName[newName].push_back(sym);
-    }
-    if (nameType & prettyName) {
-        // Add this symbol under the given name (as pretty)
-        symsByPrettyName[newName].push_back(sym);
-    }
-    if (nameType & typedName) {
-        // Add this symbol under the given name (as typed)
-        symsByTypedName[newName].push_back(sym);
-    }
-#endif
-    return true;
-}
-
-#if 0
-/* checkPPC64DescriptorSymbols() is no longer needed.  3-word descriptor
- * symbols are properly taken care of during symbol parsing.  See
- * parse_symbols() in Object-elf.C for details.
- */
-
-#    if defined(ppc64_linux)
-/* Special case for ppc64 ELF binaries. Sometimes a function has a 3-byte descriptor symbol
- * along with it in the symbol table and "." preceding its original pretty name for the correct
- * function symbol. This checks to see if we have a corresponding 3-byte descriptor symbol existing
- * and if it does we remove the preceding "." from the name of the symbol
- */
-
-void Symtab::checkPPC64DescriptorSymbols(Object *linkedFile)
-{
-   // find the real functions -- those with the correct type in the symbol table
-   for(SymbolIter symIter(*linkedFile); symIter;symIter++)
-   {
-      Symbol *lookUp = symIter.currval();
-      const char *np = lookUp->getMangledName().c_str();
-      if(!np)
-         continue;
-
-      if(np[0] == '.' && (lookUp->getType() == Symbol::ST_FUNCTION))
-      {
-         std::vector<Symbol *>syms;
-         std::string newName = np+1;
-         if(linkedFile->get_symbols(newName, syms) && (syms[0]->getSize() == 24 || syms[0]->getSize() == 0))
-         {
-            //Remove the "." from the name
-            lookUp->mangledNames[0] = newName;
-
-            //Change the type of the descriptor symbol
-            syms[0]->type_ = Symbol::ST_NOTYPE;
-         }
-      }
-   }
-
-}
-
-#    endif
-#endif
-
 //  setModuleLanguages is only called after modules have been defined.
 //  it attempts to set each module's language, information which is needed
 //  before names can be demangled.
 void
 Symtab::setModuleLanguages(dyn_hash_map<std::string, supportedLanguages>* mod_langs)
 {
-    if(!mod_langs->size())
-        return;  // cannot do anything here
-    //  this case will arise on non-stabs platforms until language parsing can be
-    //  introduced at this level
-    Module* currmod = NULL;
-    // int dump = 0;
+   if (!mod_langs->size())
+      return;  // cannot do anything here
+   //  this case will arise until language parsing can be introduced at this level
+   //int dump = 0;
 
-    for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
-    {
-        currmod = (*i);
-        supportedLanguages currLang;
-        if(currmod->isShared())
-        {
-            continue;  // need to find some way to get shared object languages?
-        }
+    for (auto *currmod : impl->modules)
+   {
+      supportedLanguages currLang;
+      if (currmod->isShared()) {
+         continue;  // need to find some way to get shared object languages?
+      }
 
         const std::string fn = currmod->fileName();
         if(mod_langs->find(currmod->fileName()) != mod_langs->end())
@@ -1106,148 +823,47 @@ Symtab::setModuleLanguages(dyn_hash_map<std::string, supportedLanguages>* mod_la
     }
 }
 
-void
-Symtab::createDefaultModule()
-{
-    assert(indexed_modules.empty());
-    Module* mod = new Module(lang_Unknown, imageOffset_, name(), this);
+void Symtab::createDefaultModule() {
+    Module *mod = new Module(lang_Unknown,
+                     imageOffset_,
+                     file(),
+                     this);
     mod->addRange(imageOffset_, imageLen_ + imageOffset_);
-    indexed_modules.push_back(mod);
-    mod->finalizeRanges();
+    impl->default_module = mod;
+    addModule(mod);
 }
 
-Module*
-Symtab::getOrCreateModule(const std::string& modName, const Offset modAddr)
-{
-    if(indexed_modules.empty())
-    {
-        createDefaultModule();
-    }
-    std::string nameToUse;
-    if(modName.length() > 0)
-        nameToUse = modName;
-    else
-        nameToUse = "DEFAULT_MODULE";
-
-    Module* fm = NULL;
-    if(findModuleByName(fm, nameToUse))
-    {
-        if(modAddr && (modAddr < fm->addr()))
-        {
-            fm->addr_ = modAddr;
-        }
-        return fm;
-    }
-
-    const char* str = nameToUse.c_str();
-    int         len = nameToUse.length();
-    assert(len > 0);
-
-    // TODO ignore directory definitions for now
-    if(str[len - 1] == '/')
-        return NULL;
-
-    return (newModule(nameToUse, modAddr, lang_Unknown));
+void Symtab::addModule(Module *mod) {
+  impl->modules.insert(mod);
+  for(auto *m : mod->finalizeRanges()) {
+    impl->mod_lookup_.insert(m);
+  }
 }
 
-Module*
-Symtab::newModule(const std::string& name, const Offset addr, supportedLanguages lang)
+Module *Symtab::getOrCreateModule(const std::string &modName, 
+                                  const Offset modAddr)
 {
-    Module* ret = NULL;
-    // modules can be defined several times in C++ due to templates and
-    //   in-line member functions.
+   Module *fm = getContainingModule(modAddr);
 
-    if(findModuleByName(ret, name))
-    {
-        return (ret);
-    }
+   if (fm) return fm;
 
-    // parsing_printf("=== image, creating new pdmodule %s, addr 0x%x\n",
-    //				name.c_str(), addr);
+    create_printf("%s[%d]: Module '%s' at location 0x'%zx' not found. Creating new module.\n",
+	          FILE__, __LINE__, modName.c_str(), modAddr);
 
-    std::string fileNm, fullNm;
-    fullNm = name;
-    fileNm = extract_pathname_tail(name);
+    Module *mod = new Module(lang_Unknown, modAddr, modName, this);
+    addModule(mod);
 
-    create_printf("%s[%d]: In %p: Creating new module '%s'/'%s'\n", FILE__, __LINE__,
-                  (void*) this, fileNm.c_str(), fullNm.c_str());
-
-    ret = new Module(lang, addr, fullNm, this);
-    assert(ret);
-
-    /*
-     * FIXME
-     *
-     * There are cases where the fileName can be the same, but the full name is
-     * different and the modules are actually different. This is an inherent
-     * problem with how modules are processed.
-     */
-    if(indexed_modules.get<2>().end() != indexed_modules.get<2>().find(ret->fileName()))
-    {
-        create_printf("%s[%d]:  WARN:  LEAK?  already have module with name %s\n", FILE__,
-                      __LINE__, ret->fileName().c_str());
-    }
-
-    if(indexed_modules.get<3>().end() != indexed_modules.get<3>().find(ret->fullName()))
-    {
-        create_printf("%s[%d]:  WARN:  LEAK?  already have module with name %s\n", FILE__,
-                      __LINE__, ret->fullName().c_str());
-    }
-
-    indexed_modules.push_back(ret);
-
-    return (ret);
+    return mod;
 }
 
-Symtab::Symtab(std::string filename, bool defensive_bin, bool& err)
-: LookupInterface()
-, AnnotatableSparse()
-, member_offset_(0)
-, parentArchive_(NULL)
-, mf(NULL)
-, mfForDebugInfo(NULL)
-, imageOffset_(0)
-, imageLen_(0)
-, dataOffset_(0)
-, dataLen_(0)
-, is_a_out(false)
-, main_call_addr_(0)
-, address_width_(sizeof(int))
-, code_ptr_(NULL)
-, data_ptr_(NULL)
-, entry_address_(0)
-, base_address_(0)
-, load_address_(0)
-, object_type_(obj_Unknown)
-, is_eel_(false)
-, no_of_sections(0)
-, newSectionInsertPoint(0)
-, no_of_symbols(0)
-, sorted_everyFunction(false)
-, isTypeInfoValid_(false)
-, nlines_(0)
-, fdptr_(0)
-, lines_(NULL)
-, stabstr_(NULL)
-, nstabs_(0)
-, stabs_(NULL)
-, stringpool_(NULL)
-, hasRel_(false)
-, hasRela_(false)
-, hasReldyn_(false)
-, hasReladyn_(false)
-, hasRelplt_(false)
-, hasRelaplt_(false)
-, isStaticBinary_(false)
-, isDefensiveBinary_(defensive_bin)
-, func_lookup(NULL)
-, mod_lookup_(NULL)
-, obj_private(NULL)
-, _ref_cnt(1)
+Symtab::Symtab(std::string filename, bool defensive_bin, bool &err) : Symtab()
 {
-    init_debug_symtabAPI();
-    // Initialize error parameter
-    err = false;
+   isDefensiveBinary_ = defensive_bin;
+
+   // Initialize error parameter
+   err = false;
+   
+   create_printf("%s[%d]: created symtab for %s\n", FILE__, __LINE__, filename.c_str());
 
     create_printf("%s[%d]: created symtab for %s\n", FILE__, __LINE__, filename.c_str());
 
@@ -1289,55 +905,15 @@ Symtab::Symtab(std::string filename, bool defensive_bin, bool& err)
     defaultNamespacePrefix = "";
 }
 
-Symtab::Symtab(unsigned char* mem_image, size_t image_size, const std::string& name,
-               bool defensive_bin, bool& err)
-: LookupInterface()
-, AnnotatableSparse()
-, member_offset_(0)
-, parentArchive_(NULL)
-, mf(NULL)
-, mfForDebugInfo(NULL)
-, imageOffset_(0)
-, imageLen_(0)
-, dataOffset_(0)
-, dataLen_(0)
-, is_a_out(false)
-, main_call_addr_(0)
-, address_width_(sizeof(int))
-, code_ptr_(NULL)
-, data_ptr_(NULL)
-, entry_address_(0)
-, base_address_(0)
-, load_address_(0)
-, object_type_(obj_Unknown)
-, is_eel_(false)
-, no_of_sections(0)
-, newSectionInsertPoint(0)
-, no_of_symbols(0)
-, sorted_everyFunction(false)
-, isTypeInfoValid_(false)
-, nlines_(0)
-, fdptr_(0)
-, lines_(NULL)
-, stabstr_(NULL)
-, nstabs_(0)
-, stabs_(NULL)
-, stringpool_(NULL)
-, hasRel_(false)
-, hasRela_(false)
-, hasReldyn_(false)
-, hasReladyn_(false)
-, hasRelplt_(false)
-, hasRelaplt_(false)
-, isStaticBinary_(false)
-, isDefensiveBinary_(defensive_bin)
-, func_lookup(NULL)
-, mod_lookup_(NULL)
-, obj_private(NULL)
-, _ref_cnt(1)
+Symtab::Symtab(unsigned char *mem_image, size_t image_size, 
+               const std::string &name, bool defensive_bin, bool &err) : Symtab()
 {
-    // Initialize error parameter
-    err = false;
+   isDefensiveBinary_ = defensive_bin;
+   // Initialize error parameter
+   err = false;
+  
+   create_printf("%s[%d]: created symtab for memory image at addr %p\n", 
+                 FILE__, __LINE__, (void*)mem_image);
 
     create_printf("%s[%d]: created symtab for memory image at addr %p\n", FILE__,
                   __LINE__, (void*) mem_image);
@@ -1381,14 +957,7 @@ sort_reg_by_addr(const Region* a, const Region* b)
     return a->getMemOffset() < b->getMemOffset();
 }
 
-extern void
-print_symbols(std::vector<Symbol*>& allsymbols);
-extern void
-print_symbol_map(dyn_hash_map<std::string, std::vector<Symbol*>>* symbols);
-
-static bool
-ExceptionBlockCmp(ExceptionBlock* a, ExceptionBlock* b)
-{
+static bool ExceptionBlockCmp(ExceptionBlock *a, ExceptionBlock *b) {
     return a->catchStart() < b->catchStart();
 }
 
@@ -1504,9 +1073,7 @@ Symtab::extractInfo(Object* linkedFile)
 
     /* insert error check here. check if parsed */
     address_width_ = linkedFile->getAddressWidth();
-    is_a_out       = linkedFile->is_aout();
-    code_ptr_      = linkedFile->code_ptr();
-    data_ptr_      = linkedFile->data_ptr();
+    is_a_out = linkedFile->is_aout();
 
     if(linkedFile->interpreter_name())
         interpreter_name_ = std::string(linkedFile->interpreter_name());
@@ -1524,12 +1091,7 @@ Symtab::extractInfo(Object* linkedFile)
     // a vector to hold all created symbols until they are properly classified
     std::vector<Symbol*> raw_syms;
 
-#ifdef BINEDIT_DEBUG
-    printf("== from linkedFile...\n");
-    print_symbol_map(linkedFile->getAllSymbols());
-#endif
-
-    if(!extractSymbolsFromFile(linkedFile, raw_syms))
+    if (!extractSymbolsFromFile(linkedFile, raw_syms)) 
     {
         setSymtabError(Syms_To_Functions);
         return false;
@@ -1540,12 +1102,6 @@ Symtab::extractInfo(Object* linkedFile)
         setSymtabError(Syms_To_Functions);
         return false;
     }
-    Object* obj = getObject();
-    if(!obj)
-    {
-        return false;
-    }
-    obj->clearSymsToMods();
 
     // wait until all modules are defined before applying languages to
     // them we want to do it this way so that module information comes
@@ -1590,90 +1146,6 @@ Symtab::extractInfo(Object* linkedFile)
     for(unsigned i = 0; i < fbt.size(); i++)
         relocation_table_.push_back(fbt[i]);
     return true;
-}
-
-Symtab::Symtab(const Symtab& obj)
-: LookupInterface()
-, AnnotatableSparse()
-, member_name_(obj.member_name_)
-, member_offset_(obj.member_offset_)
-, parentArchive_(NULL)
-, mf(NULL)
-, mfForDebugInfo(NULL)
-, imageOffset_(obj.imageOffset_)
-, imageLen_(obj.imageLen_)
-, dataOffset_(obj.dataOffset_)
-, dataLen_(obj.dataLen_)
-, is_a_out(obj.is_a_out)
-, main_call_addr_(obj.main_call_addr_)
-, address_width_(sizeof(int))
-, code_ptr_(NULL)
-, data_ptr_(NULL)
-, entry_address_(0)
-, base_address_(0)
-, load_address_(0)
-, object_type_(obj_Unknown)
-, is_eel_(false)
-, defaultNamespacePrefix(obj.defaultNamespacePrefix)
-, no_of_sections(0)
-, newSectionInsertPoint(0)
-, no_of_symbols(obj.no_of_symbols)
-, sorted_everyFunction(false)
-, isTypeInfoValid_(obj.isTypeInfoValid_)
-, nlines_(0)
-, fdptr_(0)
-, lines_(NULL)
-, stabstr_(NULL)
-, nstabs_(0)
-, stabs_(NULL)
-, stringpool_(NULL)
-, hasRel_(false)
-, hasRela_(false)
-, hasReldyn_(false)
-, hasReladyn_(false)
-, hasRelplt_(false)
-, hasRelaplt_(false)
-, isStaticBinary_(false)
-, isDefensiveBinary_(obj.isDefensiveBinary_)
-, func_lookup(NULL)
-, mod_lookup_(NULL)
-, obj_private(NULL)
-, _ref_cnt(1)
-{
-    create_printf("%s[%d]: Creating symtab 0x%p from symtab 0x%p\n", FILE__, __LINE__,
-                  (const void*) this, (const void*) &obj);
-
-    unsigned i;
-
-    for(i = 0; i < obj.regions_.size(); i++)
-    {
-        regions_.push_back(new Region(*(obj.regions_[i])));
-        regions_.back()->setSymtab(this);
-    }
-
-    for(i = 0; i < regions_.size(); i++)
-        regionsByEntryAddr[regions_[i]->getMemOffset()] = regions_[i];
-
-    // TODO FIXME: copying symbols/Functions/Variables
-    // (and perhaps anything else initialized zero above)
-
-    for(i = 0; i < obj.indexed_modules.size(); i++)
-    {
-        Module* m = new Module(*(obj.indexed_modules[i]));
-        indexed_modules.push_back(m);
-    }
-
-    for(i = 0; i < obj.relocation_table_.size(); i++)
-    {
-        relocation_table_.push_back(relocationEntry(obj.relocation_table_[i]));
-    }
-
-    for(i = 0; i < obj.excpBlocks.size(); i++)
-    {
-        excpBlocks.push_back(new ExceptionBlock(*(obj.excpBlocks[i])));
-    }
-
-    deps_ = obj.deps_;
 }
 
 // Address must be in code or data range since some code may end up
@@ -1774,8 +1246,31 @@ Symtab::getFuncBindingTable(std::vector<relocationEntry>& fbt) const
     return true;
 }
 
-SYMTAB_EXPORT bool
-Symtab::updateFuncBindingTable(Offset stub_addr, Offset plt_addr)
+SYMTAB_EXPORT bool Symtab::findPltEntryByTarget(const Address target_address, relocationEntry &result) const
+{
+    /**
+     * Object files and static binaries will not have a function binding table
+     * because the function binding table holds relocations used by the dynamic
+     * linker
+     */
+    if(relocation_table_.empty() && !isStaticBinary() &&
+       getObjectType() != obj_RelocatableFile)
+    {
+        fprintf(stderr, "%s[%d]:  WARN:  zero func bindings\n", FILE__, __LINE__);
+    }
+
+    auto it = std::find_if(relocation_table_.cbegin(), relocation_table_.cend(),
+                           [=](const relocationEntry& entry) {
+                               return entry.target_addr() == target_address;
+                           });
+    if(it == relocation_table_.cend())
+        return false;
+
+    result = *it;
+    return true;
+}
+
+SYMTAB_EXPORT bool Symtab::updateFuncBindingTable(Offset stub_addr, Offset plt_addr)
 {
     int stub_idx = -1, plt_idx = -1;
 
@@ -1839,10 +1334,9 @@ Symtab::~Symtab()
     everyDefinedSymbol.clear();
     undefDynSyms.clear();
 
-    for(unsigned i = 0; i < everyFunction.size(); i++)
-    {
-        delete everyFunction[i];
-    }
+   // Symbols are copied from linkedFile, and NOT deleted
+   impl->everyDefinedSymbol.clear();
+   impl->undefDynSyms.clear();
 
     everyFunction.clear();
     funcsByOffset.clear();
@@ -1852,8 +1346,8 @@ Symtab::~Symtab()
         delete everyVariable[i];
     }
 
-    everyVariable.clear();
-    varsByOffset.clear();
+   everyFunction.clear();
+   impl->funcsByOffset.clear();
 
     for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
     {
@@ -1861,11 +1355,13 @@ Symtab::~Symtab()
     }
     indexed_modules.clear();
 
-    for(unsigned i = 0; i < excpBlocks.size(); i++)
-        delete excpBlocks[i];
+   everyVariable.clear();
+   impl->varsByOffset.clear();
 
-    create_printf("%s[%d]: Symtab::~Symtab removing %p from allSymtabs\n", FILE__,
-                  __LINE__, (void*) this);
+    for (auto *m : impl->modules)
+   {
+      delete m;
+   }
 
     deps_.clear();
 
@@ -1875,26 +1371,16 @@ Symtab::~Symtab()
             allSymtabs.erase(allSymtabs.begin() + i);
     }
 
-    delete func_lookup;
-    delete mod_lookup_;
+   // Make sure to free the underlying Object as it doesn't have a factory
+   // open method
+   delete obj_private;
 
-    // Make sure to free the underlying Object as it doesn't have a factory
-    // open method
-    delete obj_private;
+   if (mf) MappedFile::closeMappedFile(mf);
 
-    if(mf)
-        MappedFile::closeMappedFile(mf);
-}
+}	
 
-bool Symtab::exportXML(string) { return false; }
-
-bool Symtab::exportBin(string) { return false; }
-
-Symtab* Symtab::importBin(std::string) { return NULL; }
-
-bool
-Symtab::openFile(Symtab*& obj, void* mem_image, size_t size, std::string name,
-                 def_t def_bin)
+bool Symtab::openFile(Symtab *&obj, void *mem_image, size_t size, 
+                      std::string name, def_t def_bin)
 {
     bool err = false;
 #if defined(TIMED_PARSE)
@@ -2142,8 +1628,23 @@ SYMTAB_EXPORT bool
 Symtab::getAddressRanges(std::vector<AddressRange>& ranges, std::string lineSource,
                          unsigned int lineNo)
 {
-    unsigned int originalSize = ranges.size();
-    parseLineInformation();
+   unsigned int originalSize = ranges.size();
+   parseLineInformation();
+   
+   /* Iteratate over the modules, looking for ranges in each. */
+    for (auto *m : impl->modules)
+   {
+       StringTablePtr s = m->getStrings();
+       boost::unique_lock<dyn_mutex> l(s->lock);
+       // Only check modules that have this filename present
+       if(s->get<1>().find(lineSource) == s->get<1>().end()) {
+           continue;
+       }
+       LineInformation *lineInformation = m->parseLineInformation();
+       if (lineInformation) {
+           lineInformation->getAddressRanges( lineSource.c_str(), lineNo, ranges );
+       }
+   } /* end iteration over modules */
 
     /* Iteratate over the modules, looking for ranges in each. */
     for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
@@ -2171,13 +1672,12 @@ Symtab::getAddressRanges(std::vector<AddressRange>& ranges, std::string lineSour
 SYMTAB_EXPORT bool
 Symtab::getSourceLines(std::vector<Statement::Ptr>& lines, Offset addressInRange)
 {
-    unsigned int      originalSize = lines.size();
-    std::set<Module*> mods_for_offset;
-    findModuleByOffset(mods_for_offset, addressInRange);
-    for(auto i = mods_for_offset.begin(); i != mods_for_offset.end(); ++i)
-    {
-        (*i)->getSourceLines(lines, addressInRange);
-    }
+   unsigned int originalSize = lines.size();
+    Module* m = getContainingModule(addressInRange);
+
+    if(!m) return false;
+
+    m->getSourceLines(lines, addressInRange);
 
     if(lines.size() != originalSize)
         return true;
@@ -2199,64 +1699,7 @@ Symtab::getSourceLines(std::vector<LineNoTuple>& lines, Offset addressInRange)
     return true;
 }
 
-SYMTAB_EXPORT bool
-Symtab::addLine(std::string lineSource, unsigned int lineNo, unsigned int lineOffset,
-                Offset lowInclAddr, Offset highExclAddr)
-{
-    Module* mod;
-
-    if(!findModuleByName(mod, lineSource))
-    {
-        std::string fileNm = extract_pathname_tail(lineSource);
-
-        if(!findModuleByName(mod, fileNm))
-        {
-            if(!findModuleByName(mod, mf->pathname()))
-                return false;
-        }
-    }
-
-    LineInformation* lineInfo = mod->getLineInformation();
-
-    if(!lineInfo)
-        return false;
-
-    return (lineInfo->addLine(lineSource.c_str(), lineNo, lineOffset, lowInclAddr,
-                              highExclAddr));
-}
-
-SYMTAB_EXPORT bool
-Symtab::addAddressRange(Offset lowInclusiveAddr, Offset highExclusiveAddr,
-                        std::string lineSource, unsigned int lineNo,
-                        unsigned int lineOffset)
-{
-    Module* mod;
-
-    if(!findModuleByName(mod, lineSource))
-    {
-        std::string fileNm = extract_pathname_tail(lineSource);
-
-        if(!findModuleByName(mod, fileNm))
-            return false;
-    }
-
-    LineInformation* lineInfo = mod->getLineInformation();
-
-    if(!lineInfo)
-        return false;
-
-    return (lineInfo->addAddressRange(lowInclusiveAddr, highExclusiveAddr,
-                                      lineSource.c_str(), lineNo, lineOffset));
-}
-
-void
-Symtab::setTruncateLinePaths(bool value)
-{
-    getObject()->setTruncateLinePaths(value);
-}
-
-bool
-Symtab::getTruncateLinePaths()
+void Symtab::setTruncateLinePaths(bool value)
 {
     return getObject()->getTruncateLinePaths();
 }
@@ -2271,11 +1714,13 @@ Symtab::parseTypes()
     }
     linkedFile->parseTypeInfo();
 
-    for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
-    {
-        (*i)->setModuleTypes(typeCollection::getModTypeCollection((*i)));
-        (*i)->finalizeRanges();
-    }
+    for (auto *m : impl->modules)
+   {
+       m->setModuleTypes(typeCollection::getModTypeCollection(m));
+       for(auto *mr : m->finalizeRanges()) {
+	   impl->mod_lookup_.insert(mr);
+       }
+   }
 
     //  optionally we might want to clear the static data struct in typeCollection
     //  here....  the parsing is over, and we have added all typeCollections as
@@ -2311,18 +1756,16 @@ Symtab::findType(boost::shared_ptr<Type>& type, std::string name)
 {
     parseTypesNow();
 
-    if(indexed_modules.empty())
-        return false;
+   if (impl->modules.empty())
+      return false;
 
-    for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
-    {
-        typeCollection* tc = (*i)->getModuleTypes();
-        if(!tc)
-            continue;
-        type = tc->findType(name, Type::share);
-        if(type)
-            return true;
-    }
+   for (auto *m : impl->modules)
+   {
+	   typeCollection *tc = m->getModuleTypes();
+	   if (!tc) continue;
+	   type = tc->findType(name, Type::share);
+	   if (type) return true;
+   }
 
     if(type == NULL)
         return false;
@@ -2336,20 +1779,18 @@ SYMTAB_EXPORT boost::shared_ptr<Type>
     boost::shared_ptr<Type> t;
     parseTypesNow();
 
-    if(indexed_modules.empty())
-    {
-        return NULL;
-    }
+   if (impl->modules.empty())
+   {
+      return NULL;
+   }
 
-    for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
-    {
-        typeCollection* tc = (*i)->getModuleTypes();
-        if(!tc)
-            continue;
-        t = tc->findType(type_id, Type::share);
-        if(t)
-            break;
-    }
+   for (auto *m : impl->modules)
+   {
+	   typeCollection *tc = m->getModuleTypes();
+	   if (!tc) continue;
+	   t = tc->findType(type_id, Type::share);
+	   if (t)  break;
+   }
 
     if(t == NULL)
     {
@@ -2378,15 +1819,13 @@ Symtab::findVariableType(boost::shared_ptr<Type>& type, std::string name)
 {
     parseTypesNow();
     type = NULL;
-    for(auto i = indexed_modules.begin(); i != indexed_modules.end(); ++i)
-    {
-        typeCollection* tc = (*i)->getModuleTypes();
-        if(!tc)
-            continue;
-        type = tc->findVariableType(name, Type::share);
-        if(type)
-            break;
-    }
+   for (auto *m : impl->modules)
+   {
+	   typeCollection *tc = m->getModuleTypes();
+	   if (!tc) continue;
+	   type = tc->findVariableType(name, Type::share);
+	   if (type) break;
+   }
 
     if(type == NULL)
         return false;
@@ -2464,12 +1903,12 @@ SYMTAB_EXPORT bool
 Symtab::emitSymbols(Object* linkedFile, std::string filename, unsigned flag)
 {
     // Start with all the defined symbols
-    std::set<Symbol*> allSyms;
-    allSyms.insert(everyDefinedSymbol.begin(), everyDefinedSymbol.end());
+    std::set<Symbol* > allSyms;
+    allSyms.insert(impl->everyDefinedSymbol.begin(), impl->everyDefinedSymbol.end());
 
     // Add the undefined dynamic symbols
 
-    allSyms.insert(undefDynSyms.begin(), undefDynSyms.end());
+    allSyms.insert(impl->undefDynSyms.begin(), impl->undefDynSyms.end());
 
     // Write the new file
     return linkedFile->emitDriver(filename, allSyms, flag);
@@ -2496,19 +1935,7 @@ Symtab::addDynLibSubstitution(std::string oldName, std::string newName)
 SYMTAB_EXPORT std::string
               Symtab::getDynLibSubstitution(std::string name)
 {
-#ifdef BINEDIT_DEBUG
-    map<std::string, std::string>::iterator iter = dynLibSubs.begin();
-
-    printf("substitutions for %s:\n", mf->filename().c_str());
-
-    while(iter != dynLibSubs.end())
-    {
-        printf("  \"%s\" => \"%s\"\n", iter->first.c_str(), iter->second.c_str());
-        iter++;
-    }
-#endif
-
-    map<std::string, std::string>::iterator loc = dynLibSubs.find(name);
+   map<std::string, std::string>::iterator loc = dynLibSubs.find(name);
 
     if(loc == dynLibSubs.end())
         return name;
@@ -2594,54 +2021,7 @@ Symtab::fixup_RegionAddr(const char* name, Offset memOffset, long memSize)
     return true;
 }
 
-SYMTAB_EXPORT bool
-Symtab::fixup_SymbolAddr(const char* name, Offset newOffset)
-{
-    Symbol* sym;
-    {
-        // Find the symbol.
-        indexed_symbols::by_name_t::const_accessor ma;
-        if(!everyDefinedSymbol.by_mangled.find(ma, name))
-            return false;
-        if(ma->second.size() > 1)
-            create_printf("*** Found %zu symbols with name %s.  Expecting 1.\n",
-                          ma->second.size(), name);
-        sym = ma->second[0];
-
-        // Update symbol.
-        indexed_symbols::master_t::accessor a;
-        if(!everyDefinedSymbol.master.find(a, sym))
-        {
-            assert(!"everyDefinedSymbol.master.find(a, sym)");
-        }
-        Offset old = a->second;
-
-        sym->setOffset(newOffset);
-        a->second = newOffset;
-
-        // Update the by_offset table
-        indexed_symbols::by_offset_t::accessor oa;
-        if(!everyDefinedSymbol.by_offset.find(oa, old))
-        {
-            assert(!"everyDefinedSymbol.by_offset.find(oa, old)");
-        }
-        std::remove(oa->second.begin(), oa->second.end(), sym);
-
-        everyDefinedSymbol.by_offset.insert(oa, newOffset);
-        oa->second.push_back(sym);
-    }
-
-    // Update aggregates.
-    if(!doNotAggregate(sym))
-    {
-        addSymbolToAggregates(sym);
-    }
-
-    return true;
-}
-
-SYMTAB_EXPORT bool
-Symtab::updateRegion(const char* name, void* buffer, unsigned size)
+SYMTAB_EXPORT bool Symtab::updateRegion(const char* name, void *buffer, unsigned size)
 {
     Region* sec;
 
@@ -2769,14 +2149,14 @@ Symtab::mem_image() const
 SYMTAB_EXPORT std::string
               Symtab::file() const
 {
-    assert(mf);
-    return mf->pathname();
+   assert(mf);
+   return mf->filename();
 }
 
 SYMTAB_EXPORT std::string
               Symtab::name() const
 {
-    return mf->filename();
+  return extract_pathname_tail(mf->filename());
 }
 
 SYMTAB_EXPORT std::string
@@ -2840,296 +2220,7 @@ ExceptionBlock::tryStart() const
     return tryStart_;
 }
 
-SYMTAB_EXPORT Offset
-ExceptionBlock::tryEnd() const
-{
-    return tryStart_ + trySize_;
-}
-
-SYMTAB_EXPORT Offset
-ExceptionBlock::trySize() const
-{
-    return trySize_;
-}
-
-SYMTAB_EXPORT bool
-ExceptionBlock::contains(Offset a) const
-{
-    return (a >= tryStart_ && a < tryStart_ + trySize_);
-}
-
-SYMTAB_EXPORT
-relocationEntry::relocationEntry()
-: target_addr_(0)
-, rel_addr_(0)
-, addend_(0)
-, rtype_(Region::RT_REL)
-, name_("")
-, dynref_(NULL)
-, relType_(0)
-, rel_struct_addr_(0)
-{}
-
-SYMTAB_EXPORT
-relocationEntry::relocationEntry(Offset ta, Offset ra, std::string n, Symbol* dynref,
-                                 unsigned long relType)
-: target_addr_(ta)
-, rel_addr_(ra)
-, addend_(0)
-, rtype_(Region::RT_REL)
-, name_(n)
-, dynref_(dynref)
-, relType_(relType)
-, rel_struct_addr_(0)
-{}
-
-SYMTAB_EXPORT
-relocationEntry::relocationEntry(Offset ta, Offset ra, Offset add, std::string n,
-                                 Symbol* dynref, unsigned long relType)
-: target_addr_(ta)
-, rel_addr_(ra)
-, addend_(add)
-, rtype_(Region::RT_REL)
-, name_(n)
-, dynref_(dynref)
-, relType_(relType)
-, rel_struct_addr_(0)
-{}
-
-SYMTAB_EXPORT
-relocationEntry::relocationEntry(Offset ra, std::string n, Symbol* dynref,
-                                 unsigned long relType, Region::RegionType rtype)
-: target_addr_(0)
-, rel_addr_(ra)
-, addend_(0)
-, rtype_(rtype)
-, name_(n)
-, dynref_(dynref)
-, relType_(relType)
-, rel_struct_addr_(0)
-{}
-
-SYMTAB_EXPORT
-relocationEntry::relocationEntry(Offset ta, Offset ra, Offset add, std::string n,
-                                 Symbol* dynref, unsigned long relType,
-                                 Region::RegionType rtype)
-: target_addr_(ta)
-, rel_addr_(ra)
-, addend_(add)
-, rtype_(rtype)
-, name_(n)
-, dynref_(dynref)
-, relType_(relType)
-, rel_struct_addr_(0)
-{}
-
-SYMTAB_EXPORT Offset
-relocationEntry::target_addr() const
-{
-    return target_addr_;
-}
-
-SYMTAB_EXPORT void
-relocationEntry::setTargetAddr(const Offset off)
-{
-    target_addr_ = off;
-}
-
-SYMTAB_EXPORT Offset
-relocationEntry::rel_addr() const
-{
-    return rel_addr_;
-}
-
-SYMTAB_EXPORT void
-relocationEntry::setRelAddr(const Offset value)
-{
-    rel_addr_ = value;
-}
-
-SYMTAB_EXPORT const string&
-                    relocationEntry::name() const
-{
-    return name_;
-}
-
-SYMTAB_EXPORT Symbol*
-              relocationEntry::getDynSym() const
-{
-    return dynref_;
-}
-
-SYMTAB_EXPORT bool
-relocationEntry::addDynSym(Symbol* dynref)
-{
-    dynref_ = dynref;
-    return true;
-}
-
-SYMTAB_EXPORT Region::RegionType
-              relocationEntry::regionType() const
-{
-    return rtype_;
-}
-
-SYMTAB_EXPORT unsigned long
-relocationEntry::getRelType() const
-{
-    return relType_;
-}
-
-SYMTAB_EXPORT Offset
-relocationEntry::addend() const
-{
-    return addend_;
-}
-
-SYMTAB_EXPORT void
-relocationEntry::setAddend(const Offset value)
-{
-    addend_ = value;
-}
-
-SYMTAB_EXPORT void
-relocationEntry::setRegionType(const Region::RegionType value)
-{
-    rtype_ = value;
-}
-
-SYMTAB_EXPORT void
-relocationEntry::setName(const std::string& newName)
-{
-    name_ = newName;
-}
-
-bool
-relocationEntry::operator==(const relocationEntry& r) const
-{
-    if(target_addr_ != r.target_addr_)
-        return false;
-    if(rel_addr_ != r.rel_addr_)
-        return false;
-    if(addend_ != r.addend_)
-        return false;
-    if(rtype_ != r.rtype_)
-        return false;
-    if(name_ != r.name_)
-        return false;
-    if(relType_ != r.relType_)
-        return false;
-    if(dynref_ && !r.dynref_)
-        return false;
-    if(!dynref_ && r.dynref_)
-        return false;
-    if(dynref_)
-    {
-        if(dynref_->getMangledName() != r.dynref_->getMangledName())
-            return false;
-        if(dynref_->getOffset() != r.dynref_->getOffset())
-            return false;
-    }
-
-    return true;
-}
-
-ostream&
-Dyninst::SymtabAPI::operator<<(ostream& os, const relocationEntry& r)
-{
-    if(r.getDynSym() != NULL)
-    {
-        os << "Name: " << setw(20) << ("'" + r.getDynSym()->getMangledName() + "'");
-    }
-    else
-    {
-        os << "Name: " << setw(20) << r.name();
-    }
-    os << " Offset: " << std::hex << std::setfill('0') << setw(8) << r.rel_addr()
-       << std::dec << std::setfill(' ') << " Offset: " << std::hex << std::setfill('0')
-       << setw(8) << r.target_addr() << std::dec << std::setfill(' ')
-       << " Addend: " << r.addend()
-       << " Region: " << Region::regionType2Str(r.regionType()) << " Type: " << setw(15)
-       << relocationEntry::relType2Str(r.getRelType()) << "(" << r.getRelType() << ")";
-    if(r.getDynSym() != NULL)
-    {
-        os << " Symbol Offset: " << std::hex << std::setfill('0') << setw(8)
-           << r.getDynSym()->getOffset();
-        os << std::dec << std::setfill(' ');
-        if(r.getDynSym()->isCommonStorage())
-        {
-            os << " COM";
-        }
-        else if(r.getDynSym()->getRegion() == NULL)
-        {
-            os << " UND";
-        }
-    }
-    return os;
-}
-
-const char*
-Symbol::symbolType2Str(SymbolType t)
-{
-    switch(t)
-    {
-        CASE_RETURN_STR(ST_UNKNOWN);
-        CASE_RETURN_STR(ST_FUNCTION);
-        CASE_RETURN_STR(ST_OBJECT);
-        CASE_RETURN_STR(ST_MODULE);
-        CASE_RETURN_STR(ST_SECTION);
-        CASE_RETURN_STR(ST_TLS);
-        CASE_RETURN_STR(ST_DELETED);
-        CASE_RETURN_STR(ST_NOTYPE);
-        CASE_RETURN_STR(ST_INDIRECT);
-    };
-
-    return "invalid symbol type";
-}
-
-const char*
-Symbol::symbolLinkage2Str(SymbolLinkage t)
-{
-    switch(t)
-    {
-        CASE_RETURN_STR(SL_UNKNOWN);
-        CASE_RETURN_STR(SL_GLOBAL);
-        CASE_RETURN_STR(SL_LOCAL);
-        CASE_RETURN_STR(SL_WEAK);
-        CASE_RETURN_STR(SL_UNIQUE);
-    };
-
-    return "invalid symbol linkage";
-}
-
-const char*
-Symbol::symbolTag2Str(SymbolTag t)
-{
-    switch(t)
-    {
-        CASE_RETURN_STR(TAG_UNKNOWN);
-        CASE_RETURN_STR(TAG_USER);
-        CASE_RETURN_STR(TAG_LIBRARY);
-        CASE_RETURN_STR(TAG_INTERNAL);
-    };
-
-    return "invalid symbol tag";
-}
-
-const char*
-Symbol::symbolVisibility2Str(SymbolVisibility t)
-{
-    switch(t)
-    {
-        CASE_RETURN_STR(SV_UNKNOWN);
-        CASE_RETURN_STR(SV_DEFAULT);
-        CASE_RETURN_STR(SV_INTERNAL);
-        CASE_RETURN_STR(SV_HIDDEN);
-        CASE_RETURN_STR(SV_PROTECTED);
-    }
-    return "invalid symbol visibility";
-}
-
-bool
-Symtab::hasStackwalkDebugInfo()
+bool Symtab::hasStackwalkDebugInfo()
 {
     Object* obj = getObject();
     if(!obj)
@@ -3160,7 +2251,7 @@ Symtab::getObject()
 const Object*
 Symtab::getObject() const
 {
-    return obj_private;
+   std::call_once(this->impl->types_parsed, [this](){ this->parseTypes(); });
 }
 
 void
@@ -3402,28 +2493,10 @@ Symtab::rebase(Offset loadOff)
     load_address_ = loadOff;
 }
 
-ModRangeLookup*
-Symtab::mod_lookup()
-{
-    if(!mod_lookup_)
-        mod_lookup_ = new ModRangeLookup;
-    return mod_lookup_;
+void Symtab::dumpModRanges() {
+    impl->mod_lookup_.PrintPreorder();
 }
 
-void
-Symtab::dumpModRanges()
-{
-    if(mod_lookup_)
-    {
-        mod_lookup_->PrintPreorder();
-    }
-}
-
-void
-Symtab::dumpFuncRanges()
-{
-    if(func_lookup)
-    {
-        func_lookup->PrintPreorder();
-    }
+void Symtab::dumpFuncRanges() {
+    impl->func_lookup.PrintPreorder();
 }

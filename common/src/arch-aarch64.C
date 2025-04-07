@@ -28,8 +28,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "common/src/Types.h"
 #include "common/src/arch-aarch64.h"
+#include "unaligned_memory_access.h"
 
 namespace NS_aarch64
 {
@@ -86,11 +86,8 @@ instruction::getTargetReg() const
     return -1;
 }
 
-Address
-instruction::getTarget(Address addr) const
-{
-    if(isUncondBranch() || isCondBranch())
-    {
+Dyninst::Address instruction::getTarget(Dyninst::Address addr) const {
+    if (isUncondBranch() || isCondBranch()) {
         return getBranchOffset() + addr;
     }
 
@@ -98,7 +95,9 @@ instruction::getTarget(Address addr) const
 }
 
 // TODO: argument _needs_ to be an int, or ABS() doesn't work.
-void instruction::setBranchOffset(Address /*newOffset*/) { assert(0); }
+void instruction::setBranchOffset(Dyninst::Address /*newOffset*/) {
+		assert(0);
+}
 
 bool
 instruction::isCall() const
@@ -108,18 +107,13 @@ instruction::isCall() const
     return false;
 }
 
-void
-instruction::setInstruction(codeBuf_t* /*ptr*/, Address)
-{
-    assert(0);
+void instruction::setInstruction(codeBuf_t * /*ptr*/, Dyninst::Address) {
+		assert(0);
 }
 
-void
-instruction::setInstruction(unsigned char* ptr, Address)
-{
+void instruction::setInstruction(unsigned char *ptr, Dyninst::Address) {
     // We don't need the addr on this platform
-    instructUnion* insnPtr = (instructUnion*) ptr;
-    insn_                  = *insnPtr;
+    insn_ = Dyninst::read_memory_as<instructUnion>(ptr);
 }
 
 bool
@@ -147,18 +141,38 @@ instruction::isCondBranch() const
     return false;
 }
 
-unsigned
-instruction::jumpSize(Address /*from*/, Address /*to*/, unsigned /*addr_width*/)
-{
-    assert(0);
-    return -1;
+unsigned instruction::jumpSize(Dyninst::Address /*from*/, Dyninst::Address /*to*/, unsigned /*addr_width*/) {
+		assert(0);
+        return -1;
 }
 
 // -1 is infinite, don't ya know.
-unsigned
-instruction::jumpSize(Address /*disp*/, unsigned /*addr_width*/)
-{
-    assert(0);
+unsigned instruction::jumpSize(Dyninst::Address /*disp*/, unsigned /*addr_width*/) {
+		assert(0);
+   return instruction::size();
+}
+
+unsigned instruction::maxJumpSize(unsigned addr_width) {
+		assert(0);
+   // TODO: some way to do a full-range branch
+   // For now, a BRL-jump'll do.
+   // plus two - store r0 and restore afterwards
+   if (addr_width == 4)
+      return 30*instruction::size();
+   else
+      return 7*instruction::size();
+}
+
+unsigned instruction::maxInterFunctionJumpSize(unsigned addr_width) {
+		assert(0);
+   if (addr_width == 8)
+      return 7*instruction::size();
+   else
+      return 4*instruction::size();
+}
+
+unsigned instruction::spaceToRelocate() const {
+		assert(0);
     return instruction::size();
 }
 
@@ -232,14 +246,10 @@ instruction::getBranchTargetReg() const
     return -1;
 }
 
-Address
-instruction::getBranchOffset() const
-{
-    if(isUncondBranch())
-    {
-        if(CHECK_INST(UNCOND_BR.IMM))
-        {
-            return signExtend(GET_OFFSET32(UNCOND_BR.IMM), 26 + 2);
+Dyninst::Address instruction::getBranchOffset() const {
+    if (isUncondBranch()) {
+        if( CHECK_INST(UNCOND_BR.IMM) ){
+            return signExtend(GET_OFFSET32(UNCOND_BR.IMM), 26+2 );
         }
         if(CHECK_INST(UNCOND_BR.REG))
         {

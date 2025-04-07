@@ -31,8 +31,12 @@
 #if !defined(PROCESSSET_H_)
 #    define PROCESSSET_H_
 
-#    include <string>
-#    include <map>
+#include <string>
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <utility>
+#include <vector>
 
 #    include "dyntypes.h"
 #    include "PCProcess.h"
@@ -232,12 +236,20 @@ public:
     ProcessSet::ptr set_intersection(ProcessSet::ptr pp) const;
     ProcessSet::ptr set_difference(ProcessSet::ptr pp) const;
 
-    /**
-     * Iterator and standard set utilities
-     **/
-    class PC_EXPORT iterator
-    {
-        friend class Dyninst::ProcControlAPI::ProcessSet;
+   class PC_EXPORT const_iterator {
+      friend class Dyninst::ProcControlAPI::ProcessSet;
+     private:
+      int_processSet::iterator int_iter;
+	  const_iterator(int_processSet::iterator i) : int_iter(i) {}
+     public:
+      const_iterator();
+      ~const_iterator();
+      const_iterator(const const_iterator&) = default;
+      Process::ptr operator*() const;
+      bool operator==(const const_iterator &i) const;
+      bool operator!=(const const_iterator &i) const;
+      ProcessSet::const_iterator operator++();
+      ProcessSet::const_iterator operator++(int);
 
     private:
         int_processSet::iterator int_iter;
@@ -462,21 +474,37 @@ public:
 
     int_threadSet* getIntThreadSet() const;
 
-    /**
-     * Create a new ThreadSet given existing threads
-     **/
-    static ThreadSet::ptr newThreadSet();
-    static ThreadSet::ptr newThreadSet(Thread::ptr thr);
-    static ThreadSet::ptr newThreadSet(const ThreadPool& threadp);
-    static ThreadSet::ptr newThreadSet(const std::set<Thread::const_ptr>& threads);
-    static ThreadSet::ptr newThreadSet(ProcessSet::ptr ps, bool initial_only = false);
+   /**
+    * Iterator and standard set utilities
+    **/
+   class PC_EXPORT iterator {
+      friend class Dyninst::ProcControlAPI::ThreadSet;
+     protected:
+      std::set<Thread::ptr>::iterator int_iter;
+      iterator(int_threadSet::iterator i);
+     public:
+      Thread::ptr operator*();
+      bool operator==(const iterator &i) const;
+      bool operator!=(const iterator &i) const;
+      ThreadSet::iterator operator++();
+      ThreadSet::iterator operator++(int);
+   };
 
-    /**
-     * Modify current set by performing these set operations with another set.
-     **/
-    ThreadSet::ptr set_union(ThreadSet::ptr tp) const;
-    ThreadSet::ptr set_intersection(ThreadSet::ptr tp) const;
-    ThreadSet::ptr set_difference(ThreadSet::ptr tp) const;
+   class PC_EXPORT const_iterator {
+      friend class Dyninst::ProcControlAPI::ThreadSet;
+     protected:
+      std::set<Thread::ptr>::iterator int_iter;
+      const_iterator(int_threadSet::iterator i);
+     public:
+      const_iterator();
+      ~const_iterator();
+      const_iterator(const const_iterator&) = default;
+      Thread::ptr operator*();
+      bool operator==(const const_iterator &i) const;
+      bool operator!=(const const_iterator &i) const;
+      ThreadSet::const_iterator operator++();
+      ThreadSet::const_iterator operator++(int);
+   };
 
     /**
      * Iterator and standard set utilities

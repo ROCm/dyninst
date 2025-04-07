@@ -31,7 +31,8 @@
 #include <stack>
 #include <vector>
 
-#include "dyn_regs.h"
+#include "Architecture.h"
+#include "registers/MachRegister.h"
 #include "dyntypes.h"
 #include "elfutils/libdw.h"
 #include "util.h"
@@ -82,6 +83,7 @@ public:
     , error(false)
     {}
 
+    DwarfResult(const DwarfResult &) = default;
     virtual ~DwarfResult() = default;
 
     virtual void pushReg(Dyninst::MachRegister reg)                 = 0;
@@ -174,12 +176,12 @@ public:
     bool eval(MachRegisterVal& v);
 
 private:
-    ProcessReader* reader;
+    ProcessReader *reader{};
 
     // For getting access to other expressions
-    Address pc;
-    Dwarf*  dbg;
-    Elf*    dbg_eh_frame;
+    Address pc{};
+    Dwarf * dbg{};
+    Elf * dbg_eh_frame{};
 
     // Dwarf lets you access within the "stack", so we model
     // it as a vector.

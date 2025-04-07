@@ -32,9 +32,13 @@
 #ifndef PATCHAPI_H_POINT_H_
 #define PATCHAPI_H_POINT_H_
 
+#include <list>
+#include <map>
+#include <stddef.h>
 #include "PatchCommon.h"
 #include "Snippet.h"
 #include "util.h"
+#include "dyntypes.h"
 
 namespace Dyninst
 {
@@ -70,96 +74,65 @@ struct ExitSite_t
     {}
 };
 
-struct InsnLoc_t
-{
-    PatchBlock*                 block;
-    Address                     addr;
-    InstructionAPI::Instruction insn;
-    InsnLoc_t(PatchBlock* b, Address a, InstructionAPI::Instruction i)
-    : block(b)
-    , addr(a)
-    , insn(i)
-    {}
+struct InsnLoc_t {
+   PatchBlock *block;
+   Dyninst::Address addr;
+   InstructionAPI::Instruction insn;
+InsnLoc_t(PatchBlock *b, Dyninst::Address a, InstructionAPI::Instruction i) :
+   block(b), addr(a), insn(i) {}
 };
 
 // Uniquely identify the location of a point; this + a type
 // uniquely identifies a point.
-struct Location
-{
-    static Location Function(PatchFunction* f)
-    {
-        return Location(f, NULL, 0, InstructionAPI::Instruction(), NULL, true, Function_);
-    }
-    static Location Block(PatchBlock* b)
-    {
-        return Location(NULL, b, 0, InstructionAPI::Instruction(), NULL, true, Block_);
-    }
-    static Location BlockInstance(PatchFunction* f, PatchBlock* b, bool trusted = false)
-    {
-        return Location(f, b, 0, InstructionAPI::Instruction(), NULL, trusted,
-                        BlockInstance_);
-    }
-    static Location Instruction(InsnLoc_t l)
-    {
-        return Location(NULL, l.block, l.addr, l.insn, NULL, true, Instruction_);
-    }
-    static Location Instruction(PatchBlock* b, Address a)
-    {
-        return Location(NULL, b, a, InstructionAPI::Instruction(), NULL, false,
-                        Instruction_);
-    }
-    static Location InstructionInstance(PatchFunction* f, InsnLoc_t l,
-                                        bool trusted = false)
-    {
-        return Location(f, l.block, l.addr, l.insn, NULL, trusted, InstructionInstance_);
-    }
-    static Location InstructionInstance(PatchFunction* f, PatchBlock* b, Address a)
-    {
-        return Location(f, b, a, InstructionAPI::Instruction(), NULL, false,
-                        InstructionInstance_);
-    }
-    static Location InstructionInstance(PatchFunction* f, PatchBlock* b, Address a,
-                                        InstructionAPI::Instruction i,
-                                        bool                        trusted = false)
-    {
-        return Location(f, b, a, i, NULL, trusted, InstructionInstance_);
-    }
-    static Location Edge(PatchEdge* e)
-    {
-        return Location(NULL, NULL, 0, InstructionAPI::Instruction(), e, true, Edge_);
-    }
-    static Location EdgeInstance(PatchFunction* f, PatchEdge* e)
-    {
-        return Location(f, NULL, 0, InstructionAPI::Instruction(), e, false,
-                        EdgeInstance_);
-    }
-    static Location EntrySite(EntrySite_t e)
-    {
-        return Location(e.func, e.block, 0, InstructionAPI::Instruction(), NULL, true,
-                        Entry_);
-    }
-    static Location EntrySite(PatchFunction* f, PatchBlock* b, bool trusted = false)
-    {
-        return Location(f, b, 0, InstructionAPI::Instruction(), NULL, trusted, Entry_);
-    }
-    static Location CallSite(CallSite_t c)
-    {
-        return Location(c.func, c.block, 0, InstructionAPI::Instruction(), NULL, true,
-                        Call_);
-    }
-    static Location CallSite(PatchFunction* f, PatchBlock* b)
-    {
-        return Location(f, b, 0, InstructionAPI::Instruction(), NULL, false, Call_);
-    }
-    static Location ExitSite(ExitSite_t e)
-    {
-        return Location(e.func, e.block, 0, InstructionAPI::Instruction(), NULL, true,
-                        Exit_);
-    }
-    static Location ExitSite(PatchFunction* f, PatchBlock* b)
-    {
-        return Location(f, b, 0, InstructionAPI::Instruction(), NULL, false, Exit_);
-    }
+struct Location {
+   static Location Function(PatchFunction *f) { 
+      return Location(f, NULL, 0, InstructionAPI::Instruction(), NULL, true, Function_);
+   }
+   static Location Block(PatchBlock *b) { 
+      return Location(NULL, b, 0, InstructionAPI::Instruction(), NULL, true, Block_);
+   }
+   static Location BlockInstance(PatchFunction *f, PatchBlock *b, bool trusted = false) { 
+      return Location(f, b, 0, InstructionAPI::Instruction(), NULL, trusted, BlockInstance_);
+   }
+   static Location Instruction(InsnLoc_t l) { 
+      return Location(NULL, l.block, l.addr, l.insn, NULL, true, Instruction_); 
+   }
+   static Location Instruction(PatchBlock *b, Dyninst::Address a) {
+      return Location(NULL, b, a, InstructionAPI::Instruction(), NULL, false, Instruction_);
+   }
+   static Location InstructionInstance(PatchFunction *f, InsnLoc_t l, bool trusted = false) { 
+      return Location(f, l.block, l.addr, l.insn, NULL, trusted, InstructionInstance_); 
+   }
+   static Location InstructionInstance(PatchFunction *f, PatchBlock *b, Dyninst::Address a) {
+      return Location(f, b, a, InstructionAPI::Instruction(), NULL, false, InstructionInstance_);
+   }
+   static Location InstructionInstance(PatchFunction *f, PatchBlock *b, Dyninst::Address a,
+                                       InstructionAPI::Instruction i, bool trusted = false) {
+      return Location(f, b, a, i, NULL, trusted, InstructionInstance_); 
+   }
+   static Location Edge(PatchEdge *e) {
+      return Location(NULL, NULL, 0, InstructionAPI::Instruction(), e, true, Edge_);
+   }
+   static Location EdgeInstance(PatchFunction *f, PatchEdge *e) { 
+      return Location(f, NULL, 0, InstructionAPI::Instruction(), e, false, EdgeInstance_);
+   }
+   static Location EntrySite(EntrySite_t e) { 
+      return Location(e.func, e.block, 0, InstructionAPI::Instruction(), NULL, true, Entry_);
+   }
+   static Location EntrySite(PatchFunction *f, PatchBlock *b, bool trusted = false) { 
+      return Location(f, b, 0, InstructionAPI::Instruction(), NULL, trusted, Entry_);
+   }
+   static Location CallSite(CallSite_t c) {
+      return Location(c.func, c.block, 0, InstructionAPI::Instruction(), NULL, true, Call_);
+   }
+   static Location CallSite(PatchFunction *f, PatchBlock *b) { 
+      return Location(f, b, 0, InstructionAPI::Instruction(), NULL, false, Call_);
+   }
+   static Location ExitSite(ExitSite_t e) { 
+      return Location(e.func, e.block, 0, InstructionAPI::Instruction(), NULL, true, Exit_);
+   }
+   static Location ExitSite(PatchFunction *f, PatchBlock *b) { 
+      return Location(f, b, 0, InstructionAPI::Instruction(), NULL, false, Exit_); }
 
     typedef enum
     {
@@ -178,31 +151,24 @@ struct Location
 
     bool legal(type_t t) { return t == type; }
 
-    InsnLoc_t insnLoc() { return InsnLoc_t(block, addr, insn); }
-
-    PatchFunction*              func;
-    PatchBlock*                 block;
-    Address                     addr;
-    InstructionAPI::Instruction insn;
-    PatchEdge*                  edge;
-    bool                        trusted;
-    type_t                      type;
+   InsnLoc_t insnLoc() { return InsnLoc_t(block, addr, insn); }
+   
+   PatchFunction *func;
+   PatchBlock *block;
+   Dyninst::Address addr;
+   InstructionAPI::Instruction insn;
+   PatchEdge *edge;
+   bool trusted;
+   type_t type;
 
 private:
-    Location(PatchFunction* f, PatchBlock* b, Address a, InstructionAPI::Instruction i,
-             PatchEdge* e, bool u, type_t t)
-    : func(f)
-    , block(b)
-    , addr(a)
-    , insn(i)
-    , edge(e)
-    , trusted(u)
-    , type(t)
-    {}
+Location(PatchFunction *f, PatchBlock *b, Dyninst::Address a, InstructionAPI::Instruction i, PatchEdge *e, bool u, type_t t) :
+   func(f), block(b), addr(a), insn(i), edge(e), trusted(u), type(t) {}
+
 };
 
 // Used in PointType definition
-#define type_val(seq) (0x00000001 << seq)
+#define type_val(seq) (0x00000001u << seq)
 
 /* A location on the CFG that acts as a container of inserted instances.  Points
    of different types are distinct even the underlying code relocation and
@@ -248,18 +214,19 @@ public:
     };
 
     template <class Scope>
-    static Point* create(Address addr, Point::Type type, PatchMgrPtr mgr, Scope* scope)
-    {
-        Point* ret = new Point(addr, type, mgr, scope);
-        return ret;
+    static Point* create(Dyninst::Address addr,
+                         Point::Type type,
+                         PatchMgrPtr mgr,
+                         Scope* scope) {
+      Point* ret = new Point(addr, type, mgr, scope);
+      return ret;
     }
     Point() {}
 
     // Block instrumentation /w/ optional function context
     Point(Point::Type t, PatchMgrPtr mgr, PatchBlock*, PatchFunction* = NULL);
     // Insn instrumentation /w/ optional function context
-    Point(Point::Type t, PatchMgrPtr mgr, PatchBlock*, Address,
-          InstructionAPI::Instruction, PatchFunction* = NULL);
+    Point(Point::Type t, PatchMgrPtr mgr, PatchBlock *, Dyninst::Address, InstructionAPI::Instruction, PatchFunction * = NULL);
     // Function entry or during
     Point(Point::Type t, PatchMgrPtr mgr, PatchFunction*);
     // Function call or exit site
@@ -281,10 +248,10 @@ public:
     void clear();
 
     // Getters
-    size_t  size();
-    Address addr() const { return addr_; }
-    Type    type() const { return type_; }
-    bool    empty() const { return instanceList_.empty(); }
+    size_t size();
+    Dyninst::Address addr() const { return addr_; }
+    Type type() const {return type_;}
+    bool empty() const { return instanceList_.empty();}
 
     PatchFunction* getCallee();
 
@@ -314,13 +281,14 @@ protected:
     void initCodeStructure();
     void changeBlock(PatchBlock* newBlock);
 
-    InstanceList                instanceList_;
-    Address                     addr_;
-    Type                        type_;
-    PatchMgrPtr                 mgr_;
-    PatchBlock*                 the_block_;
-    PatchEdge*                  the_edge_;
-    PatchFunction*              the_func_;
+
+    InstanceList instanceList_;
+    Dyninst::Address addr_{};
+    Type type_{};
+    PatchMgrPtr mgr_;
+    PatchBlock* the_block_{};
+    PatchEdge* the_edge_{};
+    PatchFunction* the_func_{};
     InstructionAPI::Instruction insn_;
 };
 
@@ -446,6 +414,14 @@ public:
     Point* createPoint(Location loc, Point::Type type);
 
     void setMgr(PatchMgrPtr mgr) { mgr_ = mgr; }
+  protected:
+    // User override
+    virtual Point *mkFuncPoint(Point::Type t, PatchMgrPtr m, PatchFunction *);
+    virtual Point *mkFuncSitePoint(Point::Type t, PatchMgrPtr m, PatchFunction *, PatchBlock *);
+    virtual Point *mkBlockPoint(Point::Type t, PatchMgrPtr m, PatchBlock *, PatchFunction *context);
+    virtual Point *mkInsnPoint(Point::Type t, PatchMgrPtr m, PatchBlock *, Dyninst::Address, InstructionAPI::Instruction,
+                               PatchFunction *context);
+    virtual Point *mkEdgePoint(Point::Type t, PatchMgrPtr m, PatchEdge *, PatchFunction *context);
 
 protected:
     // User override
@@ -463,51 +439,50 @@ protected:
 };
 
 // Collection classes
-typedef std::map<Address, Point*> InsnPoints;
+typedef std::map<Dyninst::Address, Point *> InsnPoints;
 
-struct BlockPoints
-{
-    Point*     entry;
-    Point*     during;
-    Point*     exit;
-    InsnPoints preInsn;
-    InsnPoints postInsn;
-    BlockPoints()
-    : entry(NULL)
-    , during(NULL)
-    , exit(NULL)
-    {}
-    bool consistency(const PatchBlock* block, const PatchFunction* func) const;
-    ~BlockPoints();
+
+struct BlockPoints {
+   Point *entry{};
+   Point *during{};
+   Point *exit{};
+   InsnPoints preInsn;
+   InsnPoints postInsn;
+   BlockPoints() = default;
+   BlockPoints(const BlockPoints&) = delete;
+   BlockPoints(BlockPoints&& other)
+      {
+         *this = other;
+         other.entry = nullptr;
+         other.during = nullptr;
+         other.exit = nullptr;
+      }
+   bool consistency(const PatchBlock *block, const PatchFunction *func) const;
+   ~BlockPoints();
+ private:
+   // used by move constructor to default copy members
+   BlockPoints& operator=(const BlockPoints&) = default;
 };
 
-struct EdgePoints
-{
-    Point* during;
-    EdgePoints()
-    : during(NULL)
-    {}
-    ~EdgePoints()
-    {
-        if(during)
-            delete during;
-    }
-    bool consistency(const PatchEdge* edge, const PatchFunction* func) const;
+struct EdgePoints {
+   Point *during{};
+   EdgePoints() = default;
+   EdgePoints(EdgePoints&& other) { during = other.during; other.during = nullptr; }
+   ~EdgePoints() { if (during) delete during; }
+   bool consistency(const PatchEdge *edge, const PatchFunction *func) const;
+   EdgePoints(const EdgePoints&) = delete;
 };
 
-struct FuncPoints
-{
-    Point*                        entry;
-    Point*                        during;
-    std::map<PatchBlock*, Point*> exits;
-    std::map<PatchBlock*, Point*> preCalls;
-    std::map<PatchBlock*, Point*> postCalls;
-    FuncPoints()
-    : entry(NULL)
-    , during(NULL)
-    {}
-    ~FuncPoints();
-    bool consistency(const PatchFunction* func) const;
+struct FuncPoints {
+   Point *entry{};
+   Point *during{};
+   std::map<PatchBlock *, Point *> exits;
+   std::map<PatchBlock *, Point *> preCalls;
+   std::map<PatchBlock *, Point *> postCalls;
+   FuncPoints() = default;
+   FuncPoints(const FuncPoints&) = delete;
+   ~FuncPoints();
+   bool consistency(const PatchFunction *func) const;
 };
 
 }  // namespace PatchAPI

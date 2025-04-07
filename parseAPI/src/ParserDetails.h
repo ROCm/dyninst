@@ -30,6 +30,7 @@
 #ifndef _PARSER_DETAILS_H_
 #define _PARSER_DETAILS_H_
 
+#include <assert.h>
 #include "IA_IAPI.h"
 
 namespace Dyninst
@@ -277,20 +278,20 @@ public:
         }
     };
 
-private:
-    ParseWorkBundle* _bundle;
-    Edge*            _edge;
-    Address          _src;
-    Address          _targ;
-    bool             _can_resolve;
-    bool             _tailcall;
-    parse_work_order _order;
-    bool             _call_processed;
+ private:
+    ParseWorkBundle * _bundle{};
+    Edge * _edge{};
+    Address _src{};
+    Address _targ{};
+    bool _can_resolve{};
+    bool _tailcall{};
+    parse_work_order _order{};
+    bool _call_processed{};
 
     // Data for continuing parsing jump tables
-    Block*                _cur;
-    InsnAdapter::IA_IAPI* _ah;
-    Function*             _shared_func;
+    Block* _cur{};
+    InsnAdapter::IA_IAPI* _ah{};
+    Function * _shared_func{};
 };
 
 // ParseWorkElem container

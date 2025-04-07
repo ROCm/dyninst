@@ -31,11 +31,12 @@
 #if !defined(EDGE_H)
 #    define EDGE_H
 
-#    include "boost/shared_ptr.hpp"
-#    include "boost/weak_ptr.hpp"
-#    include <set>
-#    include "Annotatable.h"
-#    include <unordered_set>
+#include "boost/shared_ptr.hpp"
+#include "boost/weak_ptr.hpp"
+#include <stddef.h>
+#include <set>
+#include "Annotatable.h"
+#include <unordered_set>
 
 namespace Dyninst
 {

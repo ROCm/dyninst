@@ -31,20 +31,15 @@
 #if !defined(INSTRUCTIONAST_H)
 #    define INSTRUCTIONAST_H
 
-#    if defined(_MSC_VER)
-// Exported class inheriting from non-exported class.  This is by design; don't
-// use the shared_from_this externally!
-#        pragma warning(push)
-#        pragma warning(disable : 4251)
-#    endif
 
-#    include "util.h"
-#    include <vector>
-#    include <set>
-#    include <iostream>
-#    include "Result.h"
-#    include "ArchSpecificFormatters.h"
-#    include "boost/enable_shared_from_this.hpp"
+#include "util.h"
+#include <string>
+#include <vector>
+#include <set>
+#include <iostream>
+#include "Result.h"
+#include "ArchSpecificFormatters.h"
+#include "boost/enable_shared_from_this.hpp"
 
 namespace Dyninst
 {
@@ -52,32 +47,9 @@ namespace InstructionAPI
 {
 class InstructionAST;
 
-using std::set;
-using std::vector;
-enum formatStyle
-{
-    defaultStyle,
-    memoryAccessStyle
-};
-/// The %InstructionAST class is the base class for all nodes in the ASTs used by the
-/// %Operand class. It defines the necessary interfaces for traversing and searching an
-/// abstract syntax tree representing an operand. For the purposes of searching an
-/// %InstructionAST, we provide two related interfaces.  The first, \c getUses, will
-/// return the registers that appear in a given tree.  The second, \c isUsed, will take as
-/// input another tree and return true if that tree is a (not necessarily proper) subtree
-/// of this one. \c isUsed requires us to define an equality relation on these abstract
-/// syntax trees, and the equality operator is provided by the %InstructionAST, with the
-/// details implemented by the classes derived from %InstructionAST.  Two AST nodes are
-/// equal if the following conditions hold:
-/// - They are of the same type
-/// - If leaf nodes, they represent the same immediate value or the same register
-/// - If non-leaf nodes, they represent the same operation and their corresponding
-/// children are equal
-class INSTRUCTION_EXPORT InstructionAST
-: public boost::enable_shared_from_this<InstructionAST>
-{
-public:
-    typedef boost::shared_ptr<InstructionAST> Ptr;
+      InstructionAST();
+      InstructionAST(const InstructionAST&) = default;
+      virtual ~InstructionAST();
 
     InstructionAST();
     virtual ~InstructionAST();
@@ -111,10 +83,19 @@ public:
     /// to allow searches for arbitrary subexpressions
     virtual bool isUsed(InstructionAST::Ptr findMe) const = 0;
 
-    /// The \c format interface returns the contents of an %InstructionAST
-    /// object as a string.  By default, \c format() produces assembly language.
-    virtual std::string format(Architecture arch,
-                               formatStyle  how = defaultStyle) const = 0;
+      /// The \c format interface returns the contents of an %InstructionAST
+      /// object as a string.  By default, \c format() produces assembly language.
+      virtual std::string format(formatStyle how = defaultStyle) const = 0;
+  
+    protected:
+      friend class RegisterAST;
+      friend class Immediate;
+      virtual bool isStrictEqual(const InstructionAST& rhs) const= 0;
+      virtual bool checkRegID(MachRegister, unsigned int = 0, unsigned int = 0) const;
+      virtual const Result& eval() const = 0;
+    };
+  }
+}
 
     /// The \c format interface returns the contents of an %InstructionAST
     /// object as a string.  By default, \c format() produces assembly language.

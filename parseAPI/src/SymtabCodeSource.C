@@ -29,6 +29,7 @@
  */
 #include <vector>
 #include <map>
+#include <atomic>
 
 #include <boost/assign/list_of.hpp>
 
@@ -42,6 +43,7 @@
 #include "CodeSource.h"
 #include "debug_parse.h"
 #include "util.h"
+#include "unaligned_memory_access.h"
 
 #include "InstructionDecoder.h"
 #include "Instruction.h"
@@ -273,11 +275,11 @@ SymtabCodeSource::SymtabCodeSource(SymtabAPI::Symtab* st)
     init(NULL, false);
 }
 
-SymtabCodeSource::SymtabCodeSource(char* file)
-: _symtab(NULL)
-, owns_symtab(true)
-, stats_parse(new ::StatContainer())
-, _have_stats(false)
+SymtabCodeSource::SymtabCodeSource(const char * file) :
+    _symtab(NULL),
+    owns_symtab(true),
+    stats_parse(new ::StatContainer()),
+    _have_stats(false)
 {
     init_stats();
 
@@ -521,6 +523,9 @@ SymtabCodeSource::init_hints(RegionMap& rmap, hint_filt* filt)
     parsing_printf("[%s:%d] processing %lu symtab hints\n", FILE__, __LINE__,
                    fsyms.size());
 
+    atomic_bool foundEntrySymbol{};
+    Address entryOffset = _symtab->getEntryOffset();
+
 #pragma omp parallel for schedule(auto)
     for(unsigned int i = 0; i < fsyms.size(); i++)
     {
@@ -584,17 +589,57 @@ SymtabCodeSource::init_hints(RegionMap& rmap, hint_filt* filt)
             continue;
         }
 
-        if(!cr->isCode(f->getOffset()))
-        {
-            parsing_printf("\t<%lx> skipped non-code, region [%lx,%lx)\n", f->getOffset(),
-                           sr->getMemOffset(), sr->getMemOffset() + sr->getDiskSize());
+        if(!cr->isCode(f->getOffset())) {
+            parsing_printf("\t<%lx> skipped non-code, region [%lx,%lx)\n",
+                           f->getOffset(),
+                           sr->getMemOffset(),
+                           sr->getMemOffset()+sr->getDiskSize());
+        } else {
+          if (entryOffset == offset)  {
+            foundEntrySymbol = true;
+          }
+
+          _hints.push_back(Hint(f->getOffset(), f->getSymbolSize(), cr, fname_s));
+          parsing_printf("\t<%lx,%s,[%lx,%lx)>\n",
+                         f->getOffset(),
+                         fname,
+                         cr->offset(),
+                         cr->offset()+cr->length());
         }
-        else
+    }
+
+    if (!foundEntrySymbol && _symtab->isExecutable())  {
+      // add entry point as this object is an executable
+      // and no symbol referenced the entry point
+      parsing_printf("Adding exectable entry point at %lx\n", entryOffset);
+      SymtabAPI::Region *sr = _symtab->findEnclosingRegion(entryOffset);
+      if (sr)  {
+        CodeRegion *cr = NULL;
         {
-            _hints.push_back(Hint(f->getOffset(), f->getSymbolSize(), cr, fname_s));
-            parsing_printf("\t<%lx,%s,[%lx,%lx)>\n", f->getOffset(), fname, cr->offset(),
-                           cr->offset() + cr->length());
+          RegionMap::const_accessor a;
+          bool found = rmap.find(a, sr);
+          if (found)  {
+            cr = a->second;
+          }
         }
+
+        if (cr)  {
+	  const char startFuncName[] = "_start";
+	  // use 0 for function length as length is unknown and value unused
+          _hints.push_back(Hint(entryOffset, 0, cr, startFuncName));
+          parsing_printf("\t<%lx,%s,[%lx,%lx)>\n",
+                         entryOffset,
+                         startFuncName,
+                         cr->offset(),
+                         cr->offset() + cr->length());
+        }  else  {
+          parsing_printf("[%s:%d] unrecognized Region %lx entry point function %lx\n",
+              FILE__, __LINE__, sr->getMemOffset(), entryOffset);
+        }
+      }  else  {
+        parsing_printf("[%s:%d] Symtab Region for entry point function %lx not found\n",
+            FILE__, __LINE__, entryOffset);
+      }
     }
 }
 
@@ -644,13 +689,10 @@ SymtabCodeSource::init_linkage()
         const unsigned char* buffer = (const unsigned char*) plt_sec->getPtrToRawData();
 
         // Scan each PLT stub
-        for(size_t off = 0; off < plt_sec->getMemSize(); off += plt_entry_size)
-        {
-            int     disp     = *((const int*) (buffer + off + pc_rela_disp));
-            Address rel_addr = plt_sec->getMemOffset() + off + pc_rela_disp +
-                               4 /* four byte pc-relative displacment */ + disp;
-            if(rel_addr_to_name.find(rel_addr) != rel_addr_to_name.end())
-            {
+        for (size_t off = 0; off < plt_sec->getMemSize(); off += plt_entry_size) {
+            auto disp = Dyninst::read_memory_as<int32_t>(buffer + off + pc_rela_disp);
+            Address rel_addr = plt_sec->getMemOffset() + off + pc_rela_disp + 4 /* four byte pc-relative displacment */ + disp;
+            if (rel_addr_to_name.find(rel_addr) != rel_addr_to_name.end()) {
                 Address tar = plt_sec->getMemOffset() + off;
                 if(rel_addr_to_name[rel_addr] == "")
                 {

@@ -1,185 +1,143 @@
-# C extensions are required
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_EXTENSIONS ON)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+include_guard(GLOBAL)
 
-# ------------------------------------------------------------------------------#
-# target sources
-# ------------------------------------------------------------------------------#
+include(DyninstLibrary)
 
-set(SRC_LIST src/RTcommon.c src/RTmemEmulator.c)
+set(_public_headers h/dyninstAPI_RT.h h/dyninstRTExport.h)
 
-if(PLATFORM MATCHES freebsd)
-    list(
-        APPEND
-        SRC_LIST
-        src/RTposix.c
-        src/RTfreebsd.c
-        src/RTheap.c
-        src/RTheap-freebsd.c
-        src/RTthread.c
-        src/RTspace.S
-        src/RTsignal.c)
-elseif(PLATFORM MATCHES linux)
-    list(
-        APPEND
-        SRC_LIST
-        src/RTposix.c
-        src/RTlinux.c
-        src/RTheap.c
-        src/RTheap-linux.c
-        src/RTthread.c
-        src/RTspace.S
-        src/RTsignal.c)
-    list(APPEND RT_STATIC_ONLY_SRC_LIST src/RTstatic_ctors_dtors_begin.c
-         src/RTstatic_ctors_dtors_end.c)
-elseif(PLATFORM MATCHES nt OR PLATFORM MATCHES windows)
-    list(
-        APPEND
-        SRC_LIST
-        src/RTheap.c
-        src/RTheap-win.c
-        src/RTwinnt.c
-        src/RTthread.c
-        src/RTthread-x86.c)
-endif()
+set(_private_headers src/RTcommon.h src/RTheap.h src/RTthread.h)
 
-set(SRC_LIST_i386 src/RTthread-x86.c src/RTtlsgetaddr-x86.S)
-set(RT_STATIC_ONLY_SRC_LIST_i386 src/RTstatic_ctors_dtors-x86.c)
-set(SRC_LIST_x86_64 src/RTthread-x86-64.c src/RTtlsgetaddr-x86.S)
-set(RT_STATIC_ONLY_SRC_LIST_x86_64 src/RTstatic_ctors_dtors-x86.c)
-set(SRC_LIST_ppc32 src/RTthread-powerpc.c src/RTthread-powerpc-asm.S)
-set(RT_STATIC_ONLY_SRC_LIST_ppc32 src/RTstatic_ctors_dtors-ppc32.c)
-set(SRC_LIST_ppc64 src/RTthread-powerpc.c src/RTthread-powerpc-asm.S)
-set(RT_STATIC_ONLY_SRC_LIST_ppc64 src/RTstatic_ctors_dtors-ppc64.c)
-set(SRC_LIST_aarch64 src/RTthread-aarch64.c
-                     # src/RTthread-aarch64-asm.S
-    )
-set(RT_STATIC_ONLY_SRC_LIST_aarch64 src/RTstatic_ctors_dtors-aarch64.c)
+set(_sources src/RTcommon.c src/RTheap.c src/RTthread.c)
 
-# We use gcc to compile the various assembly files, but cmake doesn't default to knowing
-# that gcc can handle .S.
-enable_language(ASM)
-file(GLOB SRC_ASSEMBLY "src/*.S")
-if(NEED_NATIVE_ASSEMBER)
-    set_source_files_properties(${SRC_ASSEMBLY} PROPERTIES LANGUAGE ASM)
-else()
-    set_source_files_properties(${SRC_ASSEMBLY} PROPERTIES LANGUAGE C)
+if(DYNINST_OS_FreeBSD)
+  list(
+    APPEND
+    _sources
+    src/RTposix.c
+    src/RTfreebsd.c
+    src/RTheap-freebsd.c
+    src/RTspace.S
+    src/RTsignal.c)
+elseif(DYNINST_OS_Linux)
+  set(_static_sources src/RTstatic_ctors_dtors_begin.c src/RTstatic_ctors_dtors_end.c)
+  list(
+    APPEND
+    _sources
+    src/RTposix.c
+    src/RTlinux.c
+    src/RTheap-linux.c
+    src/RTspace.S
+    src/RTsignal.c)
+elseif(DYNINST_OS_Windows)
+  list(APPEND _sources src/RTheap-win.c src/RTwinnt.c src/RTthread-x86.c)
 endif()
 
 # The arch-specific files other than RTthread-x86 are Unix-only.
-if(UNIX)
-    if(PLATFORM MATCHES amd64 OR PLATFORM MATCHES x86_64)
-        set(SRC_LIST_mabi ${SRC_LIST} ${SRC_LIST_i386})
-        set(RT_STATIC_ONLY_SRC_LIST_mabi ${RT_STATIC_ONLY_SRC_LIST}
-                                         ${RT_STATIC_ONLY_SRC_LIST_i386})
-        list(APPEND SRC_LIST ${SRC_LIST_x86_64})
-        list(APPEND RT_STATIC_ONLY_SRC_LIST ${RT_STATIC_ONLY_SRC_LIST_x86_64})
-    elseif(PLATFORM MATCHES ppc64)
-        set(SRC_LIST_mabi ${SRC_LIST} ${SRC_LIST_ppc32})
-        set(RT_STATIC_ONLY_SRC_LIST_mabi ${RT_STATIC_ONLY_SRC_LIST}
-                                         ${RT_STATIC_ONLY_SRC_LIST_ppc32})
-        list(APPEND SRC_LIST ${SRC_LIST_ppc64})
-        list(APPEND RT_STATIC_ONLY_SRC_LIST ${RT_STATIC_ONLY_SRC_LIST_ppc64})
-    elseif(PLATFORM MATCHES i386)
-        list(APPEND SRC_LIST ${SRC_LIST_i386})
-        list(APPEND RT_STATIC_ONLY_SRC_LIST ${RT_STATIC_ONLY_SRC_LIST_i386})
-    elseif(PLATFORM MATCHES ppc32)
-        list(APPEND SRC_LIST ${SRC_LIST_ppc32})
-        list(APPEND RT_STATIC_ONLY_SRC_LIST ${RT_STATIC_ONLY_SRC_LIST_ppc32})
-    elseif(PLATFORM MATCHES aarch64)
-        list(APPEND SRC_LIST ${SRC_LIST_aarch64})
-        list(APPEND RT_STATIC_ONLY_SRC_LIST ${RT_STATIC_ONLY_SRC_LIST_aarch64})
-    endif()
+if(DYNINST_OS_UNIX)
+  if(DYNINST_ARCH_x86_64)
+    list(APPEND _sources src/RTthread-x86-64.c src/RTtlsgetaddr-x86.S)
+  elseif(DYNINST_ARCH_i386)
+    list(APPEND _sources src/RTthread-x86.c src/RTtlsgetaddr-x86.S)
+  elseif(DYNINST_ARCH_ppc64le)
+    list(APPEND _sources src/RTthread-powerpc.c src/RTthread-powerpc-asm.S)
+  elseif(DYNINST_ARCH_aarch64)
+    list(APPEND _sources src/RTthread-aarch64.c)
+  endif()
+
+  if(DYNINST_ARCH_x86_64)
+    list(APPEND _static_sources src/RTstatic_ctors_dtors-x86.c)
+  elseif(DYNINST_ARCH_i386)
+    list(APPEND _static_sources src/RTstatic_ctors_dtors-x86.c)
+  elseif(DYNINST_ARCH_ppc64le)
+    list(APPEND _static_sources src/RTstatic_ctors_dtors-ppc64.c)
+  elseif(DYNINST_ARCH_aarch64)
+    list(APPEND _static_sources src/RTstatic_ctors_dtors-aarch64.c)
+  endif()
 endif()
 
-find_package(Threads REQUIRED)
+# cmake-format: off
 dyninst_library(
-    dyninstAPI_RT BUILD_STATIC BUILD_SHARED
-    SOURCES ${SRC_LIST}
-    INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/h>
-    LINK_LIBRARIES Dyninst::headers PRIVATE Dyninst::dynDL Dyninst::dynPthread)
+  dyninstAPI_RT
+  PUBLIC_HEADER_FILES ${_public_headers}
+  PRIVATE_HEADER_FILES ${_private_headers}
+  SOURCE_FILES ${_sources}
+  DYNINST_DEPS common
+  PRIVATE_DEPS Threads::Threads
+  FORCE_STATIC
+)
+# cmake-format: on
 
-if(TARGET dyninstAPI_RT-static)
-    target_sources(dyninstAPI_RT-static PRIVATE ${RT_STATIC_ONLY_SRC_LIST})
-    target_compile_definitions(dyninstAPI_RT-static PRIVATE DYNINST_RT_STATIC_LIB)
-endif()
+foreach(t ${dyninstAPI_RT_TARGETS})
+  if(DYNINST_OS_UNIX)
+    target_link_libraries(${t} PRIVATE ${CMAKE_DL_LIBS})
+  elseif(DYNINST_OS_Windows)
+    target_link_libraries(${t} PRIVATE ws2_32 dbghelp psapi)
+  endif()
 
-# Test to see if we want the 32-bit library
+  if(${t} MATCHES "static")
+    target_sources(${t} PRIVATE ${_static_sources})
+    target_compile_definitions(${t} PRIVATE DYNINST_RT_STATIC_LIB)
+  endif()
 
-if(SRC_LIST_mabi)
-    # The following code is from CheckCCompilerFlag.cmake. It uses a simple program that
-    # can be compiled even if 32-bit includes are missing; we need to extend it somewhat
+  # Both shared and static should be named 'dyninstAPI_RT'- only extension differs
+  set_property(TARGET ${t} PROPERTY OUTPUT_NAME dyninstAPI_RT)
+endforeach()
 
-    include(CheckCSourceCompiles)
+if(BUILD_RTLIB_32)
+  include(CheckCCompilerFlag)
 
-    function(CHECK_C_COMPILER_FLAG_EXTENDED _FLAG _RESULT)
-        set(CMAKE_C_FLAGS "${_FLAG}")
+  # '-m32' is really a linker option, but CMAKE_REQUIRED_LINK_OPTIONS isn't available until
+  # cmake-3.14.0, so hijack the libraries argument instead.
+  set(_m ${CMAKE_REQUIRED_LIBRARIES})
+  list(APPEND CMAKE_REQUIRED_LIBRARIES "-m32")
+  check_c_compiler_flag("-m32" _has_mabi)
+  set(CMAKE_REQUIRED_LIBRARIES ${_m})
+  unset(_m)
 
-        # Addition here: use signal.h
-        dyninst_begin_flag_check()
-        check_c_source_compiles(
-            "#include <signal.h>
-            int main(void) { return 0; }"
-            _COMPILE_RESULT
-            # End addition Some compilers do not fail with a bad flag
-            FAIL_REGEX
-            "warning: command line option .* is valid for .* but not for C"
-            # Apple gcc
-            FAIL_REGEX
-            "unrecognized .*option" # GNU
-            FAIL_REGEX
-            "unknown .*option" # Clang
-            FAIL_REGEX
-            "ignoring unknown option" # MSVC
-            FAIL_REGEX
-            "warning D9002" # MSVC, any lang
-            FAIL_REGEX
-            "[Uu]nknown option" # HP
-            FAIL_REGEX
-            "[Ww]arning: [Oo]ption" # SunPro
-            FAIL_REGEX
-            "command option .* is not recognized" # XL
-            )
-        dyninst_end_flag_check()
-        set(${_RESULT}
-            ${_COMPILE_RESULTS}
-            PARENT_SCOPE)
-    endfunction()
+  if(NOT _has_mabi)
+    message(FATAL_ERROR "BUILD_RTLIB_32 enabled, but compiler doesn't support '-m32'")
+  endif()
 
-    dyninst_message(STATUS "Checking for 32-bit runtime library...")
+  if(NOT DYNINST_OS_UNIX)
+    message(FATAL_ERROR "32-bit runtime is only supported on Unixes")
+  endif()
 
-    check_c_compiler_flag_extended("-m32" CHECK_RT_LIB_32)
-    if(CHECK_RT_LIB_32 AND NOT ${BUILD_RTLIB_32} MATCHES "OFF")
-        dyninst_message(
-            STATUS
-            "Enabling 32-bit runtime library; change BUILD_RTLIB_32 to OFF to disable")
-        set(BUILD_RTLIB_32 ON)
-    else()
-        dyninst_message(
-            STATUS
-            "Disabling 32-bit runtime library; change BUILD_RTLIB_32 to ON and install 32-bit build environment to enable"
-            )
-        set(BUILD_RTLIB_32 OFF)
+  if(NOT DYNINST_ARCH_x86_64 AND NOT DYNINST_ARCH_i386)
+    message(FATAL_ERROR "32-bit runtime is only supported on i386 and x86_64")
+  endif()
+
+  if(DYNINST_ARCH_x86_64)
+    # We're cross-compiling, so remove the x86_64 thread stuff
+    list(FILTER _sources EXCLUDE REGEX "RTthread-x86-64")
+  endif()
+
+  # cmake-format: off
+  # The headers are all listed as PRIVATE so that they do not get copied into the install
+  # tree twice (they already get copied in by the creation of the shared library targets)
+	dyninst_library(
+	  dyninstAPI_RT_m32
+	  PRIVATE_HEADER_FILES ${_public_headers} ${_private_headers}
+	  SOURCE_FILES ${_sources} src/RTthread-x86.c src/RTtlsgetaddr-x86.S
+	  DEFINES "MUTATEE_32"
+	  PRIVATE_DEPS Threads::Threads
+	)
+	# cmake-format: on
+
+  foreach(t ${dyninstAPI_RT_m32_TARGETS})
+    target_compile_options(${t} PRIVATE "-m32")
+    target_link_options(${t} PRIVATE "-m32")
+
+    target_include_directories(
+      ${t} BEFORE PRIVATE "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/common/h>")
+
+    if(DYNINST_OS_UNIX)
+      target_link_libraries(${t} PRIVATE ${CMAKE_DL_LIBS})
+    elseif(DYNINST_OS_Windows)
+      target_link_libraries(${t} PRIVATE ws2_32 dbghelp psapi)
     endif()
 
-    if(BUILD_RTLIB_32)
-        set(USE_OpenMP OFF)
-        dyninst_library(
-            dyninstAPI_RT_m32 BUILD_STATIC BUILD_SHARED SKIP_OPENMP
-            SOURCES ${SRC_LIST_mabi}
-            COMPILE_DEFINITIONS MUTATEE_32
-            COMPILE_OPTIONS -m32
-            LINK_OPTIONS -m32
-            LINK_LIBRARIES Dyninst::headers
-            INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/h>
-                                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
-
-        if(TARGET dyninstAPI_RT_m32-static)
-            target_sources(dyninstAPI_RT_m32-static
-                           PRIVATE ${RT_STATIC_ONLY_SRC_LIST_mabi})
-            target_compile_definitions(dyninstAPI_RT_m32-static
-                                       PRIVATE DYNINST_RT_STATIC_LIB)
-        endif()
+    if(${t} MATCHES "static")
+      target_sources(${t} PRIVATE ${static_sources} src/RTstatic_ctors_dtors-x86.c)
+      target_compile_definitions(${t} PRIVATE DYNINST_RT_STATIC_LIB)
     endif()
+  endforeach()
 endif()

@@ -31,6 +31,10 @@
 #ifndef _Collections_h_
 #define _Collections_h_
 
+#include <stddef.h>
+#include <string>
+#include <utility>
+#include <vector>
 #include "concurrent.h"
 #include "Type.h"
 #include "Variable.h"
@@ -125,7 +129,7 @@ public:
     /* Some debug formats allow forward references.  Rather than
        fill in forward in a second pass, generate placeholder
        types, and fill them in as we go.  Because we require
-       One True Pointer for each type (in parseStab.C), when
+       One True Pointer for each type, when
        updating a type, return that One True Pointer. */
     boost::shared_ptr<Type> findOrCreateType(const int ID, Type::do_share_t);
     Type* findOrCreateType(const int i) { return findOrCreateType(i, Type::share).get(); }

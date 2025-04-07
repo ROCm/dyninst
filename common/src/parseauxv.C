@@ -100,29 +100,40 @@ AuxvParser::AuxvParser(int pid_, unsigned addr_size_)
 Address
 AuxvParser::getInterpreterBase()
 {
-    return interpreter_base;
+   create_err = !readAuxvInfo();
+}
+ 
+Dyninst::Address AuxvParser::getInterpreterBase()
+{
+   return interpreter_base;
+}
+ 
+bool AuxvParser::parsedVsyscall()
+{
+   return found_vsyscall;
 }
 
-bool
-AuxvParser::parsedVsyscall()
+Dyninst::Address AuxvParser::getVsyscallBase()
 {
     return found_vsyscall;
 }
 
-Address
-AuxvParser::getVsyscallBase()
+Dyninst::Address AuxvParser::getVsyscallText()
 {
     return vsyscall_base;
 }
 
-Address
-AuxvParser::getVsyscallText()
+Dyninst::Address AuxvParser::getVsyscallEnd()
 {
-    return vsyscall_text;
+   return vsyscall_end;
+}   
+
+Dyninst::Address AuxvParser::getProgramBase()
+{
+   return phdr;
 }
 
-Address
-AuxvParser::getVsyscallEnd()
+Dyninst::Address AuxvParser::getPageSize()
 {
     return vsyscall_end;
 }

@@ -31,11 +31,14 @@
 #if !defined(_DYN_BLOCK_H_)
 #    define _DYN_BLOCK_H_
 
-#    include "parse-cfg.h"
-#    include "parseAPI/h/CFG.h"
-#    include "instPoint.h"
-#    include "PatchCFG.h"
-#    include "mapped_object.h"
+#include <set>
+#include <string>
+#include <vector>
+#include "parse-cfg.h"
+#include "parseAPI/h/CFG.h"
+#include "instPoint.h"
+#include "PatchCFG.h"
+#include "mapped_object.h"
 
 class block_instance;
 class func_instance;

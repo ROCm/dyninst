@@ -107,19 +107,12 @@ Aggregate::getRegion() const
     return firstSymbol->getRegion();
 }
 
-bool
-Aggregate::addSymbol(Symbol* sym)
-{
-    // We keep a "primary" module, which is defined as "anything not DEFAULT_MODULE".
-    if(module_ == NULL)
-    {
+bool Aggregate::addSymbol(Symbol *sym) {
+
+    // We keep a "primary" module.
+    if (module_ == NULL) {
         module_ = sym->getModule();
     }
-    else if(module_->fileName() == "DEFAULT_MODULE")
-    {
-        module_ = sym->getModule();
-    }
-    // else keep current module.
 
     boost::unique_lock<dyn_mutex> l(lock_);
 
@@ -287,37 +280,32 @@ Aggregate::changeSymbolOffset(Symbol* sym)
     return true;
 }
 
-void
-Aggregate::print(std::ostream& os) const
-{
-    std::string modname = module_ ? module_->fullName() : std::string("no_mod");
-    os << "Aggregate{"
-       << " Module=" << modname << " MangledNames=[";
-    ostream_iterator<string> out_iter(std::cout, ", ");
-    std::copy(mangled_names_begin(), mangled_names_end(), out_iter);
-    os << "]";
-
-    os << " PrettyNames=[";
-    std::copy(pretty_names_begin(), pretty_names_end(), out_iter);
-    os << "]";
-    os << " TypedNames=[";
-    std::copy(typed_names_begin(), typed_names_end(), out_iter);
-
-    os << "]";
-    os << " }";
+void Aggregate::print(std::ostream &os) const {
+  std::string modname = module_ ? module_->fileName() : std::string("no_mod");
+  os   << "Aggregate{"
+       << " Module=" << modname
+       << " MangledNames=[";
+  ostream_iterator<string> out_iter(std::cout, ", ");
+  std::copy(mangled_names_begin(), mangled_names_end(), out_iter);
+  os << "]";
+  
+  os << " PrettyNames=["; 
+  std::copy(pretty_names_begin(), pretty_names_end(), out_iter);
+  os << "]";
+  os << " TypedNames=["; 
+  std::copy(typed_names_begin(), typed_names_end(), out_iter);
+  
+  os << "]";
+  os << " }";
 }
 
 bool
 Aggregate::operator==(const Aggregate& a)
 {
-    if(symbols_.size() != a.symbols_.size())
-        return false;
-    if(module_ && !a.module_)
-        return false;
-    if(!module_ && a.module_)
-        return false;
-    if(module_ && (module_->fullName() != a.module_->fullName()))
-        return false;
+	if (symbols_.size() != a.symbols_.size()) return false;
+	if (module_ && !a.module_) return false;
+	if (!module_ && a.module_) return false;
+	if (module_ && (module_->fileName() != a.module_->fileName())) return false;
 
     for(unsigned int i = 0; i < symbols_.size(); ++i)
     {
@@ -347,37 +335,31 @@ Aggregate::operator==(const Aggregate& a)
 Aggregate::name_iter
 Aggregate::mangled_names_begin() const
 {
-    return boost::make_transform_iterator(symbols_.begin(),
-                                          std::mem_fun(&Symbol::getMangledName));
+  return boost::make_transform_iterator(symbols_.cbegin(), std::mem_fn(&Symbol::getMangledName));
 }
 
 Aggregate::name_iter
 Aggregate::mangled_names_end() const
 {
-    return boost::make_transform_iterator(symbols_.end(),
-                                          std::mem_fun(&Symbol::getMangledName));
+  return boost::make_transform_iterator(symbols_.cend(), std::mem_fn(&Symbol::getMangledName));
 }
 Aggregate::name_iter
 Aggregate::pretty_names_begin() const
 {
-    return boost::make_transform_iterator(symbols_.begin(),
-                                          std::mem_fun(&Symbol::getPrettyName));
+  return boost::make_transform_iterator(symbols_.cbegin(), std::mem_fn(&Symbol::getPrettyName));
 }
 Aggregate::name_iter
 Aggregate::pretty_names_end() const
 {
-    return boost::make_transform_iterator(symbols_.end(),
-                                          std::mem_fun(&Symbol::getPrettyName));
+  return boost::make_transform_iterator(symbols_.cend(), std::mem_fn(&Symbol::getPrettyName));
 }
 Aggregate::name_iter
 Aggregate::typed_names_begin() const
 {
-    return boost::make_transform_iterator(symbols_.begin(),
-                                          std::mem_fun(&Symbol::getTypedName));
+  return boost::make_transform_iterator(symbols_.cbegin(), std::mem_fn(&Symbol::getTypedName));
 }
 Aggregate::name_iter
 Aggregate::typed_names_end() const
 {
-    return boost::make_transform_iterator(symbols_.end(),
-                                          std::mem_fun(&Symbol::getTypedName));
+  return boost::make_transform_iterator(symbols_.cend(), std::mem_fn(&Symbol::getTypedName));
 }

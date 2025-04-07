@@ -19,43 +19,55 @@
 #    include <boost/functional/hash.hpp>
 #    include <Collections.h>
 
-// Concurrent Hash Map
-#    include "concurrent.h"
-#    include <bits/stdc++.h>
+#include "elf.h"
+#include "libelf.h"
+#include "elfutils/libdw.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+#include <stack>
+#include <vector>
+#include <string>
+#include <set>
+#include "dyntypes.h"
+#include "VariableLocation.h"
+#include "Type.h"
+#include "Object.h"
+#include <boost/shared_ptr.hpp>
+#include <boost/functional/hash.hpp>
+#include <boost/optional.hpp>
+#include <Collections.h>
 
-namespace Dyninst
-{
-namespace SymtabAPI
-{
-typedef struct
-{
-    Dwarf_Off off;
-    bool      file;
-    Module*   m;
-} type_key;
-}  // namespace SymtabAPI
-}  // namespace Dyninst
+//Concurrent Hash Map
+#include "concurrent.h"
 
-namespace tbb
-{
-using namespace Dyninst::SymtabAPI;
-template <>
-struct tbb_hash_compare<type_key>
-{
-    static size_t hash(const type_key& k)
-    {
-        size_t seed = 0;
-        boost::hash_combine(seed, k.off);
-        boost::hash_combine(seed, k.file);
-        boost::hash_combine(seed, static_cast<void*>(k.m));
-        return seed;
-    }
-    static bool equal(const type_key& k1, const type_key& k2)
-    {
-        return (k1.off == k2.off && k1.file == k2.file && k1.m == k2.m);
-    }
-};
-}  // namespace tbb
+namespace Dyninst {
+	namespace SymtabAPI {
+		typedef struct {
+			Dwarf_Off off;
+			bool file;
+			Module * m;
+		} type_key;
+		inline bool operator==(type_key const& k1, type_key const& k2) {
+			return k1.off==k2.off && k1.file==k2.file && k1.m==k2.m;
+		}
+	}
+	namespace concurrent {
+		template<>
+		struct hasher<SymtabAPI::type_key> {
+			size_t operator()(const SymtabAPI::type_key& k) const {
+				size_t seed = 0;
+				boost::hash_combine(seed, k.off);
+				boost::hash_combine(seed, k.file);
+				boost::hash_combine(seed, static_cast<void *>(k.m));
+				return seed;
+			}
+		};
+	}
+}
+
+namespace Dyninst {
+namespace SymtabAPI {
 
 namespace Dyninst
 {
@@ -105,43 +117,19 @@ public:
     typedef boost::shared_ptr<std::vector<std::pair<Address, Address>>> range_set_ptr;
 
 private:
-    struct Context
-    {
-        FunctionBase*           func;
-        boost::shared_ptr<Type> commonBlock;
-        boost::shared_ptr<Type> enumType;
-        boost::shared_ptr<Type> enclosure;
-        bool                    parseSibling;
-        bool                    parseChild;
-        Dwarf_Die               offset;
-        Dwarf_Die               specEntry;
-        Dwarf_Die               abstractEntry;
-        unsigned int            tag;
-        Address                 base;
-        range_set_ptr           ranges;
-        Context()
-        : func(NULL)
-        , commonBlock(NULL)
-        , enumType(NULL)
-        , enclosure(NULL)
-        , parseSibling(true)
-        , parseChild(true)
-        , tag(0)
-        , base(0)
-        {}
-        Context(const Context& o) noexcept
-        : func(o.func)
-        , commonBlock(o.commonBlock)
-        , enumType(o.enumType)
-        , enclosure(o.enclosure)
-        , parseSibling(o.parseSibling)
-        , parseChild(o.parseChild)
-        , offset(o.offset)
-        , specEntry(o.specEntry)
-        , abstractEntry(o.specEntry)
-        , tag(o.tag)
-        , base(o.base)
-        {}
+    struct Context {
+        FunctionBase *func{};
+        boost::shared_ptr<Type> commonBlock{};
+        boost::shared_ptr<Type> enumType{};
+        boost::shared_ptr<Type> enclosure{};
+        bool parseSibling{true};
+        bool parseChild{true};
+        Dwarf_Die offset{};
+        Dwarf_Die specEntry{};
+        Dwarf_Die abstractEntry{};
+        unsigned int tag{};
+        Address base{};
+        range_set_ptr ranges{};
     };
 
     std::stack<Context> c;
@@ -191,10 +179,14 @@ public:
             c.top().ranges = range_set_ptr(new std::vector<std::pair<Address, Address>>);
         c.top().ranges->push_back(range);
     }
-    void                          clearRanges() { c.top().ranges = range_set_ptr(); }
-    void                          clearFunc();
-    virtual std::string           filename() const { return symtab()->file(); }
-    virtual void                  setModuleFromName(std::string moduleName);
+    void clearRanges() {
+        c.top().ranges = range_set_ptr();
+    }
+    void clearFunc();
+    virtual std::string filename() const
+    {
+        return symtab()->file();
+    }
     virtual Dyninst::Architecture getArchitecture() const
     {
         return symtab()->getArchitecture();
@@ -211,8 +203,11 @@ public:
         return syms[0];
     }
 
-protected:
-    Symtab* symtab() const { return symtab_; }
+    // Function object of current subprogram being parsed; used to detect
+    // parseSubprogram recursion
+    FunctionBase *currentSubprogramFunction = nullptr;
+
+}; // class DwarfParseActions 
 
 protected:
     Symtab*         symtab_;
@@ -240,30 +235,34 @@ public:
 
     } Error;
 
-    DwarfWalker(Symtab* symtab, Dwarf* dbg);
+    using ParsedFuncs = Dyninst::dyn_c_hash_map<FunctionBase *, bool>;
 
-    DwarfWalker(const DwarfWalker& o)
-    : DwarfParseActions(o)
-    , current_cu_die(o.current_cu_die)
-    , parsedFuncs(o.parsedFuncs)
-    , name_(o.name_)
-    , is_mangled_name_(o.is_mangled_name_)
-    , modLow(o.modLow)
-    , modHigh(o.modHigh)
-    , cu_header_length(o.cu_header_length)
-    , version(o.version)
-    , abbrev_offset(o.abbrev_offset)
-    , addr_size(o.addr_size)
-    , offset_size(o.offset_size)
-    , extension_size(o.extension_size)
-    , signature(o.signature)
-    , typeoffset(o.typeoffset)
-    , next_cu_header(o.next_cu_header)
-    , compile_offset(o.compile_offset)
-    , info_type_ids_(o.info_type_ids_)
-    , types_type_ids_(o.types_type_ids_)
-    , sig8_type_ids_(o.sig8_type_ids_)
-    {}
+    DwarfWalker(Symtab *symtab, Dwarf* dbg, std::shared_ptr<ParsedFuncs> pf = nullptr);
+
+    DwarfWalker(const DwarfWalker& o) :
+            DwarfParseActions(o),
+            current_cu_die(o.current_cu_die),
+            parsedFuncs(o.parsedFuncs),
+            name_(o.name_),
+            is_mangled_name_(o.is_mangled_name_),
+            modLow(o.modLow), modHigh(o.modHigh),
+            cu_header_length(o.cu_header_length),
+            abbrev_offset(o.abbrev_offset),
+            addr_size(o.addr_size),
+            offset_size(o.offset_size),
+            extension_size(o.extension_size),
+            signature(o.signature),
+            typeoffset(o.typeoffset),
+            next_cu_header(o.next_cu_header),
+            compile_offset(o.compile_offset),
+            info_type_ids_(o.info_type_ids_),
+            types_type_ids_(o.types_type_ids_),
+            sig8_type_ids_(o.sig8_type_ids_)
+            {
+                if (!parsedFuncs)  {
+                    parsedFuncs = std::make_shared<ParsedFuncs>();
+                }
+            }
 
     virtual ~DwarfWalker();
 
@@ -286,25 +285,26 @@ private:
         InlinedFunc
     };
 
-    bool                                 parseSubprogram(inline_t func_type);
-    bool                                 parseLexicalBlock();
-    bool                                 parseRangeTypes(Dwarf* dbg, Dwarf_Die die);
-    bool                                 parseCommonBlock();
-    bool                                 parseConstant();
-    virtual bool                         parseVariable();
-    bool                                 parseFormalParam();
-    bool                                 parseBaseType();
-    bool                                 parseTypedef();
-    bool                                 parseArray();
-    bool                                 parseSubrange();
-    bool                                 parseEnum();
-    bool                                 parseInheritance();
-    bool                                 parseStructUnionClass();
-    bool                                 parseEnumEntry();
-    bool                                 parseMember();
-    bool                                 parseConstPackedVolatile();
-    bool                                 parseTypeReferences();
-    static std::pair<AddressRange, bool> parseHighPCLowPC(Dwarf* dbg, Dwarf_Die entry);
+    bool parseSubprogram(inline_t func_type);
+    bool parseLexicalBlock();
+    bool parseTryBlock();
+    bool parseCatchBlock();
+    bool parseRangeTypes(Dwarf_Die die);
+    bool parseCommonBlock();
+    bool parseConstant();
+    virtual bool parseVariable();
+    bool parseFormalParam();
+    bool parseBaseType();
+    bool parseTypedef();
+    bool parseArray();
+    bool parseSubrange();
+    bool parseEnum();
+    bool parseInheritance();
+    bool parseStructUnionClass();
+    bool parseEnumEntry();
+    bool parseMember();
+    bool parseConstPackedVolatile();
+    bool parseTypeReferences();
 
     // These vary as we parse the tree
 
@@ -341,60 +341,63 @@ private:
     bool         findFuncName();
     bool         setFunctionFromRange(inline_t func_type);
     virtual void setEntry(Dwarf_Die e);
-    bool         getFrameBase();
-    bool getReturnType(bool hasSpecification, boost::shared_ptr<Type>& returnType);
+    bool getFrameBase();
+    bool getReturnType(boost::shared_ptr<Type>&returnType);
     bool addFuncToContainer(boost::shared_ptr<Type> returnType);
     bool isStaticStructMember(std::vector<VariableLocation>& locs, bool& isStatic);
     virtual bool findType(boost::shared_ptr<Type>&, bool defaultToVoid);
-    bool         findAnyType(Dwarf_Attribute typeAttribute, bool is_info,
-                             boost::shared_ptr<Type>& type);
-    bool         findDieOffset(Dwarf_Attribute attr, Dwarf_Off& offset);
-    bool         getLineInformation(Dwarf_Word& variableLineNo, bool& hasLineNumber,
-                                    std::string& filename);
-
-public:
-    static bool findDieName(Dwarf_Die die, std::string&);
-
+    bool findAnyType(Dwarf_Attribute typeAttribute,
+            bool is_info, boost::shared_ptr<Type>&type);
+    bool findDieOffset(Dwarf_Attribute attr, Dwarf_Off &offset);
+    bool getLineInformation(Dwarf_Word &variableLineNo,
+            bool &hasLineNumber,
+            std::string &filename);
 private:
-    bool findName(std::string&);
-    void removeFortranUnderscore(std::string&);
-    bool findSize(unsigned& size);
-    bool findVisibility(visibility_t& visibility);
-    bool findValue(long& value, bool& valid);
-    bool fixName(std::string& name, boost::shared_ptr<Type> type);
-    bool fixBitFields(std::vector<VariableLocation>& locs, long& size);
+    std::string die_name();
+    void removeFortranUnderscore(std::string &);
+    bool findSize(unsigned &size);
+    bool findVisibility(visibility_t &visibility);
+    boost::optional<long> findConstValue();
+    bool fixName(std::string &name, boost::shared_ptr<Type> type);
+    bool fixBitFields(std::vector<VariableLocation> &locs, long &size);
 
-    bool parseSubrangeAUX(Dwarf_Die entry, std::string& lobound, std::string& hibound);
-    bool decodeLocationList(Dwarf_Half attr, Address* initialVal,
-                            std::vector<VariableLocation>& locs);
-    bool checkForConstantOrExpr(Dwarf_Half attr, Dwarf_Attribute& locationAttribute,
-                                bool& constant, bool& expr, Dwarf_Half& form);
-    bool findString(Dwarf_Half attr, std::string& str);
-
+    boost::shared_ptr<typeSubrange> parseSubrange(Dwarf_Die *entry);
+    bool decodeLocationList(Dwarf_Half attr,
+            Address *initialVal,
+            std::vector<VariableLocation> &locs);
+    bool checkForConstantOrExpr(Dwarf_Half attr,
+            Dwarf_Attribute &locationAttribute,
+            bool &constant,
+            bool &expr,
+            Dwarf_Half &form);
+    boost::optional<std::string> find_call_file();
 public:
-    static bool findConstant(Dwarf_Half attr, Address& value, Dwarf_Die* entry,
-                             Dwarf* dbg);
-    static bool findConstantWithForm(Dwarf_Attribute& attr, Dwarf_Half form,
-                                     Address& value);
-    static std::vector<AddressRange> getDieRanges(Dwarf* dbg, Dwarf_Die die, Offset base);
-
+    static bool findConstant(Dwarf_Half attr, Address &value, Dwarf_Die *entry, Dwarf *dbg);
+    static bool findConstantWithForm(Dwarf_Attribute &attr, Dwarf_Half form,
+            Address &value);
+    static std::vector<AddressRange> getDieRanges(Dwarf_Die die);
 private:
-    bool                    decodeConstantLocation(Dwarf_Attribute& attr, Dwarf_Half form,
-                                                   std::vector<VariableLocation>& locs);
-    bool                    constructConstantVariableLocation(Address                        value,
-                                                              std::vector<VariableLocation>& locs);
-    boost::shared_ptr<Type> parseMultiDimensionalArray(
-        Dwarf_Die* firstRange, boost::shared_ptr<Type> elementType);
-    bool decipherBound(Dwarf_Attribute boundAttribute, bool is_info, std::string& name);
+    bool decodeConstantLocation(Dwarf_Attribute &attr, Dwarf_Half form,
+            std::vector<VariableLocation> &locs);
+    bool constructConstantVariableLocation(Address value,
+            std::vector<VariableLocation> &locs);
+    boost::shared_ptr<typeArray> parseMultiDimensionalArray(Dwarf_Die *firstRange,
+                                          boost::shared_ptr<Type> elementType);
 
     bool decodeExpression(Dwarf_Attribute& attr, std::vector<VariableLocation>& locs);
 
     typedef struct
     {
         Dwarf_Addr ld_lopc, ld_hipc;
-        Dwarf_Op*  dwarfOp;
-        size_t     opLen;
-    } LocDesc;
+        Dwarf_Op * dwarfOp;
+        size_t opLen;
+    }LocDesc;
+
+    bool decodeLocationListForStaticOffsetOrAddress(
+            std::vector<LocDesc>& locationList,
+            Dwarf_Sword listLength,
+            std::vector<VariableLocation>& locs,
+            Address * initialStackValue = NULL);
 
     bool decodeLocationListForStaticOffsetOrAddress(std::vector<LocDesc>& locationList,
                                                     Dwarf_Sword           listLength,
@@ -402,19 +405,17 @@ private:
                                                     Address* initialStackValue = NULL);
     void deallocateLocationList(Dwarf_Op** locationList, Dwarf_Sword listLength);
 
-    // Header-only functions get multiple parsed.
-    std::set<FunctionBase*> parsedFuncs;
-
+    // Map of Function* to bool (indicates function parsed)
+    std::shared_ptr<ParsedFuncs> parsedFuncs;
 private:
     std::string name_;
     bool        is_mangled_name_;
 
     // Per-module info
-    Address                modLow;
-    Address                modHigh;
-    size_t                 cu_header_length;
-    Dwarf_Half             version;
-    Dwarf_Word             abbrev_offset;
+    Address modLow;
+    Address modHigh;
+    size_t  cu_header_length;
+    Dwarf_Word abbrev_offset;
     uint8_t /*Dwarf_Half*/ addr_size;
     uint8_t /*Dwarf_Half*/ offset_size;
     Dwarf_Half             extension_size;

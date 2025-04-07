@@ -30,7 +30,11 @@
 #if !defined(EVENTTYPE_H_)
 #    define EVENTTYPE_H_
 
-#    include "util.h"
+#include <string>
+#include "util.h"
+
+namespace Dyninst {
+namespace ProcControlAPI {
 
 namespace Dyninst
 {

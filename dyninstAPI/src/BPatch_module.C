@@ -122,8 +122,8 @@ BPatch_module::libraryName()
     if(!mod)
         return NULL;
 
-    if(isSharedLib())
-        return mod->fullName().c_str();
+   if (isSharedLib())      
+      return mod->fileName().c_str();
 
     return NULL;
 }
@@ -131,9 +131,9 @@ BPatch_module::libraryName()
 char*
 BPatch_module::getFullName(char* buffer, int length)
 {
-    if(!mod)
-        return NULL;
-    string str = mod->fullName();
+   if (!mod)
+      return NULL;
+   string str = mod->fileName();
 
     strncpy(buffer, str.c_str(), length);
 
@@ -163,14 +163,10 @@ BPatch_module::BPatch_module(BPatch_addressSpace* _addSpace, AddressSpace* as,
             setLanguage(BPatch_cPlusPlus);
             break;
 
-        case lang_Fortran_with_pretty_debug:
-            setLanguage(BPatch_f90_demangled_stabstr);
-            break;
-
-        case lang_Fortran:
-        case lang_CMFortran:
-            setLanguage(BPatch_fortran);
-            break;
+      case lang_Fortran:
+      case lang_CMFortran:
+         setLanguage( BPatch_fortran );
+         break;
 
         case lang_Assembly:
             setLanguage(BPatch_assembly);
@@ -484,7 +480,74 @@ BPatch_module::findFunction(const char* name, BPatch_Vector<BPatch_function*>& f
                     std::string(name) + ": regex error --" + std::string(errbuf);
                 BPatch_reportError(BPatchSerious, 100, msg.c_str());
             }
-            return NULL;
+         }
+         if (found_match) continue; // Don't check mangled names
+
+         for (auto miter = func->symtab_names_begin(); 
+	      miter != func->symtab_names_end();
+	      ++miter) {
+	   const string &mName = *miter;
+            int err_code;
+
+            if (0 == (err_code = regexec(&comp_pat, mName.c_str(), 1, NULL, 0 ))){
+               if (func->isInstrumentable() || incUninstrumentable) {
+                  BPatch_function *foo = addSpace->findOrCreateBPFunc(func, NULL);
+                  //	   BPatch_function *foo = proc->findOrCreateBPFunc(func, NULL);
+                  funcs.push_back(foo);
+               }
+               found_match = true;
+               break;
+            }
+         }
+      }
+
+      regfree(&comp_pat);
+
+      if (funcs.size() != size) {
+         return &funcs;
+      } 
+
+      if (notify_on_failure) {
+         std::string msg = std::string("Unable to find pattern: ") + std::string(name);
+         BPatch_reportError(BPatchSerious, 100, msg.c_str());
+      }
+#endif
+   }
+
+   if (notify_on_failure) {
+      char msg[1024];
+      sprintf(msg, "%s[%d]:  Module %s: unable to find function %s",
+            __FILE__, __LINE__, mod->fileName().c_str(), name);
+      BPatch_reportError(BPatchSerious, 100, msg);
+
+   }
+   return &funcs;
+}
+
+   BPatch_Vector<BPatch_function *> *
+BPatch_module::findFunctionByAddress(void *addr, BPatch_Vector<BPatch_function *> &funcs,
+      bool notify_on_failure, 
+      bool incUninstrumentable)
+{
+   if (!isValid()) {
+      if (notify_on_failure) {
+         BPatch_reportError(BPatchSerious, 100, "Module is not valid");
+      }
+      return NULL;
+   }
+
+   BPatch_function *bpfunc = NULL;
+   std::set<func_instance *> ifuncs;
+   mod->findFuncsByAddr((Address) addr, ifuncs);
+
+   for (std::set<func_instance *>::iterator iter = ifuncs.begin(); 
+       iter != ifuncs.end(); ++iter) {
+        func_instance *pdfunc = *iter; 
+        if (incUninstrumentable || pdfunc->isInstrumentable()) {
+           bpfunc = addSpace->findOrCreateBPFunc(pdfunc, this);
+          if (bpfunc) {
+               funcs.push_back(bpfunc);
+           }
         }
 
         // Regular expression search. This used to be handled at the image

@@ -31,8 +31,14 @@
 #if !defined(IA_IAPI_H)
 #    define IA_IAPI_H
 
-#    include <boost/tuple/tuple.hpp>
-#    include <boost/static_assert.hpp>
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <utility>
+#include <vector>
+#include <boost/tuple/tuple.hpp>
+#include <boost/static_assert.hpp>
 
 #    include "InstructionAdapter.h"
 #    include "InstructionDecoder.h"
@@ -51,6 +57,98 @@ class IA_IAPI : public InstructionAdapter
 {
     friend class image_func;
 
+        IA_IAPI(Dyninst::InstructionAPI::InstructionDecoder dec_,
+                Address start_, 
+                Dyninst::ParseAPI::CodeObject* o,
+                Dyninst::ParseAPI::CodeRegion* r,
+                Dyninst::InstructionSource *isrc,
+		Dyninst::ParseAPI::Block * curBlk_);
+        // We have a iterator, and so can't use the implicit copiers
+	IA_IAPI(const IA_IAPI &);
+	IA_IAPI &operator=(const IA_IAPI &r);
+	~IA_IAPI() { }
+	static IA_IAPI* makePlatformIA_IAPI(Dyninst::Architecture arch,
+	                                    Dyninst::InstructionAPI::InstructionDecoder dec_,
+					    Address start_,
+					    Dyninst::ParseAPI::CodeObject* o,
+					    Dyninst::ParseAPI::CodeRegion* r,
+					    Dyninst::InstructionSource *isrc,
+					    Dyninst::ParseAPI::Block * curBlk_);
+	virtual IA_IAPI* clone() const = 0;
+        virtual void reset(Dyninst::InstructionAPI::InstructionDecoder dec_,
+          Address start, ParseAPI::CodeObject *o,
+          ParseAPI::CodeRegion *r, InstructionSource *isrc, ParseAPI::Block *);
+
+        virtual const Dyninst::InstructionAPI::Instruction& getInstruction() const;
+    
+        virtual bool hasCFT() const;
+        virtual size_t getSize() const;
+        virtual bool isFrameSetupInsn() const;
+        virtual bool isAbort() const;
+        virtual bool isInvalidInsn() const;
+        virtual bool isGarbageInsn() const; //true for insns indicative of bad parse, for defensive mode
+        virtual void
+                getNewEdges(std::vector<std::pair< Address, 
+                                Dyninst::ParseAPI::EdgeTypeEnum> >&outEdges, 
+                Dyninst::ParseAPI::Function * context,
+                Dyninst::ParseAPI::Block * currBlk,
+                unsigned int num_insns,
+                dyn_hash_map<Address, std::string> *pltFuncs,
+		const set<Address>& knownTargets) const;
+        virtual InstrumentableLevel getInstLevel(Dyninst::ParseAPI::Function *, unsigned int num_insns ) const;
+        virtual bool isDynamicCall() const;
+        virtual bool isAbsoluteCall() const;
+        virtual bool simulateJump() const;
+        virtual void advance();
+        virtual bool retreat();
+        virtual bool isNop() const = 0;
+        virtual bool isLeave() const;
+        virtual bool isDelaySlot() const;
+        virtual bool isRelocatable(InstrumentableLevel lvl) const;
+        virtual bool isTailCall(const ParseAPI::Function *,
+                                Dyninst::ParseAPI::EdgeTypeEnum,
+                                unsigned int,
+                                const std::set<Address> &) const = 0;
+        virtual std::pair<bool, Address> getCFT() const;
+        virtual bool isStackFramePreamble() const = 0;
+        virtual bool savesFP() const = 0;
+        virtual bool cleansStack() const = 0;
+        virtual bool isConditional() const;
+        virtual bool isBranch() const;
+        virtual bool isInterruptOrSyscall() const;
+        virtual bool isCall() const;
+        virtual bool isReturnAddrSave(Address &ret_addr) const = 0;
+        virtual bool isNopJump() const = 0;
+        virtual bool sliceReturn(ParseAPI::Block* bit, Address ret_addr, ParseAPI::Function * func) const = 0;
+        virtual bool isIATcall(std::string &calleeName) const = 0;
+        virtual bool isThunk() const = 0;
+	virtual bool isIndirectJump() const;
+
+protected:
+        virtual bool isRealCall() const;
+        virtual bool parseJumpTable(Dyninst::ParseAPI::Function * currFunc,
+	                            Dyninst::ParseAPI::Block* currBlk,
+				    std::vector<std::pair< Address, Dyninst::ParseAPI::EdgeTypeEnum > >& outEdges) const;
+        virtual bool isIPRelativeBranch() const;
+        virtual bool isFrameSetupInsn(Dyninst::InstructionAPI::Instruction i) const = 0;
+        virtual bool isReturn(Dyninst::ParseAPI::Function *, Dyninst::ParseAPI::Block* currBlk) const = 0;
+        virtual bool isFakeCall() const = 0;
+        virtual bool isLinkerStub() const = 0;
+	virtual bool isSysEnter() const;
+	virtual void parseSyscall(std::vector<std::pair<Address, Dyninst::ParseAPI::EdgeTypeEnum> >& outEdges) const;
+	virtual void parseSysEnter(std::vector<std::pair<Address, Dyninst::ParseAPI::EdgeTypeEnum> >& outEdges) const;
+        std::pair<bool, Address> getFallthrough() const;
+
+        Dyninst::InstructionAPI::InstructionDecoder dec;
+
+        /*
+         * Decoded instruction cache: contains the linear
+         * sequence of instructions decoded by the decoder
+         * underlying this adapter.
+         * 
+         * - curInsnIter == *(allInsns.end()-1)
+         * - (super)->current = curInsnIter->first
+         */
 public:
     InstructionAPI::Instruction current_instruction() { return curInsnIter->second; }
 

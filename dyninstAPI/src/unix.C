@@ -209,7 +209,8 @@ PCProcess::instrumentMTFuncs()
         {
             func_instance* ps = pthread_self_funcs[j];
             fprintf(stderr, "[%s:%d] - %s in module %s at %lx\n", __FILE__, __LINE__,
-                    ps->prettyName().c_str(), ps->mod()->fullName().c_str(), ps->addr());
+                    ps->prettyName().c_str(), ps->mod()->fileName().c_str(),
+                    ps->addr());
         }
         return false;
     }
@@ -618,11 +619,12 @@ PCProcess::startDebugger()
 {
     std::stringstream pidStr;
     pidStr << getPid();
+    auto tmp = pidStr.str();
 
     const char* args[4];
     args[0] = dyn_debug_crash_debugger;
     args[1] = file_.c_str();
-    args[2] = pidStr.str().c_str();
+    args[2] = tmp.c_str();
     args[3] = NULL;
 
     proccontrol_printf("%s[%d]: Launching %s %s %s\n", FILE__, __LINE__, args[0], args[1],
@@ -861,76 +863,44 @@ block_instance::callee()
         }
     }
 
-    // Do this the hard way - an inter-module jump
-    // get the target address of this function
-    Address target_addr;
-    bool    success;
-    boost::tie(success, target_addr) = llb()->callTarget();
-    if(!success)
-    {
-        // this is either not a call instruction or an indirect call instr
-        // that we can't get the target address
-        return NULL;
-    }
-
-    // get the relocation information for this image
-    Symtab*                      sym = obj()->parse_img()->getObject();
-    std::vector<relocationEntry> fbt;
-    if(!sym->getFuncBindingTable(fbt))
-    {
-        return NULL;
-    }
-
-    /**
-     * Object files and static binaries will not have a function binding table
-     * because the function binding table holds relocations used by the dynamic
-     * linker
-     */
-    if(!fbt.size() && !sym->isStaticBinary() &&
-       sym->getObjectType() != obj_RelocatableFile)
-    {
-        fprintf(stderr, "%s[%d]:  WARN:  zero func bindings\n", FILE__, __LINE__);
-    }
-
-    std::map<Address, std::string> pltFuncs;
-    obj()->parse_img()->getPltFuncs(pltFuncs);
-
-    // find the target address in the list of relocationEntries
-    if(pltFuncs.find(target_addr) != pltFuncs.end())
-    {
-        Address base_addr = obj()->codeBase();
-        for(u_int i = 0; i < fbt.size(); i++)
-        {
-            if(fbt[i].target_addr() == target_addr)
-            {
-                // check to see if this function has been bound yet...if the
-                // PLT entry for this function has been modified by the runtime
-                // linker
-                func_instance* target_pdf = 0;
-                if(proc()->hasBeenBound(fbt[i], target_pdf, base_addr))
-                {
-                    updateCallTarget(target_pdf);
-                    obj()->setCalleeName(this, target_pdf->symTabName());
-                    obj()->setCallee(this, target_pdf);
-                    return target_pdf;
-                }
+   // Do this the hard way - an inter-module jump
+   // get the target address of this function
+   Address target_addr; bool success;
+   boost::tie(success, target_addr) = llb()->callTarget();
+   if(!success) {
+      // this is either not a call instruction or an indirect call instr
+      // that we can't get the target address
+      return NULL;
+   }
+   
+   // get the relocation information for this image
+   Symtab *sym = obj()->parse_img()->getObject();
+   // find the target address in the list of relocationEntries
+   relocationEntry function_binding;
+   if(sym->findPltEntryByTarget(target_addr, function_binding)) {
+	  Address base_addr = obj()->codeBase();
+            // check to see if this function has been bound yet...if the
+            // PLT entry for this function has been modified by the runtime
+            // linker
+            func_instance *target_pdf = 0;
+      if (proc()->hasBeenBound(function_binding, target_pdf, base_addr)) {
+               updateCallTarget(target_pdf);
+               obj()->setCalleeName(this, target_pdf->symTabName());
+               obj()->setCallee(this, target_pdf);
+               return target_pdf;
             }
-        }
-        return callee(pltFuncs[target_addr]);
-    }
-    else
-    {
-        /*
-         * Sometimes, the PLT address and the CFG target aren't the same
-         * (e.g., Intel's CET causes this), so we just look up by name.
-         */
-        func_instance* f = obj()->findFuncByEntry(tEdge->trg());
-        if(!f)
-            return nullptr;
-        return callee(f->get_name());
-    }
-
-    return NULL;
+      return callee(function_binding.name());
+   } else {
+	   /*
+	    * Sometimes, the PLT address and the CFG target aren't the same
+	    * (e.g., Intel's CET causes this), so we just look up by name.
+	    */
+	   func_instance *f = obj()->findFuncByEntry(tEdge->trg());
+	   if(!f) return nullptr;
+	   return callee(f->get_name());
+   }
+   
+   return NULL;
 }
 
 void

@@ -31,7 +31,13 @@
 #if !defined(INSTRUCTION_ADAPTER_H)
 #    define INSTRUCTION_ADAPTER_H
 
-#    include "dyntypes.h"
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "dyntypes.h"
 
 #    include "CodeObject.h"
 #    include "CFG.h"

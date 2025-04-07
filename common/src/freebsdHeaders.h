@@ -31,32 +31,34 @@
 #if !defined(_freebsd_headers_h)
 #    define _freebsd_headers_h
 
-#    include <assert.h>
-#    include <stdio.h>
-#    include <string.h>
-#    include <stdlib.h>
-#    include <errno.h>
-#    include <assert.h>
-#    include <fcntl.h>
-#    include <netinet/in.h>
-#    include <netdb.h>
-#    include <sys/types.h>
-#    include <sys/mman.h>
-#    include <sys/time.h>
-#    include <unistd.h>
-#    include <sys/file.h>
-#    include <sys/socket.h>
-#    include <sys/errno.h>
-#    include <sys/wait.h>
-#    include <signal.h>
-#    include <sys/ptrace.h>
-#    include <sys/resource.h>
-#    include <stdarg.h>
-#    include <time.h>
-#    include <sys/utsname.h>
-#    include <sys/stat.h>
-#    include <sys/un.h>
-#    include <sys/syscall.h>
+#include <assert.h>
+#include <stddef.h>
+#include <string>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <sys/file.h>
+#include <sys/socket.h>
+#include <sys/errno.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <sys/ptrace.h>
+#include <sys/resource.h>
+#include <stdarg.h>
+#include <time.h>
+#include <sys/utsname.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <sys/syscall.h>
 
 #    define PDSOCKET_ERROR (-1)
 typedef int PDSOCKET;

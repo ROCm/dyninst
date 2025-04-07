@@ -31,84 +31,79 @@
 #if !defined(_PCREL_H_)
 #    define _PCREL_H_
 
-class pcRelRegion
-{
+class pcRelRegion {
+ public:
+   friend class codeGen;
+   codeGen *gen;
+   instruction orig_instruc;
+   unsigned cur_offset;
+   unsigned cur_size;
+   pcRelRegion(const instruction &i);
+   virtual unsigned apply(Dyninst::Address addr) = 0;
+   virtual unsigned maxSize() = 0;
+   virtual bool canPreApply();
+   virtual ~pcRelRegion();
+}; 
+
+
+class pcRelJump : public pcRelRegion {
+private:
+   Dyninst::Address addr_targ;
+   patchTarget *targ;
+    bool copy_prefixes_;
+
+   Dyninst::Address get_target();
 public:
-    friend class codeGen;
-    codeGen*    gen;
-    instruction orig_instruc;
-    unsigned    cur_offset;
-    unsigned    cur_size;
-    pcRelRegion(const instruction& i);
-    virtual unsigned apply(Address addr) = 0;
-    virtual unsigned maxSize()           = 0;
-    virtual bool     canPreApply();
-    virtual ~pcRelRegion();
+   pcRelJump(patchTarget *t, const instruction &i, bool copyPrefixes = true);
+   pcRelJump(Dyninst::Address target, const instruction &i, bool copyPrefixes = true);
+   virtual unsigned apply(Dyninst::Address addr);
+   virtual unsigned maxSize();        
+   virtual bool canPreApply();
+   virtual ~pcRelJump();
 };
 
 class pcRelJump : public pcRelRegion
 {
 private:
-    Address      addr_targ;
-    patchTarget* targ;
-    bool         copy_prefixes_;
+   Dyninst::Address addr_targ;
+   patchTarget *targ;
 
-    Address get_target();
-
+   Dyninst::Address get_target();
 public:
-    pcRelJump(patchTarget* t, const instruction& i, bool copyPrefixes = true);
-    pcRelJump(Address target, const instruction& i, bool copyPrefixes = true);
-    virtual unsigned apply(Address addr);
-    virtual unsigned maxSize();
-    virtual bool     canPreApply();
-    virtual ~pcRelJump();
+   pcRelJCC(patchTarget *t, const instruction &i);
+   pcRelJCC(Dyninst::Address target, const instruction &i);
+   virtual unsigned apply(Dyninst::Address addr);
+   virtual unsigned maxSize();        
+   virtual bool canPreApply();
+   virtual ~pcRelJCC();
 };
 
 class pcRelJCC : public pcRelRegion
 {
 private:
-    Address      addr_targ;
-    patchTarget* targ;
+   Dyninst::Address targ_addr;
+   patchTarget *targ;
 
-    Address get_target();
-
+   Dyninst::Address get_target();
 public:
-    pcRelJCC(patchTarget* t, const instruction& i);
-    pcRelJCC(Address target, const instruction& i);
-    virtual unsigned apply(Address addr);
-    virtual unsigned maxSize();
-    virtual bool     canPreApply();
-    virtual ~pcRelJCC();
+   pcRelCall(patchTarget *t, const instruction &i);
+   pcRelCall(Dyninst::Address targ_addr, const instruction &i);
+
+   virtual unsigned apply(Dyninst::Address addr);
+   virtual unsigned maxSize();        
+   virtual bool canPreApply();
+   ~pcRelCall();
 };
 
 class pcRelCall : public pcRelRegion
 {
 private:
-    Address      targ_addr;
-    patchTarget* targ;
-
-    Address get_target();
-
+   Dyninst::Address data_addr;
 public:
-    pcRelCall(patchTarget* t, const instruction& i);
-    pcRelCall(Address targ_addr, const instruction& i);
-
-    virtual unsigned apply(Address addr);
-    virtual unsigned maxSize();
-    virtual bool     canPreApply();
-    ~pcRelCall();
-};
-
-class pcRelData : public pcRelRegion
-{
-private:
-    Address data_addr;
-
-public:
-    pcRelData(Address a, const instruction& i);
-    virtual unsigned apply(Address addr);
-    virtual unsigned maxSize();
-    virtual bool     canPreApply();
+   pcRelData(Dyninst::Address a, const instruction &i);
+   virtual unsigned apply(Dyninst::Address addr);
+   virtual unsigned maxSize();        
+   virtual bool canPreApply();
 };
 
 #endif

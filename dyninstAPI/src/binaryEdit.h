@@ -33,6 +33,9 @@
 #ifndef BINARY_H
 #define BINARY_H
 
+#include <string>
+#include <string.h>
+#include <vector>
 #include <map>
 #include <memory>
 
@@ -190,10 +193,10 @@ private:
 
     bool archSpecificMultithreadCapable();
 
-    /* Function specific to rewritting static binaries */
-    bool doStaticBinarySpecialCases();
-
-    codeRangeTree* memoryTracker_;
+   /* Function specific to rewritting static binaries */
+   bool doStaticBinarySpecialCases();
+    
+    codeRangeTree memoryTracker_;
 
     mapped_object* addSharedObject(const std::string* fullPath);
 

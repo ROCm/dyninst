@@ -31,7 +31,12 @@
 #if !defined(_R_E_CALLBACK_H_)
 #    define _R_E_CALLBACK_H_
 
-#    include "Widget.h"
+#include <string>
+#include "Widget.h"
+
+
+namespace Dyninst {
+namespace Relocation {
 
 namespace Dyninst
 {

@@ -33,10 +33,8 @@
 #if !defined(pd_nt_headers_h)
 #    define pd_nt_headers_h
 
-#    pragma warning(disable : 4996)
-
-#    include <windows.h>
-#    include <winsock2.h>
+#include <windows.h>
+#include <winsock2.h>
 
 #    if !defined(__out_ecount_opt)
 #        define __out_ecount_opt(x)  // Working around dbhelp.h bugs
@@ -47,13 +45,15 @@
 #    include <assert.h>
 #    include <stdio.h>
 
-#    include <string.h>
-#    include <stdlib.h>
-#    include <errno.h>
-#    include <fcntl.h>
-#    include <io.h>
-#    include <direct.h>
-#    include <malloc.h>
+#include <stddef.h>
+#include <string>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <io.h>
+#include <direct.h>
+#include <malloc.h>
 
 #    ifdef BPATCH_LIBRARY
 

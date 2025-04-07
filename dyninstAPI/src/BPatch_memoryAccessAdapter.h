@@ -30,42 +30,36 @@
 #if !defined(BPMAA_H)
 #    define BPMAA_H
 
-#    include "Visitor.h"
-#    include "Instruction.h"
-#    include "common/src/Types.h"
+#include "Visitor.h"
+#include "Instruction.h"
+#include "dyntypes.h"
 
 class BPatch_memoryAccess;
 
 class BPatch_memoryAccessAdapter : public Dyninst::InstructionAPI::Visitor
 {
-public:
-    BPatch_memoryAccessAdapter()
-    : bytes(0)
-    , imm(0)
-    , ra(-1)
-    , rb(-1)
-    , sc(0)
-    , leftshift(false)
-    , setImm(false)
-    {}
-
-    virtual ~BPatch_memoryAccessAdapter() {}
-
-    BPatch_memoryAccess* convert(Dyninst::InstructionAPI::Instruction insn,
-                                 Address current, bool is64);
-    virtual void         visit(Dyninst::InstructionAPI::BinaryFunction* b);
-    virtual void         visit(Dyninst::InstructionAPI::Dereference* d);
-    virtual void         visit(Dyninst::InstructionAPI::RegisterAST* r);
-    virtual void         visit(Dyninst::InstructionAPI::Immediate* i);
-
-private:
-    unsigned int bytes;
-    long         imm;
-    int          ra;
-    int          rb;
-    int          sc;
-    bool         leftshift;
-    bool         setImm;
+ public:
+     BPatch_memoryAccessAdapter() :
+        bytes(0), imm(0), ra(-1), rb(-1), sc(0),
+        setImm(false) {
+  }
+  
+  virtual ~BPatch_memoryAccessAdapter() {
+  }
+  
+  BPatch_memoryAccess* convert(Dyninst::InstructionAPI::Instruction insn,
+			       Dyninst::Address current, bool is64);
+  virtual void visit(Dyninst::InstructionAPI::BinaryFunction* b);
+  virtual void visit(Dyninst::InstructionAPI::Dereference* d);
+  virtual void visit(Dyninst::InstructionAPI::RegisterAST* r);
+  virtual void visit(Dyninst::InstructionAPI::Immediate* i);
+    private:
+        unsigned int bytes;
+        long imm;
+        int ra;
+        int rb;
+ 		int sc;
+        bool setImm;
 };
 
 #endif  // !defined(BPMAA_H)

@@ -52,158 +52,18 @@ using namespace std;
 using namespace Dyninst;
 using namespace Dyninst::SymtabAPI;
 
-//#ifdef BINEDIT_DEBUG
-bool ____sym_hdr_printed = false;
-void
-print_symbols(std::vector<Symbol*>& allsymbols)
+const char *Dyninst::SymtabAPI::supportedLanguages2Str(supportedLanguages s)
 {
-    FILE*       fd = stdout;
-    Symbol*     sym;
-    std::string modname;
-    if(!____sym_hdr_printed)
-    {
-        fprintf(fd, "%-20s  %-15s  %-10s  %5s  SEC  TYP  LN  VIS  INFO\n", "SYMBOL",
-                "MODULE", "ADDR", "SIZE");
-        ____sym_hdr_printed = true;
-    }
-    for(unsigned i = 0; i < allsymbols.size(); i++)
-    {
-        sym     = allsymbols[i];
-        modname = (sym->getModule() ? sym->getModule()->fileName() : "");
-        // if (sym->getName() == "__gmon_start__") {
-        // if (modname == "libspecial.so" || modname == "libprofile.so") {
-        // if (sym->getLinkage() == Symbol::SL_WEAK) {
-        // if (sym->isInDynSymtab()) {
-        if(1)
-        {
-            fprintf(fd, "%-20s  %-15s  0x%08x  %5u  %3u",
-                    sym->getMangledName().substr(0, 20).c_str(),
-                    // modname.size() > 15 ? modname.substr(modname.size()-15,15).c_str()
-                    // : modname.c_str(),
-                    "", (unsigned) sym->getOffset(), (unsigned) sym->getSize(),
-                    sym->getRegion() ? sym->getRegion()->getRegionNumber() : 0);
-            switch(sym->getType())
-            {
-                case Symbol::ST_FUNCTION:
-                    fprintf(fd, "  FUN");
-                    break;
-                case Symbol::ST_TLS:
-                    fprintf(fd, "  TLS");
-                    break;
-                case Symbol::ST_OBJECT:
-                    fprintf(fd, "  OBJ");
-                    break;
-                case Symbol::ST_MODULE:
-                    fprintf(fd, "  MOD");
-                    break;
-                case Symbol::ST_SECTION:
-                    fprintf(fd, "  SEC");
-                    break;
-                case Symbol::ST_DELETED:
-                    fprintf(fd, "  DEL");
-                    break;
-                case Symbol::ST_NOTYPE:
-                    fprintf(fd, "   - ");
-                    break;
-                default:
-                case Symbol::ST_UNKNOWN:
-                    fprintf(fd, "  ???");
-                    break;
-            }
-            switch(sym->getLinkage())
-            {
-                case Symbol::SL_UNKNOWN:
-                    fprintf(fd, "  ??");
-                    break;
-                case Symbol::SL_GLOBAL:
-                    fprintf(fd, "  GL");
-                    break;
-                case Symbol::SL_LOCAL:
-                    fprintf(fd, "  LO");
-                    break;
-                case Symbol::SL_WEAK:
-                    fprintf(fd, "  WK");
-                    break;
-                case Symbol::SL_UNIQUE:
-                    fprintf(fd, "  UQ");
-                    break;
-            }
-            switch(sym->getVisibility())
-            {
-                case Symbol::SV_UNKNOWN:
-                    fprintf(fd, "  ???");
-                    break;
-                case Symbol::SV_DEFAULT:
-                    fprintf(fd, "   - ");
-                    break;
-                case Symbol::SV_INTERNAL:
-                    fprintf(fd, "  INT");
-                    break;
-                case Symbol::SV_HIDDEN:
-                    fprintf(fd, "  HID");
-                    break;
-                case Symbol::SV_PROTECTED:
-                    fprintf(fd, "  PRO");
-                    break;
-            }
-            fprintf(fd, " ");
-            if(sym->isInSymtab())
-                fprintf(fd, " STA");
-            if(sym->isInDynSymtab())
-                fprintf(fd, " DYN");
-            if(sym->isAbsolute())
-                fprintf(fd, " ABS");
-            if(sym->isDebug())
-                fprintf(fd, " DBG");
-            std::string               fileName;
-            std::vector<std::string>* vers;
-            if(sym->getVersionFileName(fileName))
-                fprintf(fd, "  [%s]", fileName.c_str());
-            if(sym->getVersions(vers))
-            {
-                fprintf(fd, " {");
-                for(unsigned j = 0; j < vers->size(); j++)
-                {
-                    if(j > 0)
-                        fprintf(fd, ", ");
-                    fprintf(fd, "%s", (*vers)[j].c_str());
-                }
-                fprintf(fd, "}");
-            }
-            fprintf(fd, "\n");
-        }
-    }
-}
-void
-print_symbol_map(dyn_hash_map<std::string, std::vector<Symbol*>>* symbols)
-{
-    dyn_hash_map<std::string, std::vector<Symbol*>>::iterator siter = symbols->begin();
-    int                                                       total_syms = 0;
-    while(siter != symbols->end())
-    {
-        print_symbols(siter->second);
-        total_syms += siter->second.size();
-        siter++;
-    }
-    printf("%d total symbol(s)\n", total_syms);
-}
-//#endif
-
-const char*
-Dyninst::SymtabAPI::supportedLanguages2Str(supportedLanguages s)
-{
-    switch(s)
-    {
-        CASE_RETURN_STR(lang_Unknown);
-        CASE_RETURN_STR(lang_Assembly);
-        CASE_RETURN_STR(lang_C);
-        CASE_RETURN_STR(lang_CPlusPlus);
-        CASE_RETURN_STR(lang_GnuCPlusPlus);
-        CASE_RETURN_STR(lang_Fortran);
-        CASE_RETURN_STR(lang_Fortran_with_pretty_debug);
-        CASE_RETURN_STR(lang_CMFortran);
-    };
-    return "bad_language";
+   switch(s) {
+      CASE_RETURN_STR(lang_Unknown);
+      CASE_RETURN_STR(lang_Assembly);
+      CASE_RETURN_STR(lang_C);
+      CASE_RETURN_STR(lang_CPlusPlus);
+      CASE_RETURN_STR(lang_GnuCPlusPlus);
+      CASE_RETURN_STR(lang_Fortran);
+      CASE_RETURN_STR(lang_CMFortran);
+   };
+   return "bad_language";
 }
 
 bool
@@ -482,93 +342,8 @@ AObject::AObject(MappedFile* mf_, void (*err_func)(const char*), Symtab* st)
 , associated_symtab(st)
 {}
 
-//  a helper routine that selects a language based on information from the symtab
-supportedLanguages
-AObject::pickLanguage(string& working_module, char* working_options,
-                      supportedLanguages working_lang)
-{
-    supportedLanguages lang                         = lang_Unknown;
-    static int         sticky_fortran_modifier_flag = 0;
-    // (2) -- check suffixes -- try to keep most common suffixes near the top of the
-    // checklist
-    string::size_type len = working_module.length();
-    if((len > 2) && (working_module.substr(len - 2, 2) == string(".c")))
-        lang = lang_C;
-    else if((len > 2) && (working_module.substr(len - 2, 2) == string(".C")))
-        lang = lang_CPlusPlus;
-    else if((len > 4) && (working_module.substr(len - 4, 4) == string(".cpp")))
-        lang = lang_CPlusPlus;
-    else if((len > 2) && (working_module.substr(len - 2, 2) == string(".F")))
-        lang = lang_Fortran;
-    else if((len > 2) && (working_module.substr(len - 2, 2) == string(".f")))
-        lang = lang_Fortran;
-    else if((len > 3) && (working_module.substr(len - 3, 3) == string(".cc")))
-        lang = lang_C;
-    else if((len > 2) && (working_module.substr(len - 2, 2) == string(".a")))
-        lang = lang_Assembly;  // is this right?
-    else if((len > 2) && (working_module.substr(len - 2, 2) == string(".S")))
-        lang = lang_Assembly;
-    else if((len > 2) && (working_module.substr(len - 2, 2) == string(".s")))
-        lang = lang_Assembly;
-    else
-    {
-        //(3) -- try to use options string -- if we have 'em
-        if(working_options)
-        {
-            //  NOTE:  a binary is labeled "gcc2_compiled" even if compiled w/g77 -- thus
-            //  this is quite inaccurate to make such assumptions
-            if(strstr(working_options, "gcc"))
-                lang = lang_C;
-            else if(strstr(working_options, "g++"))
-                lang = lang_CPlusPlus;
-        }
-    }
-    //  This next section tries to determine the version of the debug info generator for a
-    //  Sun fortran compiler.  Some leave the underscores on names in the debug info, and
-    //  some have the "pretty" names, we need to detect this in order to properly read the
-    //  debug.
-    if(working_lang == lang_Fortran)
-    {
-        if(sticky_fortran_modifier_flag)
-        {
-            // cerr << FILE__ << __LINE__ << ": UPDATE:
-            // lang_Fortran->lang_Fortran_with_pretty_debug." << endl;
-            working_lang = lang_Fortran_with_pretty_debug;
-        }
-        else if(working_options)
-        {
-            char* dbg_gen = NULL;
-            // cerr << FILE__ << __LINE__ << ":  OPT: " << working_options << endl;
-            if(NULL != (dbg_gen = strstr(working_options, "DBG_GEN=")))
-            {
-                // cerr << __FILE__ << __LINE__ << ":  OPT: " << dbg_gen << endl;
-                // Sun fortran compiler (probably), need to examine version
-                char* dbg_gen_ver_maj = dbg_gen + strlen("DBG_GEN=");
-                // cerr << __FILE__ << __LINE__ << ":  OPT: " << dbg_gen_ver_maj << endl;
-                char* next_dot = strchr(dbg_gen_ver_maj, '.');
-                if(NULL != next_dot)
-                {
-                    *next_dot   = '\0';  // terminate major version number string
-                    int ver_maj = atoi(dbg_gen_ver_maj);
-                    // cerr <<"Major Debug Ver. "<<ver_maj<< endl;
-                    if(ver_maj < 3)
-                    {
-                        working_lang                 = lang_Fortran_with_pretty_debug;
-                        sticky_fortran_modifier_flag = 1;
-                        // cerr << __FILE__ << __LINE__ << ": UPDATE:
-                        // lang_Fortran->lang_Fortran_with_pretty_debug.  " << "Major
-                        // Debug Ver. "<<ver_maj<<endl;
-                    }
-                }
-            }
-        }
-    }
-    return lang;
-}
-
-SymbolIter::SymbolIter(Object& obj)
-: symbols(obj.getAllSymbols())
-, currentPositionInVector(0)
+SymbolIter::SymbolIter( Object & obj ) 
+: symbols(obj.getAllSymbols()), currentPositionInVector(0) 
 {
     symbolIterator = obj.getAllSymbols()->begin();
 }
@@ -623,25 +398,7 @@ SymbolIter::currval()
     return ((symbolIterator->second)[currentPositionInVector]);
 }
 
-const std::string
-AObject::findModuleForSym(Symbol* sym)
-{
-    dyn_c_hash_map<Symbol*, std::string>::const_accessor ca;
-    if(!symsToModules_.find(ca, sym))
-    {
-        assert(!"symsToModules_.find(ca, sym)");
-    }
-    return ca->second;
-}
-
-void
-AObject::clearSymsToMods()
-{
-    symsToModules_.clear();
-}
-
-bool
-AObject::hasError() const
+bool AObject::hasError() const
 {
     return has_error;
 }
@@ -659,15 +416,5 @@ AObject::getTruncateLinePaths()
 void
 AObject::setModuleForOffset(Offset sym_off, std::string module)
 {
-    dyn_c_hash_map<Offset, std::vector<Symbol*>>::const_accessor found_syms;
-    if(!symsByOffset_.find(found_syms, sym_off))
-        return;
-
-    for(auto s = found_syms->second.begin(); s != found_syms->second.end(); ++s)
-    {
-        if(!symsToModules_.insert({ *s, module }))
-        {
-            assert(!"symsToModules_.insert({*s, module})");
-        }
-    }
+   return false;
 }

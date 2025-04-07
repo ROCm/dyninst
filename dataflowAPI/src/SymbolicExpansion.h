@@ -29,6 +29,7 @@
  */
 #include <dataflowAPI/rose/SgAsmInstruction.h>
 #include "../rose/semantics/SymEvalSemantics.h"
+#include <string>
 
 #if !defined(_SYMBOLIC_EXPANSION_H_)
 #    define _SYMBOLIC_EXPANSION_H_
@@ -64,11 +65,23 @@ public:
                               BaseSemantics::RiscOperatorsPtr ops,
                               const std::string&              insn_dump);
 
-    static bool expandAmdgpuVega(SgAsmInstruction*               rose_insn,
-                                 BaseSemantics::RiscOperatorsPtr ops,
-                                 const std::string&              insn_dump);
-};
+            static bool expandPPC64(SgAsmInstruction *rose_insn,
+                                      BaseSemantics::RiscOperatorsPtr ops,
+                                      const std::string &insn_dump);
 
-};  // namespace DataflowAPI
-};  // namespace Dyninst
+            static bool expandAarch64(SgAsmInstruction *rose_insn,
+                                      BaseSemantics::RiscOperatorsPtr ops,
+                                      const std::string &insn_dump);
+
+            static bool expandAMDGPU(SgAsmInstruction *rose_insn,
+                                      BaseSemantics::RiscOperatorsPtr ops,
+                                      const std::string &insn_dump);
+
+
+
+        };
+
+
+    }
+}
 #endif

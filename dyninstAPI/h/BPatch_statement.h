@@ -32,7 +32,7 @@
 #define _BPATCH_STATEMENT_H_
 
 #include "BPatch_dll.h"
-#include "Module.h"
+#include "Statement.h"
 class BPatch_module;
 
 class BPATCH_DLL_EXPORT BPatch_statement
@@ -68,9 +68,8 @@ public:
     //  (do we guarantee contiguity of addresses here?  not sure)
     void* endAddr();
 
-    ~BPatch_statement() {}
+  private:
 
-private:
     //  Full parameter ctor -- can only built by friend classes
     BPatch_statement(BPatch_module* mod, Dyninst::SymtabAPI::Statement::ConstPtr s);
 

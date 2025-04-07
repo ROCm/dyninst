@@ -7,16 +7,10 @@
 #include "SgAsmType.h"
 #include "external/rose/powerpcInstructionEnum.h"
 
-
-#if defined(_MSC_VER)
-#include "external/stdint-win.h"
-#include "external/inttypes-win.h"
-#else
-
-#include <stdint.h>
+#include <stddef.h>
+#include <string>
+#include <utility>
 #include <inttypes.h>
-
-#endif
 
 
 class SgAsmExpression : public SgAsmNode {
@@ -57,6 +51,8 @@ public:
     virtual ~SgAsmExpression();
 
     SgAsmExpression();
+
+    SgAsmExpression(const SgAsmExpression&) = default;
 
 protected:
     std::string p_replacement;
@@ -584,6 +580,8 @@ public:
 
 public:
     virtual ~SgAsmBinaryExpression();
+    SgAsmBinaryExpression& operator=(const SgAsmBinaryExpression&) = default;
+    SgAsmBinaryExpression(const SgAsmBinaryExpression&) = default;
 
 
 public:
@@ -1241,7 +1239,7 @@ public:
 
 protected:
     // Start of memberFunctionString
-    SgAsmType *p_type;
+    SgAsmType *p_type{};
 
     // End of memberFunctionString
 public:

@@ -5,10 +5,16 @@
 #ifndef DYNINST_SYMEVALSEMANTICS_H
 #define DYNINST_SYMEVALSEMANTICS_H
 
+#include <assert.h>
+#include <iosfwd>
+#include <map>
+#include <stddef.h>
+#include <stdint.h>
 #include "external/rose/armv8InstructionEnum.h"
 #include "external/rose/amdgpuInstructionEnum.h"
 #include "BaseSemantics2.h"
 #include "../../h/SymEval.h"
+#include "dyntypes.h"
 
 namespace rose {
     namespace BinaryAnalysis {
@@ -33,12 +39,12 @@ namespace rose {
                         expr = Dyninst::DataflowAPI::ConstantAST::create(Dyninst::DataflowAPI::Constant(num, nbits));
                     }
 
-                    SValue(Dyninst::AST::Ptr expr): BaseSemantics::SValue(64) {
-                        this->expr = expr;
+                    SValue(Dyninst::AST::Ptr expr_): BaseSemantics::SValue(64) {
+                        this->expr = expr_;
                     }
                     // Added this version to set register size according to descriptor 
-                    SValue(Dyninst::AST::Ptr expr, size_t nbits ): BaseSemantics::SValue(nbits) {
-                        this->expr = expr;
+                    SValue(Dyninst::AST::Ptr expr_, size_t nbits ): BaseSemantics::SValue(nbits) {
+                        this->expr = expr_;
                     }
                 public:
                     static SValuePtr instance(Dyninst::Absloc r, Dyninst::Address addr) {
@@ -63,12 +69,12 @@ namespace rose {
                         return SValuePtr(new SValue(32, nbits));
                     }
 
-                    virtual BaseSemantics::SValuePtr unspecified_(size_t nbits) const {
+                    virtual BaseSemantics::SValuePtr unspecified_(size_t /*nbits*/) const {
                         return SValuePtr(new SValue(Dyninst::DataflowAPI::BottomAST::create(false)));
                     }
 
                     //TODO
-                    virtual BaseSemantics::SValuePtr bottom_(size_t nbits) const {
+                    virtual BaseSemantics::SValuePtr bottom_(size_t /*nbits*/) const {
                         return SValuePtr(new SValue(Dyninst::DataflowAPI::BottomAST::create(true)));
                     }
 
@@ -88,7 +94,7 @@ namespace rose {
                     }
 
                     virtual Sawyer::Optional<BaseSemantics::SValuePtr>
-                            createOptionalMerge(const BaseSemantics::SValuePtr &other, const BaseSemantics::MergerPtr&, SMTSolver*) const {
+                            createOptionalMerge(const BaseSemantics::SValuePtr &/*other*/, const BaseSemantics::MergerPtr&, SMTSolver*) const {
                         ASSERT_not_implemented("SValue::createOptionalMerge not implemented for use in dyninst");
                     }
 
@@ -132,12 +138,13 @@ namespace rose {
                 typedef boost::shared_ptr<class RegisterStateASTARM64> RegisterStateASTARM64Ptr;
                 typedef boost::shared_ptr<class RegisterStateASTPPC32> RegisterStateASTPPC32Ptr;
                 typedef boost::shared_ptr<class RegisterStateASTPPC64> RegisterStateASTPPC64Ptr;
-                typedef boost::shared_ptr<class RegisterStateAST_AMDGPU_VEGA> RegisterStateAST_AMDGPU_VEGA_Ptr;
-
+                typedef boost::shared_ptr<class RegisterStateAST_amdgpu_gfx908> RegisterStateAST_amdgpu_gfx908_Ptr;
+                typedef boost::shared_ptr<class RegisterStateAST_amdgpu_gfx90a> RegisterStateAST_amdgpu_gfx90a_Ptr;
+                typedef boost::shared_ptr<class RegisterStateAST_amdgpu_gfx940> RegisterStateAST_amdgpu_gfx940_Ptr;
                 class RegisterStateAST : public BaseSemantics::RegisterState {
                 public:
                     RegisterStateAST(const BaseSemantics::SValuePtr &protoval,
-                                     const RegisterDictionary *regdict) : RegisterState(protoval, regdict) { }
+                                     const RegisterDictionary *regdict_) : RegisterState(protoval, regdict_) { }
 
                 public:
                     static RegisterStateASTPtr instance(const BaseSemantics::SValuePtr &protoval,
@@ -146,8 +153,8 @@ namespace rose {
                     }
 
                     virtual BaseSemantics::RegisterStatePtr create(const BaseSemantics::SValuePtr &protoval,
-                                                                   const RegisterDictionary *regdict) const {
-                        return instance(protoval, regdict);
+                                                                   const RegisterDictionary *regdict_) const {
+                        return instance(protoval, regdict_);
                     }
 
                     virtual BaseSemantics::RegisterStatePtr clone() const {
@@ -174,7 +181,7 @@ namespace rose {
 
                     virtual void print(std::ostream &, BaseSemantics::Formatter &) const {}
 
-                    virtual bool merge(const BaseSemantics::RegisterStatePtr &other, BaseSemantics::RiscOperators *ops) {
+                    virtual bool merge(const BaseSemantics::RegisterStatePtr &/*other*/, BaseSemantics::RiscOperators * /*ops*/) {
                         return true;
                     }
 
@@ -194,7 +201,7 @@ namespace rose {
 		class RegisterStateASTARM64 : public RegisterStateAST {
 		public:
 		    RegisterStateASTARM64(const BaseSemantics::SValuePtr &protoval,
-                                          const RegisterDictionary *regdict) : RegisterStateAST(protoval, regdict) { }
+                                          const RegisterDictionary *regdict_) : RegisterStateAST(protoval, regdict_) { }
 
                     static RegisterStateASTARM64Ptr instance(const BaseSemantics::SValuePtr &protoval,
                                                              const RegisterDictionary *regdict) {
@@ -214,7 +221,7 @@ namespace rose {
 		class RegisterStateASTPPC32 : public RegisterStateAST {
 		public:
 		    RegisterStateASTPPC32(const BaseSemantics::SValuePtr &protoval,
-                                          const RegisterDictionary *regdict) : RegisterStateAST(protoval, regdict) { }
+                                          const RegisterDictionary *regdict_) : RegisterStateAST(protoval, regdict_) { }
 
                     static RegisterStateASTPPC32Ptr instance(const BaseSemantics::SValuePtr &protoval,
                                                              const RegisterDictionary *regdict) {
@@ -233,7 +240,7 @@ namespace rose {
 		class RegisterStateASTPPC64 : public RegisterStateAST {
 		public:
 		    RegisterStateASTPPC64(const BaseSemantics::SValuePtr &protoval,
-                                          const RegisterDictionary *regdict) : RegisterStateAST(protoval, regdict) { }
+                                          const RegisterDictionary *regdict_) : RegisterStateAST(protoval, regdict_) { }
 
                     static RegisterStateASTPPC64Ptr instance(const BaseSemantics::SValuePtr &protoval,
                                                              const RegisterDictionary *regdict) {
@@ -249,33 +256,68 @@ namespace rose {
 		private:
 		    virtual Dyninst::Absloc convert(const RegisterDescriptor &reg);
 		};
-        /**
-         * Register State AST for ADMGPU VEGA for Architecture 
-         * (Copied from RegisterSTateASTARM64)
-         *
-         *
-         */ 
-		class RegisterStateAST_AMDGPU_VEGA : public RegisterStateAST {
-		public:
-		    RegisterStateAST_AMDGPU_VEGA(const BaseSemantics::SValuePtr &protoval,
-                                          const RegisterDictionary *regdict) : RegisterStateAST(protoval, regdict) { }
-
-                    static RegisterStateAST_AMDGPU_VEGA_Ptr instance(const BaseSemantics::SValuePtr &protoval,
-                                                             const RegisterDictionary *regdict) {
-                        return RegisterStateAST_AMDGPU_VEGA_Ptr(new RegisterStateAST_AMDGPU_VEGA(protoval, regdict));
-                    }
-
-                    static RegisterStateAST_AMDGPU_VEGA_Ptr promote(const BaseSemantics::RegisterStatePtr &from) {
-                        RegisterStateAST_AMDGPU_VEGA_Ptr retval = boost::dynamic_pointer_cast<RegisterStateAST_AMDGPU_VEGA>(from);
-                        ASSERT_not_null(retval);
-                        return retval;
-                    }
-
-		private:
-            // Given a register decriptor of roseformat, convert it back to MachRegister and encapsulate it in Dyninst Abstract location
-		    virtual Dyninst::Absloc convert(const RegisterDescriptor &reg);
-		};
 	
+                class RegisterStateAST_amdgpu_gfx908 : public RegisterStateAST {
+                    public:
+                        RegisterStateAST_amdgpu_gfx908(const BaseSemantics::SValuePtr &protoval,
+                                const RegisterDictionary *regdict_) : RegisterStateAST(protoval, regdict_) { }
+
+                        static RegisterStateAST_amdgpu_gfx908_Ptr instance(const BaseSemantics::SValuePtr &protoval,
+                                const RegisterDictionary *regdict) {
+                            return RegisterStateAST_amdgpu_gfx908_Ptr(new RegisterStateAST_amdgpu_gfx908(protoval, regdict));
+                        }
+
+                        static RegisterStateAST_amdgpu_gfx908_Ptr promote(const BaseSemantics::RegisterStatePtr &from) {
+                            RegisterStateAST_amdgpu_gfx908_Ptr retval = boost::dynamic_pointer_cast<RegisterStateAST_amdgpu_gfx908>(from);
+                            ASSERT_not_null(retval);
+                            return retval;
+                        }
+
+                    private:
+                        // Given a register decriptor of roseformat, convert it back to MachRegister and encapsulate it in Dyninst Abstract location
+                        virtual Dyninst::Absloc convert(const RegisterDescriptor &reg);
+                };
+
+                 class RegisterStateAST_amdgpu_gfx90a : public RegisterStateAST {
+                    public:
+                        RegisterStateAST_amdgpu_gfx90a(const BaseSemantics::SValuePtr &protoval,
+                                const RegisterDictionary *regdict_) : RegisterStateAST(protoval, regdict_) { }
+
+                        static RegisterStateAST_amdgpu_gfx90a_Ptr instance(const BaseSemantics::SValuePtr &protoval,
+                                const RegisterDictionary *regdict) {
+                            return RegisterStateAST_amdgpu_gfx90a_Ptr(new RegisterStateAST_amdgpu_gfx90a(protoval, regdict));
+                        }
+
+                        static RegisterStateAST_amdgpu_gfx90a_Ptr promote(const BaseSemantics::RegisterStatePtr &from) {
+                            RegisterStateAST_amdgpu_gfx90a_Ptr retval = boost::dynamic_pointer_cast<RegisterStateAST_amdgpu_gfx90a>(from);
+                            ASSERT_not_null(retval);
+                            return retval;
+                        }
+
+                    private:
+                        // Given a register decriptor of roseformat, convert it back to MachRegister and encapsulate it in Dyninst Abstract location
+                        virtual Dyninst::Absloc convert(const RegisterDescriptor &reg);
+                };
+                 class RegisterStateAST_amdgpu_gfx940 : public RegisterStateAST {
+                    public:
+                        RegisterStateAST_amdgpu_gfx940(const BaseSemantics::SValuePtr &protoval,
+                                const RegisterDictionary *regdict_) : RegisterStateAST(protoval, regdict_) { }
+
+                        static RegisterStateAST_amdgpu_gfx940_Ptr instance(const BaseSemantics::SValuePtr &protoval,
+                                const RegisterDictionary *regdict) {
+                            return RegisterStateAST_amdgpu_gfx940_Ptr(new RegisterStateAST_amdgpu_gfx940(protoval, regdict));
+                        }
+
+                        static RegisterStateAST_amdgpu_gfx940_Ptr promote(const BaseSemantics::RegisterStatePtr &from) {
+                            RegisterStateAST_amdgpu_gfx940_Ptr retval = boost::dynamic_pointer_cast<RegisterStateAST_amdgpu_gfx940>(from);
+                            ASSERT_not_null(retval);
+                            return retval;
+                        }
+
+                    private:
+                        // Given a register decriptor of roseformat, convert it back to MachRegister and encapsulate it in Dyninst Abstract location
+                        virtual Dyninst::Absloc convert(const RegisterDescriptor &reg);
+                };
 
                 /***************************************************************************************************/
                 /*                                           Memory State                                          */
@@ -316,7 +358,7 @@ namespace rose {
                         //
                     }
 
-                    virtual bool merge(const BaseSemantics::MemoryStatePtr &other, BaseSemantics::RiscOperators *addrOps, BaseSemantics::RiscOperators *valOps) {
+                    virtual bool merge(const BaseSemantics::MemoryStatePtr &/*other*/, BaseSemantics::RiscOperators * /*addrOps*/, BaseSemantics::RiscOperators * /*valOps*/) {
                         return true;
                     }
 
@@ -347,24 +389,24 @@ namespace rose {
                                Dyninst::Architecture ac,
                                Dyninst::InstructionAPI::Instruction insn_,
                                const BaseSemantics::RegisterStatePtr &registers,
-                               const BaseSemantics::MemoryStatePtr &memory): BaseSemantics::State(registers, memory), res(r), addr(a), arch(ac), insn(insn_) {
+                               const BaseSemantics::MemoryStatePtr &memory): BaseSemantics::State(registers, memory), res(r), arch(ac), addr(a), insn(insn_) {
                         for (Dyninst::DataflowAPI::Result_t::iterator iter = r.begin();
                              iter != r.end(); ++iter) {
-                            Dyninst::Assignment::Ptr a = iter->first;
+                            Dyninst::Assignment::Ptr ap = iter->first;
                             // For a different instruction...
-                            if (a->addr() != addr)
+                            if (ap->addr() != addr)
                                 continue;
-                            Dyninst::AbsRegion &o = a->out();
+                            Dyninst::AbsRegion &o = ap->out();
 
                             if (o.containsOfType(Dyninst::Absloc::Register)) {
                                 // We're assuming this is a single register...
-                                //std::cerr << "Marking register " << a << std::endl;
-                                aaMap[o.absloc()] = a;
+                                //std::cerr << "Marking register " << ap << std::endl;
+                                aaMap[o.absloc()] = ap;
                             }
                             else {
                                 // Use sufficiently-unique (Heap,0) Absloc
                                 // to represent a definition to a memory absloc
-                                aaMap[Dyninst::Absloc(0)] = a;
+                                aaMap[Dyninst::Absloc(0)] = ap;
                             }
                         }
                     }
@@ -379,6 +421,7 @@ namespace rose {
                         return StateASTPtr(new StateAST(r, a, ac, insn_, registers, memory));
                     }
 
+                    using BaseSemantics::State::create;
                     virtual BaseSemantics::StatePtr create(Dyninst::DataflowAPI::Result_t &r,
                                                  Dyninst::Address a,
                                                  Dyninst::Architecture ac,
@@ -397,6 +440,7 @@ namespace rose {
                 public:
                     virtual BaseSemantics::SValuePtr readRegister(const RegisterDescriptor &reg, const BaseSemantics::SValuePtr &dflt, BaseSemantics::RiscOperators *ops);
                     virtual void writeRegister(const RegisterDescriptor &reg, const BaseSemantics::SValuePtr &value, BaseSemantics::RiscOperators *ops);
+                    using BaseSemantics::State::readMemory;
                     virtual BaseSemantics::SValuePtr readMemory(const BaseSemantics::SValuePtr &address, const BaseSemantics::SValuePtr &dflt,
                                                                 BaseSemantics::RiscOperators *addrOps, BaseSemantics::RiscOperators *valOps, size_t readSize = 0);
                     virtual void writeMemory(const BaseSemantics::SValuePtr &addr, const BaseSemantics::SValuePtr &value, BaseSemantics::RiscOperators *addrOps,

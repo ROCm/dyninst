@@ -2,6 +2,9 @@
 #define ROSE_X86_64INSTRUCTIONSEMANTICS_H
 
 //#include "rose.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <string>
 #include "semanticsModule.h"
 #include <cassert>
 #include <cstdio>
@@ -49,8 +52,8 @@ struct X86_64InstructionSemantics {
 
     Policy& policy;
 
-    X86_64InstructionSemantics(Policy& policy)
-        : policy(policy)
+    X86_64InstructionSemantics(Policy& policy_)
+        : policy(policy_)
         {}
     virtual ~X86_64InstructionSemantics() {}
 
@@ -193,6 +196,7 @@ struct X86_64InstructionSemantics {
                             default: ROSE_ASSERT(!"Bad position in register");
                         }
                     }
+                    break;
                     default: {
                         fprintf(stderr, "Bad register class %s\n", regclassToString(rre->get_register_class()));
                         throw rose::BinaryAnalysis::InstructionSemantics2::BaseSemantics::Exception("", NULL);;
@@ -302,6 +306,7 @@ struct X86_64InstructionSemantics {
 			      ROSE_ASSERT(!"bad position in register");
                         }
                     }
+                    break;
                     case x86_regclass_segment: {
                         ROSE_ASSERT(rre->get_position_in_register() == x86_regpos_dword ||
                                     rre->get_position_in_register() == x86_regpos_all);
@@ -366,6 +371,7 @@ struct X86_64InstructionSemantics {
                                         ROSE_ASSERT(!"bad position in register");
                         }
                     }
+                    break;
                     case x86_regclass_segment: {
                                 ROSE_ASSERT(rre->get_position_in_register() == x86_regpos_dword ||
                                             rre->get_position_in_register() == x86_regpos_all);

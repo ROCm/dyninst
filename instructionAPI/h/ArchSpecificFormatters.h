@@ -34,7 +34,8 @@
 #include <map>
 #include <vector>
 #include <string>
-#include "dyn_regs.h"
+#include "Architecture.h"
+#include "registers/MachRegister.h"
 
 namespace Dyninst
 {
@@ -54,10 +55,17 @@ public:
         Dyninst::Architecture a);
 };
 
-class PPCFormatter : public ArchSpecificFormatter
-{
-public:
-    PPCFormatter();
+        class ArchSpecificFormatter {
+        public:
+            virtual std::string getInstructionString(const std::vector <std::string>&) const;
+            virtual std::string formatImmediate(const std::string&) const = 0;
+            virtual std::string formatDeref(const std::string&)  const= 0;
+            virtual std::string formatRegister(const std::string&)  const= 0;
+            virtual std::string formatBinaryFunc(const std::string&, const std::string&, const std::string&) const;
+            virtual bool        operandPrintOrderReversed() const;
+            virtual ~ArchSpecificFormatter() = default;
+            ArchSpecificFormatter& operator=(const ArchSpecificFormatter&) = default;
+            static INSTRUCTION_EXPORT ArchSpecificFormatter& getFormatter(Dyninst::Architecture a);
 
     virtual std::string getInstructionString(std::vector<std::string>);
     virtual std::string formatImmediate(std::string);
@@ -71,11 +79,10 @@ class ArmFormatter : public ArchSpecificFormatter
 public:
     ArmFormatter();
 
-    virtual std::string getInstructionString(std::vector<std::string>);
-    virtual std::string formatImmediate(std::string);
-    virtual std::string formatDeref(std::string);
-    virtual std::string formatRegister(std::string);
-    virtual std::string formatBinaryFunc(std::string, std::string, std::string);
+            std::string formatImmediate(const std::string&) const override;
+            std::string formatDeref(const std::string&) const override;
+            std::string formatRegister(const std::string&) const override;
+            std::string formatBinaryFunc(const std::string&, const std::string&, const std::string&) const override;
 
 private:
     std::map<std::string, std::string> binaryFuncModifier;
@@ -86,11 +93,10 @@ class AmdgpuFormatter : public ArchSpecificFormatter
 public:
     AmdgpuFormatter();
 
-    virtual std::string getInstructionString(std::vector<std::string>);
-    virtual std::string formatImmediate(std::string);
-    virtual std::string formatDeref(std::string);
-    virtual std::string formatRegister(std::string);
-    virtual std::string formatBinaryFunc(std::string, std::string, std::string);
+            std::string formatImmediate(const std::string&) const override;
+            std::string formatDeref(const std::string&) const override;
+            std::string formatRegister(const std::string&) const override;
+            std::string formatBinaryFunc(const std::string&, const std::string&, const std::string&) const override;
 
 private:
     std::map<std::string, std::string> binaryFuncModifier;
@@ -101,14 +107,31 @@ class x86Formatter : public ArchSpecificFormatter
 public:
     x86Formatter();
 
-    virtual std::string getInstructionString(std::vector<std::string>);
-    virtual std::string formatImmediate(std::string);
-    virtual std::string formatDeref(std::string);
-    virtual std::string formatRegister(std::string);
-    virtual std::string formatBinaryFunc(std::string, std::string, std::string);
-};
+            std::string formatImmediate(const std::string&) const override;
+            std::string formatDeref(const std::string&) const override;
+            std::string formatRegister(const std::string&) const override;
+            std::string formatBinaryFunc(const std::string&, const std::string&, const std::string&) const override;
+            // Helper function for formatting consecutive registers that are displayed as a single operand
+            // Called when architecture is passed to Instruction.format.
+            static std::string formatRegister(MachRegister m_Reg, uint32_t num_elements, unsigned m_Low , unsigned m_High );
+        private:
+            std::map<std::string, std::string> binaryFuncModifier;
+        };
 
-}  // namespace InstructionAPI
-}  // namespace Dyninst
 
-#endif  // DYNINST_ARCHSPECIFICFORMATTERS_H
+        class x86Formatter : public ArchSpecificFormatter {
+        public:
+            x86Formatter();
+
+            std::string getInstructionString(const std::vector <std::string>&) const override;
+            std::string formatImmediate(const std::string&) const override;
+            std::string formatDeref(const std::string&) const override;
+            std::string formatRegister(const std::string&) const override;
+            std::string formatBinaryFunc(const std::string&, const std::string&, const std::string&) const override;
+            bool        operandPrintOrderReversed() const override;
+        };
+
+    }
+}
+
+#endif //DYNINST_ARCHSPECIFICFORMATTERS_H

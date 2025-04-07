@@ -121,89 +121,12 @@ ProcessReaderPtrace::~ProcessReaderPtrace() {}
 bool
 ProcessReaderPtrace::ReadMem(Address inTraced, void* inSelf, unsigned amount)
 {
-    bool result;
-    result = PtraceBulkRead(inTraced, amount, inSelf, pid);
-    return result;
-}
-
-ProcessReader*
-AddressTranslateSysV::createDefaultDebugger(int pid_)
-{
-    return new ProcessReaderPtrace(pid_);
-}
-
-bool
-AddressTranslateSysV::setInterpreter()
-{
-    bool result;
-
-    if(interpreter)
-        return true;
-
-    string sname = getExecName();
-    string interp_name;
-
-    FCNode* exe = files.getNode(sname, symfactory);
-    if(!exe)
-    {
-        result = false;
-        goto done;
-    }
-
-    interp_name = exe->getInterpreter();
-    interpreter = files.getNode(interp_name, symfactory);
-    if(interpreter)
-        interpreter->markInterpreter();
-    result = true;
-
-done:
-    return result;
-}
-
-bool
-AddressTranslateSysV::setAddressSize()
-{
-    bool result;
-    if(address_size)
-        return true;
-
-    result = setInterpreter();
-    if(!result)
-        return false;
-
-    if(interpreter)
-        address_size = interpreter->getAddrSize();
-    else if(pid == getpid())
-    {
-        address_size = sizeof(void*);
-        return true;
-    }
-    else
-    {
-        char name[64];
-        sprintf(name, "/proc/%d/exe", pid);
-        string  sname(name);
-        FCNode* exe = files.getNode(sname, symfactory);
-        if(!exe)
-            return false;
-        address_size = exe->getAddrSize();
-        if(!address_size)
-            return false;
-    }
-
-    return true;
-}
-
-string
-AddressTranslateSysV::getExecName()
-{
-    if(exec_name.empty())
-    {
-        char name[64];
-        snprintf(name, 64, "/proc/%d/exe", pid);
-        exec_name = std::move(resolve_file_path(name));
-    }
-    return exec_name;
+   if (exec_name.empty()) {
+      char name[64];
+      snprintf(name, 64, "/proc/%d/exe", pid);
+      exec_name = resolve_file_path(name);
+   }
+   return exec_name;
 }
 
 #include <iostream>

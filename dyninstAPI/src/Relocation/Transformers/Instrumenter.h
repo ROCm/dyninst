@@ -31,8 +31,11 @@
 #if !defined(_R_T_INSTRUMENTER_H_)
 #    define _R_T_INSTRUMENTER_H_
 
-#    include "Transformer.h"
-#    include "dyninstAPI/src/instPoint.h"
+#include <list>
+#include <map>
+#include <utility>
+#include "Transformer.h"
+#include "dyninstAPI/src/instPoint.h"
 
 class edge_instance;
 

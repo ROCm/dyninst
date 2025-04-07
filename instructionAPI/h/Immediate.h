@@ -31,8 +31,10 @@
 #if !defined(IMMEDIATE_H)
 #    define IMMEDIATE_H
 
-#    include "Expression.h"
-#    include <sstream>
+#include "Expression.h"
+#include <map>
+#include <string>
+#include <sstream>
 
 namespace Dyninst
 {
@@ -65,10 +67,24 @@ public:
     /// second one.
     virtual bool isUsed(InstructionAST::Ptr findMe) const;
 
-    virtual std::string   format(Architecture, formatStyle) const;
-    virtual std::string   format(formatStyle) const;
-    static Immediate::Ptr makeImmediate(const Result& val);
-    virtual void          apply(Visitor* v);
+    class INSTRUCTION_EXPORT NamedImmediate : public Immediate
+    {
+    public:
+        NamedImmediate(std::string name, const Result &val);
+
+        static NamedImmediate::Ptr makeNamedImmediate(std::string name, const Result &val);
+        virtual std::string format(Architecture, formatStyle) const;
+        virtual std::string format(formatStyle) const;
+
+    private:
+        std::string name_;
+    };
+
+
+    class INSTRUCTION_EXPORT ArmConditionImmediate : public Immediate
+    {
+    public:
+        ArmConditionImmediate(const Result &val);
 
 protected:
     virtual bool isStrictEqual(const InstructionAST& rhs) const;

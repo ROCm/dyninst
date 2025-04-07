@@ -31,12 +31,13 @@
 #if !defined(TERNARY_H)
 #    define TERNARY_H
 
-#    include "Expression.h"
-#    include <vector>
-#    include <map>
-#    include <sstream>
+#include "Expression.h"
+#include <string>
+#include <vector>
+#include <map>
+#include <sstream>
 
-#    include "dyn_regs.h"
+#include "Architecture.h"
 
 namespace Dyninst
 {
@@ -80,7 +81,14 @@ public:
     /// ID.
     virtual std::string format(formatStyle how = defaultStyle) const;
 
-    static TernaryAST makePC(Dyninst::Architecture arch);
+      
+           
+      virtual void apply(Visitor* v);
+      virtual bool bind(Expression* e, const Result& val);
+      Expression::Ptr cond;
+      Expression::Ptr first;
+      Expression::Ptr second;
+      Result_Type result_type{};
 
     /// We define a partial order by the order of its children
     bool operator<(const TernaryAST& rhs) const;

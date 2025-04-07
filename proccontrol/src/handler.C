@@ -39,7 +39,7 @@
 #include "response.h"
 #include "int_event.h"
 #include "processplat.h"
-#include "common/h/dyn_regs.h"
+#include "registers/MachRegister.h"
 
 #if defined(os_windows)
 #    include "windows_process.h"
@@ -53,18 +53,8 @@ using namespace std;
 #include <assert.h>
 #include <cstring>
 
-#ifdef _MSC_VER
-#    pragma warning(disable : 4477)
-#endif
-
-Handler::Handler(std::string name_)
-: name(name_)
-{}
-
-Handler::~Handler() {}
-
-int
-Handler::getPriority() const
+Handler::Handler(std::string name_) :
+   name(name_)
 {
     return DefaultPriority;
 }

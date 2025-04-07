@@ -43,10 +43,13 @@ class parse_image;
 class pdmodule;
 class image;
 
-#    include <string>
-#    include "common/src/Types.h"
-#    include "dyninstAPI/src/image.h"
-#    include "symtabAPI/h/Symtab.h"
+#include <string>
+#include <set>
+#include <vector>
+#include "dyninstAPI/src/image.h"
+#include "symtabAPI/h/Symtab.h"
+
+#define CHECK_ALL_CALL_POINTS  // paradyn might need it
 
 #    define CHECK_ALL_CALL_POINTS  // paradyn might need it
 
@@ -64,8 +67,7 @@ public:
     mapped_object* obj() const;
     pdmodule*      pmod() const;
 
-    const string& fileName() const;
-    const string& fullName() const;
+      const string &fileName() const;
 
     AddressSpace* proc() const;
 
@@ -107,14 +109,13 @@ public:
     bool getAddrFromLine(unsigned lineNum, std::vector<Address>& addresses,
                          bool exactMatch);
 
-    void          addFunction(func_instance* func);
-    void          addVariable(int_variable* var);
-    int_variable* createVariable(std::string name, Address offset, int size);
+      void addFunction(func_instance *func);
+      void addVariable(int_variable *var);
+      int_variable* createVariable(std::string name, Address offset, int size);
+      
+      void remove(func_instance *func);
 
-    void remove(func_instance* func);
-
-    static bool  truncateLineFilenames;
-    unsigned int getFuncVectorSize() { return everyUniqueFunction.size(); }
+      unsigned int getFuncVectorSize() { return everyUniqueFunction.size(); }
 
 private:
     pdmodule*      internal_mod_;

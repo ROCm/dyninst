@@ -46,11 +46,9 @@ using std::vector;
 #include "LineInformation.h"
 #include <sstream>
 
-LineInformation::LineInformation()
-: strings_(new StringTable)
-, wasted_compares(0)
-, num_queries(0)
-{} /* end LineInformation constructor */
+LineInformation::LineInformation() :strings_(new StringTable)
+{
+}
 
 bool
 LineInformation::addLine(unsigned int lineSource, unsigned int lineNo,
@@ -61,17 +59,26 @@ LineInformation::addLine(unsigned int lineSource, unsigned int lineNo,
                                         highExclusiveAddr);
     Statement::Ptr insert_me(the_stmt);
     insert_me->setStrings_(strings_);
-    return insert(insert_me).second;
-
-} /* end setLineToAddressRangeMapping() */
-bool
-LineInformation::addLine(std::string lineSource, unsigned int lineNo,
-                         unsigned int lineOffset, Offset lowInclusiveAddr,
-                         Offset highExclusiveAddr)
+   bool result;
+#pragma omp critical (addLine)
 {
-    auto i = strings_->get<1>().insert(StringTableEntry(lineSource, "")).first;
+   result = insert( insert_me).second;
+}
+   return result;
+}
+bool LineInformation::addLine( const std::string &lineSource,
+                               unsigned int lineNo,
+                               unsigned int lineOffset,
+                               Offset lowInclusiveAddr,
+                               Offset highExclusiveAddr )
+{
+    // lookup or insert linesource in string table and get iterator
+    auto iter = strings_->get<1>().insert(StringTableEntry(lineSource,"")).first;
 
-    return addLine(i->str, lineNo, lineOffset, lowInclusiveAddr, highExclusiveAddr);
+    // get index of string in string table
+    auto i = boost::multi_index::project<0>(*strings_, iter) - strings_->get<0>().begin();
+
+    return addLine(i, lineNo, lineOffset, lowInclusiveAddr, highExclusiveAddr);
 }
 
 void
@@ -79,7 +86,10 @@ LineInformation::addLineInfo(LineInformation* lineInfo)
 {
     if(!lineInfo)
         return;
+#pragma omp critical (addLine)
+{
     insert(lineInfo->begin(), lineInfo->end());
+}
 }
 
 bool
@@ -87,8 +97,8 @@ LineInformation::addAddressRange(Offset lowInclusiveAddr, Offset highExclusiveAd
                                  const char* lineSource, unsigned int lineNo,
                                  unsigned int lineOffset)
 {
-    return addLine(lineSource, lineNo, lineOffset, lowInclusiveAddr, highExclusiveAddr);
-} /* end setAddressRangeToLineMapping() */
+   return addLine( lineSource, lineNo, lineOffset, lowInclusiveAddr, highExclusiveAddr );
+}
 
 std::string
 print(const Dyninst::SymtabAPI::Statement& stmt)
@@ -114,7 +124,7 @@ LineInformation::getSourceLines(Offset addressInRange, vector<Statement_t>& line
         ++start_addr_valid;
     }
     return true;
-} /* end getLinesFromAddress() */
+}
 
 bool
 LineInformation::getSourceLines(Offset addressInRange, vector<LineNoTuple>& lines)
@@ -127,7 +137,7 @@ LineInformation::getSourceLines(Offset addressInRange, vector<LineNoTuple>& line
         lines.push_back(**i);
     }
     return true;
-} /* end getLinesFromAddress() */
+}
 
 bool
 LineInformation::getAddressRanges(const char* lineSource, unsigned int lineNo,
@@ -140,19 +150,19 @@ LineInformation::getAddressRanges(const char* lineSource, unsigned int lineNo,
     }
 
     return found_statements.first != found_statements.second;
-} /* end getAddressRangesFromLine() */
+}
 
 LineInformation::const_iterator
 LineInformation::begin() const
 {
-    return impl_t::begin();
-} /* end begin() */
+   return impl_t::begin();
+}
 
 LineInformation::const_iterator
 LineInformation::end() const
 {
-    return impl_t::end();
-} /* end end() */
+   return impl_t::end();
+}
 
 LineInformation::const_iterator
 LineInformation::find(Offset addressInRange) const
@@ -171,7 +181,7 @@ LineInformation::find(Offset addressInRange) const
         ++start_addr_valid;
     }
     return end();
-} /* end find() */
+}
 
 unsigned
 LineInformation::getSize() const
@@ -179,11 +189,7 @@ LineInformation::getSize() const
     return impl_t::size();
 }
 
-LineInformation::~LineInformation() { impl_t::clear_(); }
-
-LineInformation::const_line_info_iterator
-LineInformation::begin_by_source() const
-{
+LineInformation::const_line_info_iterator LineInformation::begin_by_source() const {
     const traits::line_info_index& i = impl_t::get<Statement::line_info>();
     return i.begin();
 }
@@ -195,9 +201,8 @@ LineInformation::end_by_source() const
     return i.end();
 }
 
-std::pair<LineInformation::const_line_info_iterator,
-          LineInformation::const_line_info_iterator>
-LineInformation::range(std::string file, const unsigned int lineNo) const
+std::pair<LineInformation::const_line_info_iterator, LineInformation::const_line_info_iterator>
+LineInformation::range(std::string const& file, const unsigned int lineNo) const
 {
     using namespace boost::filesystem;
     auto found_range = strings_->get<2>().equal_range(path(file).filename().string());
@@ -219,12 +224,10 @@ LineInformation::range(std::string file, const unsigned int lineNo) const
     return bounds;
 }
 
-std::pair<LineInformation::const_line_info_iterator,
-          LineInformation::const_line_info_iterator>
-LineInformation::equal_range(std::string file) const
-{
-    auto     found = strings_->get<1>().find(file);
-    unsigned i     = strings_->project<0>(found) - strings_->begin();
+std::pair<LineInformation::const_line_info_iterator, LineInformation::const_line_info_iterator>
+LineInformation::equal_range(std::string const& file) const {
+    auto found = strings_->get<1>().find(file);
+    unsigned i = strings_->project<0>(found) - strings_->begin();
     return get<Statement::line_info>().equal_range(i);
 }
 
@@ -265,5 +268,3 @@ LineInformation::dump()
                   << std::endl;
     }
 }
-
-/* end LineInformation destructor */

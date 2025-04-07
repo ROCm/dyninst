@@ -31,8 +31,8 @@
 #if !defined(PROCREADER_H_)
 #    define PROCREADER_H_
 
-#    include "dyntypes.h"
-#    include "dyn_regs.h"
+#include "dyntypes.h"
+#include "registers/MachRegister.h"
 
 namespace Dyninst
 {

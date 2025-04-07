@@ -29,13 +29,9 @@
  */
 
 #include "IA_aarch64.h"
-#include "Register.h"
-#include "Dereference.h"
-#include "Immediate.h"
-#include "BinaryFunction.h"
-
+#include "instructionAPI/h/syscalls.h"
 #include "common/src/arch.h"
-
+#include "registers/aarch64_regs.h"
 #include "parseAPI/src/debug_parse.h"
 
 #include <deque>
@@ -44,6 +40,7 @@
 #include <functional>
 #include <algorithm>
 #include <set>
+#include "Register.h"
 
 using namespace Dyninst;
 using namespace InstructionAPI;

@@ -34,12 +34,14 @@
 #if !defined(_R_CODE_TRACKER_H_)
 #    define _R_CODE_TRACKER_H_
 
-#    include "common/h/dyntypes.h"
-#    include <vector>
-#    include <set>
-#    include <list>
-#    include "common/src/IntervalTree.h"
-#    include <iostream>
+#include "common/h/dyntypes.h"
+#include <assert.h>
+#include <map>
+#include <vector>
+#include <set>
+#include <list>
+#include "common/src/IntervalTree.h"
+#include <iostream>
 
 // Remove when I'm done debugging this...
 //#include "dyninstAPI/src/baseTramp.h"

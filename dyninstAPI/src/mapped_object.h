@@ -33,13 +33,17 @@
 #if !defined(_mapped_object_h)
 #    define _mapped_object_h
 
-#    include <string>
-#    include "common/src/Types.h"
-#    include "dyninstAPI/src/image.h"
-#    include "dyninstAPI/h/BPatch_enums.h"
-#    include <list>
-#    include "dyninstAPI/src/Relocation/DynObject.h"
-#    include "PCProcess.h"
+#include <string>
+#include <map>
+#include <set>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include "dyninstAPI/src/image.h"
+#include "dyninstAPI/h/BPatch_enums.h"
+#include <list>
+#include "dyninstAPI/src/Relocation/DynObject.h"
+#include "PCProcess.h"
 
 class block_instance;
 class func_instance;
@@ -99,18 +103,12 @@ public:
     SymtabAPI::Aggregate::name_iter symtab_names_begin() const;
     SymtabAPI::Aggregate::name_iter symtab_names_end() const;
 
-    // const vector<string>& prettyNameVector() const;
-    // const vector<string>& symTabNameVector() const;
-    mapped_module* mod() const { return mod_; }
-    // AddressSpace *as() const { return mod()->proc(); }
-    const image_variable* ivar() const { return ivar_; }
-
-    Address  addr_;
-    unsigned size_;
+    Address addr_{};
+    unsigned size_{};
     // type?
-    image_variable* ivar_;
+    image_variable *ivar_{};
 
-    mapped_module* mod_;
+    mapped_module *mod_{};
 };
 
 struct edgeStub
@@ -128,9 +126,9 @@ struct edgeStub
     , checked(b)
     {}
     block_instance* src;
-    Address         trg;
-    EdgeTypeEnum    type;
-    bool            checked;
+    Address trg;
+    EdgeTypeEnum type;
+    bool checked{};
 };
 
 /*

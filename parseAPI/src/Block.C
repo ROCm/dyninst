@@ -53,43 +53,49 @@ Block::Block(CodeObject* o, CodeRegion* r, Address start, Function* f)
 , _parsed(false)
 , _createdByFunc(f)
 {
-    if(_obj && _obj->cs())
-    {
+    assert(_obj);
+    if (_obj->cs()) {
         _obj->cs()->incrementCounter(PARSE_BLOCK_COUNT);
         _obj->cs()->addCounter(PARSE_BLOCK_SIZE, size());
     }
 }
 
-Block::Block(CodeObject* o, CodeRegion* r, Address start, Address end, Address last,
-             Function* f)
-: SimpleInterval(start, end, 0)
-, _obj(o)
-, _region(r)
-, _start(start)
-, _end(end)
-, _lastInsn(last)
-, _func_cnt(0)
-, _parsed(false)
-, _createdByFunc(f)
-{}
+Block::Block(
+    CodeObject * o,
+    CodeRegion *r,
+    Address start,
+    Address end,
+    Address last,
+    Function *f) :
+    SimpleInterval(start, end, 0),
+    _obj(o),
+    _region(r),
+    _start(start),
+    _end(end),
+    _lastInsn(last),
+    _func_cnt(0),
+    _parsed(false),
+    _createdByFunc(f)
+{
+    assert(_obj);
+}
+
 
 Block::~Block()
 {
     // nothing special
-    if(_obj && _obj->cs())
-    {
+    if (_obj->cs()) {
         _obj->cs()->decrementCounter(PARSE_BLOCK_COUNT);
-        _obj->cs()->addCounter(PARSE_BLOCK_SIZE, -1 * size());
+        _obj->cs()->addCounter(PARSE_BLOCK_SIZE, -static_cast<int>(size()));
     }
 }
 
 bool
 Block::consistent(Address addr, Address& prev_insn)
 {
-    if(addr >= end() || addr < start())
-        return false;
-    InstructionSource* isrc;
-    if(_obj && !_obj->cs()->regionsOverlap())
+    if (addr >= end() || addr < start()) return false;
+    InstructionSource * isrc;
+    if(!_obj->cs()->regionsOverlap())
         isrc = _obj->cs();
     else
         isrc = region();
@@ -116,14 +122,11 @@ Block::consistent(Address addr, Address& prev_insn)
 void
 Block::getFuncs(vector<Function*>& funcs)
 {
-    if(!_obj)
-        return;  // universal sink
-    set<Function*> stab;
-    _obj->findFuncsByBlock(region(), this, stab);
-    set<Function*>::iterator sit = stab.begin();
-    for(; sit != stab.end(); ++sit)
-    {
-        if(((const Function*) (*sit))->contains(this))
+    set<Function *> stab;
+    _obj->findFuncsByBlock(region(),this,stab);
+    set<Function *>::iterator sit = stab.begin();
+    for( ; sit != stab.end() ;++sit) {
+        if(((const Function*)(*sit))->contains(this))
             funcs.push_back(*sit);
     }
 }
@@ -170,19 +173,15 @@ SingleContextOrInterproc::pred_impl(Edge* e) const
     return singleContext || interproc;
 }
 
-int
-Block::containingFuncs() const
-{
-    if(_obj)
-        _obj->finalize();
+int Block::containingFuncs() const {
+    _obj->finalize();
     return _func_cnt;
 }
 
 void
 Block::removeFunc(Function*)
 {
-    if((0 == _func_cnt) && _obj)
-    {
+    if (0 == _func_cnt) {
         _obj->finalize();
     }
     assert(0 != _func_cnt);
@@ -192,10 +191,8 @@ Block::removeFunc(Function*)
 void
 Block::updateEnd(Address addr)
 {
-    if(!_obj)
-        return;
-    _obj->cs()->addCounter(PARSE_BLOCK_SIZE, -1 * size());
-    _end  = addr;
+    _obj->cs()->addCounter(PARSE_BLOCK_SIZE, -1*size());   
+    _end = addr;
     high_ = addr;
     _obj->cs()->addCounter(PARSE_BLOCK_SIZE, size());
 }
@@ -396,4 +393,27 @@ Block::moveTargetEdges(Block* B)
         B->addTarget(e);
     }
     trgs.clear();
+}
+
+void Block::copy_sources(edgelist & src) const {
+    boost::lock_guard<boost::recursive_mutex> g(lockable());
+    src = _srclist;
+}
+
+void Block::copy_targets(edgelist & trg) const {
+    boost::lock_guard<boost::recursive_mutex> g(lockable());
+    trg = _trglist;
+}
+
+bool Block::hasCallSource() const {
+    boost::lock_guard<boost::recursive_mutex> g(lockable());
+    for (auto e: _srclist)
+        if (e->type() == CALL)
+            return true;
+    return false;
+}
+
+Edge* Block::getOnlyIncomingEdge() const {
+    boost::lock_guard<boost::recursive_mutex> g(lockable());
+    return _srclist.size() == 1 ? *_srclist.begin() : nullptr;
 }

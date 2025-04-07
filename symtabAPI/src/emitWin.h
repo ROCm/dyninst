@@ -49,23 +49,19 @@ public:
     ~emitWin();
     bool driver(Symtab* obj, std::string fName);
 
-private:
-    const static unsigned int SizeOfSecHeader =
-        40;                           // size of section header entry is 40 bytes
-    PCHAR                 base_addr;  // the base address of the mapped image file
-    Offset                bit_addr;   // the offset of bound import table
-    unsigned int          bit_size;   // the size of bound import table
-    Object*               obj_nt;
-    Offset                PEAlign(Offset dwAddr, Offset dwAlign);
-    unsigned int          NumOfTotalAllowedSec();
-    unsigned int          NumOfAllowedSecInSectionTable();
-    unsigned int          NumOfAllowedSecInDosHeader();
-    PIMAGE_SECTION_HEADER CreateSecHeader(unsigned int          size,
-                                          PIMAGE_SECTION_HEADER preSecHdr);
-    bool                  AlignSection(PIMAGE_SECTION_HEADER p);
-    bool                  writeImpTable(Symtab*);
-    bool isMoveAhead;  // variable indicating whether or not we need to move things ahead
-                       // to Dos Stub Area
+    const static unsigned int SizeOfSecHeader = 40; //size of section header entry is 40 bytes
+    PCHAR base_addr; //the base address of the mapped image file
+    Offset bit_addr; //the offset of bound import table
+    unsigned int bit_size{}; //the size of bound import table
+    Object* obj_nt;
+    Offset PEAlign(Offset dwAddr,Offset dwAlign);
+    unsigned int NumOfTotalAllowedSec();
+    unsigned int NumOfAllowedSecInSectionTable();
+    unsigned int NumOfAllowedSecInDosHeader();
+    PIMAGE_SECTION_HEADER CreateSecHeader(unsigned int size,PIMAGE_SECTION_HEADER preSecHdr);
+    bool AlignSection(PIMAGE_SECTION_HEADER p);
+    bool writeImpTable(Symtab*);
+    bool isMoveAhead{false};//variable indicating whether or not we need to move things ahead to Dos Stub Area
 
     void (*err_func_)(const char*);
     void log_winerror(void (*err_func)(const char*), const char* msg);

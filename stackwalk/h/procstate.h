@@ -35,13 +35,17 @@
 #define PROCSTATE_H_
 
 #include "basetypes.h"
-#include "dyn_regs.h"
+#include "registers/MachRegister.h"
+#include "Architecture.h"
 #include "PCProcess.h"
 
 #include <vector>
 #include <map>
 #include <queue>
 #include <string>
+#include <set>
+#include <stddef.h>
+#include <utility>
 
 namespace Dyninst
 {
@@ -86,8 +90,7 @@ public:
     // Return PID
     virtual Dyninst::PID getProcessId();
 
-    // Return the size of an address in process in bytes
-    virtual unsigned getAddressWidth() = 0;
+  virtual Dyninst::Architecture getArchitecture() = 0;
 
     // Get Architecture, see dyn_regs.h
     virtual Dyninst::Architecture getArchitecture() = 0;

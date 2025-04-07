@@ -40,10 +40,7 @@
 #include <iomanip>
 #include <string>
 
-bool mapped_module::truncateLineFilenames = true;
-
-const std::vector<func_instance*>&
-mapped_module::getAllFunctions()
+const std::vector<func_instance *> &mapped_module::getAllFunctions() 
 {
     std::vector<parse_func*> pdfuncs;
     internal_mod_->getFunctions(pdfuncs);
@@ -114,16 +111,9 @@ mapped_module::remove(func_instance* func)
     assert(0 && "Tried to remove function that's not in the module");
 }
 
-const string&
-mapped_module::fileName() const
+const string &mapped_module::fileName() const
 {
-    return pmod()->fileName();
-}
-
-const string&
-mapped_module::fullName() const
-{
-    return pmod()->fullName();
+   return pmod()->fileName();
 }
 
 mapped_object*

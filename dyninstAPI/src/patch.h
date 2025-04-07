@@ -31,7 +31,8 @@
 #if !defined(patch_h)
 #    define patch_h
 
-#    include <string>
+#include <string>
+#include "dyntypes.h"
 
 class codeGen;
 
@@ -39,14 +40,40 @@ class codeGen;
 #    define SIZE_32BIT 4
 #    define SIZE_64BIT 8
 
-class patchTarget
-{
-public:
-    virtual Address     get_address() const = 0;
-    virtual unsigned    get_size() const    = 0;
-    virtual std::string get_name() const;
-    virtual ~patchTarget() = default;
+class patchTarget {
+ public:
+   virtual Dyninst::Address get_address() const = 0;
+   virtual unsigned get_size() const = 0;
+   virtual std::string get_name() const;
+   patchTarget() = default;
+   patchTarget(const patchTarget&) = default;
+   virtual ~patchTarget() = default;
 };
+
+class toAddressPatch : public patchTarget {
+ private:
+   Dyninst::Address addr;
+ public:
+   toAddressPatch(Dyninst::Address a) : addr(a) {}
+   virtual ~toAddressPatch();
+
+   virtual Dyninst::Address get_address() const;
+   virtual unsigned get_size() const;
+   void set_address(Dyninst::Address a);
+};
+
+class relocPatch {
+public:
+   enum class patch_type_t {
+      abs,         //Patch the absolute address of the source into dest
+      pcrel,       //Patch a PC relative address from codeGen start + offset
+      abs_lo,      //Patch lower half of source's bytes into dest
+      abs_hi,      //Patch upper half of source's bytes into dest
+      abs_quad1,   //Patch the first quarter of source's bytes into dest
+      abs_quad2,   //Patch the second quarter of source's bytes into dest
+      abs_quad3,   //Patch the third quarter of source's bytes into dest
+      abs_quad4    //Patch the forth quarter of source's bytes into dest
+   };
 
 class toAddressPatch : public patchTarget
 {
@@ -98,15 +125,14 @@ private:
 
 class ifTargetPatch : public patchTarget
 {
-private:
-    signed int targetOffset;
-
-public:
-    ifTargetPatch(signed int o) { targetOffset = o; }
-    virtual Address     get_address() const { return (Address) targetOffset; }
-    virtual unsigned    get_size() const { return 0; }
-    virtual std::string get_name() const { return std::string("ifTarget"); }
-    virtual ~ifTargetPatch() {}
+ private:
+   signed int targetOffset;
+ public:
+   ifTargetPatch(signed int o) { targetOffset = o; }
+   virtual Dyninst::Address get_address() const { return (Dyninst::Address) targetOffset; }
+   virtual unsigned get_size() const { return 0; }
+   virtual std::string get_name() const { return std::string("ifTarget"); }
+   virtual ~ifTargetPatch() { }
 };
 
 #endif

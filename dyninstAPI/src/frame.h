@@ -33,8 +33,8 @@
 #ifndef FRAME_H
 #define FRAME_H
 
-#include "common/src/std_namesp.h"
-#include "common/src/Types.h"
+#include <iosfwd>
+#include <vector>
 
 #include "instPoint.h"
 #include "baseTramp.h"
@@ -59,12 +59,8 @@ public:
         unknown
     } frameType_t;
 
-    // default ctor (zero frame)
-    Frame();
-
-    // Real constructor -- fill-in.
-    Frame(const Dyninst::Stackwalker::Frame& swf, PCProcess* proc, PCThread* thread,
-          bool uppermost);
+  // default ctor (zero frame)
+  Frame();
 
     Frame(const Frame& f)
     : sw_frame_(f.sw_frame_)
@@ -82,11 +78,20 @@ public:
         return *this;
     }
 
-    bool operator==(const Frame& F)
-    {
-        return ((uppermost_ == F.uppermost_) && (sw_frame_ == F.sw_frame_) &&
-                (proc_ == F.proc_) && (thread_ == F.thread_));
-    }
+  const Frame &operator=(const Frame &f) {
+      sw_frame_ = f.sw_frame_;
+      proc_ = f.proc_;
+      thread_ = f.thread_;
+      uppermost_ = f.uppermost_;
+      return *this;
+  }
+  
+  bool operator==(const Frame &F) const {
+    return ((uppermost_ == F.uppermost_) &&
+	    (sw_frame_ == F.sw_frame_) &&
+	    (proc_    == F.proc_) &&
+	    (thread_  == F.thread_));
+  }
 
     Address getPC() const { return (Address) sw_frame_.getRA(); }
     // New method: unwind instrumentation

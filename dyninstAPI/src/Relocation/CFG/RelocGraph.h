@@ -31,11 +31,13 @@
 #if !defined(_R_RELOC_GRAPH_H_)
 #    define _R_RELOC_GRAPH_H_
 
-#    include "CFG.h"
-#    include "RelocBlock.h"   // RelocEdges
-#    include "RelocTarget.h"  // Targets
-#    include <vector>
-#    include <map>
+#include "CFG.h"
+#include "RelocBlock.h" // RelocEdges
+#include "RelocTarget.h" // Targets
+#include <vector>
+#include <map>
+#include <list>
+#include <utility>
 
 class codeGen;
 class block_instance;

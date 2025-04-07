@@ -34,6 +34,9 @@
 #define SYMTAB_HDR
 #define REGEX_CHARSET "^*|?"
 
+#include <map>
+#include <utility>
+#include <vector>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -45,7 +48,6 @@
 
 #include <set>
 
-#include "dyninstAPI/src/dyninst.h"
 #include "dyninstAPI/src/util.h"
 #include "dyninstAPI/src/codeRange.h"
 #include "dyninstAPI/src/infHeap.h"
@@ -53,7 +55,6 @@
 #include "dyninstAPI/h/BPatch_enums.h"
 
 #include <unordered_map>
-#include "common/src/Types.h"
 
 #if defined(os_linux) || defined(os_freebsd)
 #    include "symtabAPI/h/Archive.h"
@@ -133,29 +134,27 @@ public:
     , fileHandle_(INVALID_HANDLE_VALUE)
     ,
 #endif
-    file_(file)
-    , code_(code)
-    , data_(data)
-    , pid_(0)
-    , length_(0)
-    , rawPtr_(NULL)
-    {}
+		file_(file),
+        code_(code),
+        data_(data),
+        pid_(0),
+        length_(0)
+        {}
 
     // ctor for non-files
-    fileDescriptor(string file, Address code, Address data, Address length, void* rawPtr)
-    :
+    fileDescriptor(string file, Address code, Address data, 
+                   Address length, void* ) :
 #if defined(os_windows)
         procHandle_(INVALID_HANDLE_VALUE)
     , fileHandle_(INVALID_HANDLE_VALUE)
     ,
 #endif
-    file_(file)
-    , code_(code)
-    , data_(data)
-    , pid_(0)
-    , length_(length)
-    , rawPtr_(rawPtr)
-    {}
+		file_(file),
+        code_(code),
+        data_(data),
+        pid_(0),
+        length_(length)
+        {}
 
     bool operator==(const fileDescriptor& fd) const { return IsEqual(fd); }
 
@@ -205,13 +204,12 @@ private:
     HANDLE procHandle_;
     HANDLE fileHandle_;
 #endif
-    string  file_;
-    string  member_;
-    Address code_;
-    Address data_;
-    int     pid_;
-    Address length_;  // set only if this is not really a file
-    void*   rawPtr_;  // set only if this is not really a file
+     string file_;
+     string member_;
+     Address code_;
+     Address data_;
+     int pid_;
+     Address length_;        // set only if this is not really a file
 
     bool IsEqual(const fileDescriptor& fd) const;
 };
@@ -234,11 +232,9 @@ public:
     bool addSymTabName(const std::string&, bool isPrimary = false);
     bool addPrettyName(const std::string&, bool isPrimary = false);
 
-    pdmodule*            pdmod() const { return pdmod_; }
-    SymtabAPI::Variable* svar() const { return var_; }
-
-    SymtabAPI::Variable* var_;
-    pdmodule*            pdmod_;
+    SymtabAPI::Variable *var_{};
+    pdmodule *pdmod_{};
+    
 };
 
 std::string
@@ -440,8 +436,7 @@ private:
     void setModuleLanguages(
         std::unordered_map<std::string, SymtabAPI::supportedLanguages>* mod_langs);
 
-    // We have a _lot_ of lookup types; this handles proper entry
-    void enterFunctionInTables(parse_func* func);
+   void setModuleLanguages(std::unordered_map<std::string, SymtabAPI::supportedLanguages> *mod_langs);
 
     bool buildFunctionLists(std::vector<parse_func*>& raw_funcs);
     void analyzeImage();
@@ -511,9 +506,7 @@ private:
     dyn_hash_map<string, pdmodule*> modsByFileName;
     dyn_hash_map<string, pdmodule*> modsByFullName;
 
-    // "Function" symbol names that are PLT entries or the equivalent
-    // FIXME remove
-    std::unordered_map<Address, std::string>* pltFuncs;
+   dyn_hash_map <string, pdmodule *> modsByFileName;
 
     std::unordered_map<Address, image_variable*> varsByAddr;
 
@@ -549,7 +542,22 @@ public:
 
     bool findFunction(const std::string& name, std::vector<parse_func*>& found);
 
-    bool getVariables(std::vector<image_variable*>& vars);
+   /* We can see more than one function with the same mangled
+      name in the same object, because it's OK for different
+      modules in the same object to define the same (local) symbol.
+      However, we can't always determine module information
+      which means one of our
+      module classes may contain information about an entire object,
+      and therefore, multiple functons with the same mangled name. */
+   bool findFunctionByMangled (const std::string &name,
+                               std::vector<parse_func *> &found);
+   bool findFunctionByPretty (const std::string &name,
+                              std::vector<parse_func *> &found);
+   void dumpMangled(std::string &prefix) const;
+   const string &fileName() const;
+   SymtabAPI::supportedLanguages language() const;
+   Address addr() const;
+   bool isShared() const;
 
     /* We can see more than one function with the same mangled
        name in the same object, because it's OK for different

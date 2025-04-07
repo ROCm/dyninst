@@ -687,18 +687,13 @@ BoundFact::KillFact(const AST::Ptr ast, bool isConditionalJump)
         return;
 
     // It also affects the relation map
-    for(auto rit = relation.begin(); rit != relation.end();)
-    {
-        // If the one of them is changed,
-        // we no longer know their relationship
-        if(*((*rit)->left) == *ast || *((*rit)->right) == *ast)
-        {
-            if(*rit != NULL)
-                delete *rit;
-            rit = relation.erase(rit);
-        }
-        else
-            ++rit;
+    for (auto rit = relation.begin(); rit != relation.end();) {
+	// If the one of them is changed,
+	// we no longer know their relationship
+    if (*((*rit)->left) == *ast || *((*rit)->right) == *ast) {
+	    delete *rit;
+	    rit = relation.erase(rit);
+	} else ++rit;
     }
 }
 
@@ -784,660 +779,387 @@ BoundFact::ConditionalJumpBound(Instruction insn, EdgeTypeEnum type)
         return true;
     }
     entryID id = insn.getOperation().getID();
-    parsing_printf("\t\tproduce conditional bound for %s, edge type %d\n",
-                   insn.format().c_str(), type);
-    if(type == COND_TAKEN)
-    {
-        switch(id)
-        {
-            // unsigned
-            case e_jnbe: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        // If both elements are constant,
-                        // it means the conditional jump is actually unconditional.
-                        // It is possible to happen, but should be unlikely
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e1,
-                                          StridedInterval(1, 0, constAST->val().val - 1));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val + 1,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLargerThan);
-                }
-                break;
-            }
-            case e_jnb:
-            case e_jnb_jae_j: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        parsing_printf("XXX\n");
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    parsing_printf("YYY\n");
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLargerThanOrEqual);
-                }
-                break;
-            }
-            case e_jb:
-            case e_jb_jnaej_j: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val + 1,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    // Assuming a-loc pred.e1 is always used as
-                    // unsigned value before it gets rewritten.
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val - 1));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLessThan);
-                }
-                break;
-            }
-            case aarch64_op_b_cond:
-            case power_op_bc:
-            case e_jbe: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    // Assuming a-loc pred.e1 is always used as
-                    // unsigned value before it gets rewritten.
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLessThanOrEqual);
-                }
-                break;
-            }
-            case e_jz: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        // the predicate sometimes is between the low 8 bits of a register
-                        // and a constant. If I simply extends the predicate to the whole
-                        // 64 bits of a register. I may get wrong constant value.
-                        // IntersectInterval(pred.e2, StridedInterval(1,
-                        // constAST->val().val, constAST->val().val));
-                        parsing_printf("WARNING: do not track equal predicate\n");
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    parsing_printf("WARNING: do not track equal predicate\n");
-                    // IntersectInterval(pred.e1, StridedInterval(0, constAST->val().val ,
-                    // constAST->val().val));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, Equal);
-                }
-                break;
-            }
-            case e_jnz: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        DeleteElementFromInterval(pred.e2, constAST->val().val);
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    DeleteElementFromInterval(pred.e1, constAST->val().val);
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, NotEqual);
-                }
-                break;
-            }
+    parsing_printf("\t\tproduce conditional bound for %s, edge type %d\n", insn.format().c_str(), type);
+    if (type == COND_TAKEN) {
+        switch (id) {
+	    // unsigned 
+	    case e_ja: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        // If both elements are constant,
+			// it means the conditional jump is actually unconditional.
+			// It is possible to happen, but should be unlikely 
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+			IntersectInterval(pred.e1, StridedInterval(1, 0, constAST->val().val - 1));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,UnsignedLargerThan);
+		}
+		break;
+	    }
+	    case e_jae:
+	    case e_jnb_jae_j: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+			parsing_printf("XXX\n");
+		        IntersectInterval(pred.e2, StridedInterval(1, 0, constAST->val().val));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    parsing_printf("YYY\n");
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, UnsignedLargerThanOrEqual);
+		}
+		break;
+	    }
+	    case e_jb: 
+	    case e_jb_jnaej_j: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    // Assuming a-loc pred.e1 is always used as 
+		    // unsigned value before it gets rewritten.
+		    IntersectInterval(pred.e1, StridedInterval(1, 0 , constAST->val().val - 1));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, UnsignedLessThan);
+		}
+		break;
+	    }
+	    case aarch64_op_b_cond:
+	    case power_op_bc:
+	    case e_jbe: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    // Assuming a-loc pred.e1 is always used as 
+		    // unsigned value before it gets rewritten.
+		    IntersectInterval(pred.e1,StridedInterval(1, 0 , constAST->val().val));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,UnsignedLessThanOrEqual);
+		}
+		break;
+	    }
+	    case e_je: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        // the predicate sometimes is between the low 8 bits of a register
+			// and a constant. If I simply extends the predicate to the whole
+			// 64 bits of a register. I may get wrong constant value. 
+		        // IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, constAST->val().val));
+			parsing_printf("WARNING: do not track equal predicate\n");
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    parsing_printf("WARNING: do not track equal predicate\n");
+		    //IntersectInterval(pred.e1, StridedInterval(0, constAST->val().val , constAST->val().val));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,Equal);
+		}
+		break;
+	    }
+	    case e_jne: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        DeleteElementFromInterval(pred.e2, constAST->val().val);
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    DeleteElementFromInterval(pred.e1, constAST->val().val);
+		} else {
+		    InsertRelation(pred.e1, pred.e2, NotEqual);
+		}
+		break;
+	    }
 
-            // signed
-            case e_jnle: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val - 1));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val + 1,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLargerThan);
-                }
-                break;
-            }
-            case e_jnl: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLargerThanOrEqual);
-                }
-                break;
-            }
-            case e_jl: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val + 1,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val - 1));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLessThan);
-                }
-                break;
-            }
-            case e_jle: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLessThanOrEqual);
-                }
-                break;
-            }
-            default:
-                parsing_printf("Unhandled conditional jump type. entry id is %u\n", id);
-        }
-    }
-    else if(type == COND_NOT_TAKEN)
-    {
+	    // signed
+	    case e_jg: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, 0 , constAST->val().val - 1));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, SignedLargerThan);
+		}
+		break;
+	    }
+	    case e_jge: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, 0, constAST->val().val));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,SignedLargerThanOrEqual);
+		}
+		break;
+	    }
+	    case e_jl: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1,  0 , constAST->val().val - 1));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,SignedLessThan);
+		}
+		break;
+
+	    }
+	    case e_jle: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, 0 , constAST->val().val));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,SignedLessThanOrEqual);
+		}
+		break;
+	    }
+	    default:
+	        parsing_printf("Unhandled conditional jump type. entry id is %u\n", id);
+	}
+
+    } else if (type == COND_NOT_TAKEN) {
         // the following switch statement is almost
-        // the same as the above one, except case label
-        // all cases of e_jnxx corresponds to cases of e_jxx
-        // and cases of e_jxx corresponds to cases of e_jnxx
-        switch(id)
-        {
-            // unsigned
-            case e_jbe: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        // If both elements are constant,
-                        // it means the conditional jump is actually unconditional.
-                        // It is possible to happen, but should be unlikely
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val - 1));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val + 1,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLargerThan);
-                }
-                break;
-            }
-            case e_jb:
-            case e_jb_jnaej_j: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLargerThanOrEqual);
-                }
-                break;
-            }
-            case e_jnb:
-            case e_jnb_jae_j: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        parsing_printf("!!!\n");
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val + 1,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    // Assuming a-loc pred.e1 is always used as
-                    // unsigned value before it gets rewritten.
-                    parsing_printf("@@@\n");
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val - 1));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLessThan);
-                }
-                break;
-            }
-            case aarch64_op_b_cond:
-            case power_op_bc:
-            case e_jnbe: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    // Assuming a-loc pred.e1 is always used as
-                    // unsigned value before it gets rewritten.
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, UnsignedLessThanOrEqual);
-                }
-                break;
-            }
-            case e_jnz: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        parsing_printf("WARNING: do not track equal predicate\n");
-                        // IntersectInterval(pred.e2, StridedInterval(1,
-                        // constAST->val().val, constAST->val().val));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    // the predicate sometimes is between the low 8 bits of a register
-                    // and a constant. If I simply extends the predicate to the whole
-                    // 64 bits of a register. I may get wrong constant value.
-                    // IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val,
-                    // constAST->val().val));
-                    parsing_printf("WARNING: do not track equal predicate\n");
-                    // IntersectInterval(pred.e1, StridedInterval(0, constAST->val().val ,
-                    // constAST->val().val));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, Equal);
-                }
-                break;
-            }
-            case e_jz: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        DeleteElementFromInterval(pred.e2, constAST->val().val);
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    DeleteElementFromInterval(pred.e1, constAST->val().val);
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, NotEqual);
-                }
-                break;
-            }
+	// the same as the above one, except case label
+	// all cases of e_jnxx corresponds to cases of e_jxx
+	// and cases of e_jxx corresponds to cases of e_jnxx
+        switch (id) {
+	    // unsigned 
+	    case e_jbe: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        // If both elements are constant,
+			// it means the conditional jump is actually unconditional.
+			// It is possible to happen, but should be unlikely 
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, 0, constAST->val().val - 1));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,UnsignedLargerThan);
+		}
+		break;
+	    }
+	    case e_jb: 
+	    case e_jb_jnaej_j: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2,StridedInterval(1, 0, constAST->val().val));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2 ,UnsignedLargerThanOrEqual);
+		}
+		break;
+	    }
+	    case e_jae:
+	    case e_jnb_jae_j: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+			parsing_printf("!!!\n");
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    // Assuming a-loc pred.e1 is always used as 
+		    // unsigned value before it gets rewritten.
+		    parsing_printf("@@@\n");
+		    IntersectInterval(pred.e1, StridedInterval(1, 0 , constAST->val().val - 1));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, UnsignedLessThan);
+		}
+		break;
+	    }
+	    case aarch64_op_b_cond:
+	    case power_op_bc:
+	    case e_ja: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    // Assuming a-loc pred.e1 is always used as 
+		    // unsigned value before it gets rewritten.
+		    IntersectInterval(pred.e1, StridedInterval(1, 0 , constAST->val().val));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, UnsignedLessThanOrEqual);
+		}
+		break;
+	    }
+	    case e_jne: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        parsing_printf("WARNING: do not track equal predicate\n");
+		        //IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, constAST->val().val));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    // the predicate sometimes is between the low 8 bits of a register
+		    // and a constant. If I simply extends the predicate to the whole
+		    // 64 bits of a register. I may get wrong constant value. 
+		    // IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, constAST->val().val));
+		    parsing_printf("WARNING: do not track equal predicate\n");
+		    //IntersectInterval(pred.e1, StridedInterval(0, constAST->val().val , constAST->val().val));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, Equal);
+		}
+		break;
+	    }
+	    case e_je: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        DeleteElementFromInterval(pred.e2, constAST->val().val);
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    DeleteElementFromInterval(pred.e1, constAST->val().val);
+		} else {
+		    InsertRelation(pred.e1, pred.e2,NotEqual);
+		}
+		break;
+	    }
 
-            // signed
-            case e_jle: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val - 1));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val + 1,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLargerThan);
-                }
-                break;
-            }
-            case e_jl: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, 0, constAST->val().val));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, constAST->val().val,
-                                                      StridedInterval::maxValue));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLargerThanOrEqual);
-                }
-                break;
-            }
-            case e_jnl: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        ConstantAST::Ptr constAST =
-                            boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        IntersectInterval(pred.e2,
-                                          StridedInterval(1, constAST->val().val + 1,
-                                                          StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val - 1));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLessThan);
-                }
-                break;
-            }
-            case e_jnle: {
-                if(pred.e1->getID() == AST::V_ConstantAST)
-                {
-                    if(pred.e2->getID() == AST::V_ConstantAST)
-                    {
-                        parsing_printf(
-                            "WARNING: both predicate elements are constants!\n");
-                    }
-                    else
-                    {
-                        //		        ConstantAST::Ptr constAST =
-                        // boost::static_pointer_cast<ConstantAST>(pred.e1);
-                        //		        IntersectInterval(pred.e2, StridedInterval(1,
-                        // constAST->val().val, StridedInterval::maxValue));
-                    }
-                }
-                else if(pred.e2->getID() == AST::V_ConstantAST)
-                {
-                    ConstantAST::Ptr constAST =
-                        boost::static_pointer_cast<ConstantAST>(pred.e2);
-                    IntersectInterval(pred.e1,
-                                      StridedInterval(1, 0, constAST->val().val));
-                }
-                else
-                {
-                    InsertRelation(pred.e1, pred.e2, SignedLessThanOrEqual);
-                }
-                break;
-            }
-            default:
-                fprintf(stderr, "Unhandled conditional jump type. entry id is %u\n", id);
-                assert(0);
-        }
-    }
-    else
-    {
+	    // signed
+	    case e_jle: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, 0, constAST->val().val - 1));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, SignedLargerThan);
+		}
+		break;
+	    }
+	    case e_jl: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, 0, constAST->val().val));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		} else {
+		    InsertRelation(pred.e1, pred.e2, SignedLargerThanOrEqual);
+		}
+		break;
+	    }
+	    case e_jge: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val + 1, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, 0 , constAST->val().val - 1));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,SignedLessThan);
+		}
+		break;
+
+	    }
+	    case e_jg: {
+	        if (pred.e1->getID() == AST::V_ConstantAST) {
+		    if (pred.e2->getID() == AST::V_ConstantAST) {
+		        parsing_printf("WARNING: both predicate elements are constants!\n");
+		    } else {
+//		        ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e1);
+//		        IntersectInterval(pred.e2, StridedInterval(1, constAST->val().val, StridedInterval::maxValue));
+		    }
+		} else if (pred.e2->getID() == AST::V_ConstantAST) {
+		    ConstantAST::Ptr constAST = boost::static_pointer_cast<ConstantAST>(pred.e2);
+		    IntersectInterval(pred.e1, StridedInterval(1, 0 , constAST->val().val));
+		} else {
+		    InsertRelation(pred.e1, pred.e2,SignedLessThanOrEqual);
+		}
+		break;
+	    }
+	    default:
+	        fprintf(stderr, "Unhandled conditional jump type. entry id is %u\n", id);
+		assert(0);
+	}
+
+    } else {
         parsing_printf("Instruction %s\n", insn.format().c_str());
         parsing_printf(
             "type should be either COND_TAKEN or COND_NOT_TAKEN, but it is %d\n", type);

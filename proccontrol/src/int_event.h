@@ -29,13 +29,19 @@
  */
 
 #if !defined(INT_EVENT_H_)
-#    define INT_EVENT_H_
-#    if defined(cap_thread_db)
-#        include "int_thread_db.h"
-#    endif
-#    include "response.h"
-#    include "resp.h"
-#    include <set>
+#define INT_EVENT_H_
+#if defined(cap_thread_db)
+#include "int_thread_db.h"
+#endif
+#include "response.h"
+#include "resp.h"
+#include <stddef.h>
+#include <string>
+#include <vector>
+#include <set>
+
+namespace Dyninst {
+namespace ProcControlAPI {
 
 namespace Dyninst
 {

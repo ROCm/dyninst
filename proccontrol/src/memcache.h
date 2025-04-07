@@ -31,10 +31,11 @@
 #if !defined(MEMCACHE_H_)
 #    define MEMCACHE_H_
 
-#    include "common/h/dyntypes.h"
-#    include "response.h"
-#    include <set>
-#    include <map>
+#include "common/h/dyntypes.h"
+#include "response.h"
+#include <vector>
+#include <set>
+#include <map>
 
 class int_process;
 

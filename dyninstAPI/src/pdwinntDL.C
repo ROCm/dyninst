@@ -103,7 +103,61 @@ dynamic_linking::handleIfDueToSharedObjectMapping(
             ev.info.u.LoadDll.fUnicode, GetFileSize(ev.info.u.LoadDll.hFile, NULL));
         startup_printf("Loaded dll: %s\n", imageName.c_str());
 
-        if(!imageName.length())
+	 if (!imageName.length())
+		 return true;
+     DWORD64 iresult = SymLoadModule64(procHandle, ev.info.u.LoadDll.hFile, 
+                                 (PSTR) imageName.c_str(), NULL,
+                                 (DWORD64) ev.info.u.LoadDll.lpBaseOfDll, 0);
+     if (!iresult) {
+       printSysError(GetLastError());
+	   fprintf(stderr, "[%s:%d] - Couldn't SymLoadModule64\n", FILE__, __LINE__);
+	   return true;
+     }
+
+     fileDescriptor desc(imageName.c_str(), 
+                         (Address)ev.info.u.LoadDll.lpBaseOfDll,
+                         (HANDLE)procHandle,
+                         ev.info.u.LoadDll.hFile, true, 
+                         (Address)ev.info.u.LoadDll.lpBaseOfDll);   
+
+     BPatch_hybridMode mode = proc->getHybridMode();
+     bool parseGaps = true;
+     if (BPatch_defensiveMode == mode && !mapped_object::isSystemLib(imageName))
+         parseGaps = false;
+     //else //KEVINTODO: re-instate the else once isSystemLib is working
+         mode = BPatch_normalMode;
+
+     mapped_object *newobj = 
+         mapped_object::createMappedObject(desc, proc, mode, parseGaps);
+     if (!newobj) {
+         fprintf(stderr, "[%s:%d] - Couldn't parse loaded module %s\n",
+                 FILE__,__LINE__, imageName.c_str());
+         return true;
+     }
+     changed_objects.push_back(newobj);
+     is_new_object.push_back(true);
+     ev.what = SHAREDOBJECT_ADDED;
+	 return true;
+   }
+   /**
+    * Handle the library unload case.
+	**/
+    Address base = (Address) ev.info.u.UnloadDll.lpBaseOfDll;
+    bool result = SymUnloadModule64(procHandle, base);
+	if (!result) {
+       printSysError(GetLastError());
+	   fprintf(stderr, "[%s:%d] - Couldn't SymUnloadModule64\n", FILE__, __LINE__);
+	}
+        
+	mapped_object *oldobj = NULL;
+        const std::vector<mapped_object *> &objs = proc->mappedObjects();
+	for (unsigned i=0; i<objs.size(); i++) {
+            if (objs[i]->codeBase() == base) {
+                oldobj = objs[i];
+                break;
+            }
+	}
+	if (!oldobj) 
             return true;
         DWORD64 iresult =
             SymLoadModule64(procHandle, ev.info.u.LoadDll.hFile, (PSTR) imageName.c_str(),

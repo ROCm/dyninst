@@ -29,7 +29,15 @@
  */
 
 #if !defined(_STACK_TAMPER_VISITOR_H_)
-#    define _STACK_TAMPER_VISITOR_H_
+#define _STACK_TAMPER_VISITOR_H_
+
+#include <map>
+#include <stack>
+#include "dataflowAPI/h/Absloc.h"
+#include "dataflowAPI/h/AbslocInterface.h" // And more of the same
+#include "dataflowAPI/h/SymEval.h" // Variable class
+#include "common/h/DynAST.h"
+#include "parseAPI/h/CFG.h"
 
 #    include <map>
 #    include <stack>

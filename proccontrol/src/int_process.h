@@ -39,17 +39,20 @@
 #    include "response.h"
 #    include "memcache.h"
 
-#    include "common/h/dyn_regs.h"
-#    include "common/h/SymReader.h"
-#    include "common/src/dthread.h"
+#include "registers/MachRegister.h"
+#include "Architecture.h"
+#include "common/h/SymReader.h"
+#include "common/src/dthread.h"
 
-#    include <vector>
-#    include <map>
-#    include <list>
-#    include <set>
-#    include <utility>
-#    include <queue>
-#    include <stack>
+#include <assert.h>
+#include <string>
+#include <vector>
+#include <map>
+#include <list>
+#include <set>
+#include <utility>
+#include <queue>
+#include <stack>
 
 namespace Dyninst
 {

@@ -38,7 +38,6 @@
 #endif
 
 #define BPATCH_FILE
-#include "common/src/Pair.h"
 #include "common/src/stats.h"
 #include "BPatch.h"
 #include "BPatch_libInfo.h"
@@ -61,6 +60,7 @@
 #endif
 
 #include <fstream>
+#include <numeric>
 
 using namespace std;
 using namespace SymtabAPI;
@@ -1279,34 +1279,29 @@ BPatch::processCreate(const char* path, const char* argv[], const char** envp,
     //  This might be ok on windows...  not 100% sure and it takes
     //  to long to build for the moment.
 
-    //  just a sanity check for the exitence of <path>
-    struct stat statbuf;
-    if(-1 == stat(path, &statbuf))
-    {
-        char ebuf[2048];
-        snprintf(ebuf, 2048, "createProcess(%s,...):  file does not exist\n", path);
-        reportError(BPatchFatal, 68, ebuf);
-        return NULL;
-    }
+   //  just a sanity check for the exitence of <path>
+   struct stat statbuf;
+   if (-1 == stat(path, &statbuf)) {
+      auto msg = std::string("createProcess(") + path + ",...):  file does not exist\n";
+      reportError(BPatchFatal, 68, msg.c_str());
+      return NULL;
+   }
 
-    //  and ensure its a regular file:
-    if(!S_ISREG(statbuf.st_mode))
-    {
-        char ebuf[2048];
-        snprintf(ebuf, 2048, "createProcess(%s,...):  not a regular file\n", path);
-        reportError(BPatchFatal, 68, ebuf);
-        return NULL;
-    }
+   //  and ensure its a regular file:
+   if (!S_ISREG(statbuf.st_mode)) {
+      auto msg = std::string("createProcess(") + path + ",...):  not a regular file\n";
+      reportError(BPatchFatal, 68, msg.c_str());
+      return NULL;
+   }
 
-    //  and ensure its executable (does not check permissions):
-    if(!((statbuf.st_mode & S_IXUSR) || (statbuf.st_mode & S_IXGRP) ||
-         (statbuf.st_mode & S_IXOTH)))
-    {
-        char ebuf[2048];
-        snprintf(ebuf, 2048, "createProcess(%s,...):  not an executable\n", path);
-        reportError(BPatchFatal, 68, ebuf);
-        return NULL;
-    }
+   //  and ensure its executable (does not check permissions):
+   if (! ( (statbuf.st_mode & S_IXUSR)
+            || (statbuf.st_mode & S_IXGRP)
+            || (statbuf.st_mode & S_IXOTH) )) {
+      auto msg = std::string("createProcess(") + path + "%s,...):  not an executable\n";
+      reportError(BPatchFatal, 68, msg.c_str());
+      return NULL;
+   }
 
 #endif  // !Windows
 
@@ -1537,22 +1532,18 @@ BPatch::createEnum(const char* name, BPatch_Vector<char*>& elementNames,
     {
         return NULL;
     }
-    string                           typeName = name;
-    dyn_c_vector<pair<string, int>*> elements;
-    for(unsigned int i = 0; i < elementNames.size(); i++)
-        elements.push_back(new pair<string, int>(elementNames[i], elementIds[i]));
 
-    boost::shared_ptr<Type> typ(typeEnum::create(typeName, elements));
-    if(!typ)
-        return NULL;
+    // Make the underlying type a 4-byte signed int
+    boost::shared_ptr<Type> underlying_type = boost::make_shared<typeScalar>(4, "int", true);
 
-    BPatch_type* newType = new BPatch_type(typ);
-    if(!newType)
-        return NULL;
+    auto *tenum = new typeEnum(underlying_type, name);
+    for(auto i=0UL; i<elementNames.size(); i++) {
+    	tenum->addConstant(elementNames[i], elementIds[i]);
+    }
 
+    BPatch_type *newType = new BPatch_type(tenum);
     APITypes->addType(newType);
-
-    return (newType);
+    return newType;
 }
 
 /*
@@ -1567,22 +1558,10 @@ BPatch::createEnum(const char* name, BPatch_Vector<char*>& elementNames,
 BPatch_type*
 BPatch::createEnum(const char* name, BPatch_Vector<char*>& elementNames)
 {
-    string                           typeName = name;
-    dyn_c_vector<pair<string, int>*> elements;
-    for(unsigned int i = 0; i < elementNames.size(); i++)
-        elements.push_back(new pair<string, int>(elementNames[i], i));
-
-    boost::shared_ptr<Type> typ(typeEnum::create(typeName, elements));
-    if(!typ)
-        return NULL;
-
-    BPatch_type* newType = new BPatch_type(typ);
-    if(!newType)
-        return NULL;
-
-    APITypes->addType(newType);
-
-    return (newType);
+	// We were only given names, so assume sequentially-ordered values
+	BPatch_Vector<int> ids(elementNames.size());
+	std::iota(ids.begin(), ids.end(), 0);
+	return createEnum(name, elementNames, ids);
 }
 
 /*
@@ -2064,10 +2043,9 @@ BPatch::getNotificationFD()
 #endif
 }
 
-/* If true, we return just filenames when the user asks for line info
-   otherwise, we return filename plus path information. */
-void
-BPatch::truncateLineInfoFilenames(bool newval)
+void BPatch::truncateLineInfoFilenames(bool) {}
+
+void BPatch::getBPatchVersion(int &major, int &minor, int &subminor) 
 {
     mapped_module::truncateLineFilenames = newval;
 }

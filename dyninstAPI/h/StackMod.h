@@ -31,6 +31,7 @@
 #ifndef _StackMod_h_
 #define _StackMod_h_
 
+#include <string>
 #include "BPatch_dll.h"
 #include "stackanalysis.h"
 
@@ -80,9 +81,9 @@ public:
     virtual ~StackMod() = default;
     virtual std::string format() const { return ""; }
 
-protected:
-    MOrder _order;
-    MType  _type;
+    protected:
+        MOrder _order{};
+        MType _type{};
 };
 
 /* Modification to insert stack space at [low, high) */
@@ -101,11 +102,8 @@ public:
     unsigned int size() const { return _high - _low; }
     std::string  format() const;
 
-private:
-    Insert(MOrder, int, int);
-
-    int _low;
-    int _high;
+        int _low{};
+        int _high{};
 };
 
 /* Modification to remove stack space at [low, high) */
@@ -124,11 +122,8 @@ public:
     unsigned int size() const { return _high - _low; }
     std::string  format() const;
 
-private:
-    Remove(MOrder, int, int);
-
-    int _low;
-    int _high;
+        int _low{};
+        int _high{};
 };
 
 /* Modification to move stack space from [srcLow, srcHigh)
@@ -149,11 +144,11 @@ public:
 
     std::string format() const;
 
-private:
-    int _srcLow;
-    int _srcHigh;
-    int _destLow;
-    int _destHigh;
+    private:
+        int _srcLow{};
+        int _srcHigh{};
+        int _destLow{};
+        int _destHigh{};
 };
 
 /* Modification to insert a stack canary at function entry
@@ -182,14 +177,10 @@ public:
         _high = h;
     }
 
-    BPatch_function* failFunc() const { return _failFunc; }
-
-    std::string format() const;
-
-private:
-    int              _low;
-    int              _high;
-    BPatch_function* _failFunc;
+    private:
+        int _low{};
+        int _high{};
+        BPatch_function* _failFunc{};
 };
 
 /* Modification to randomize the locations of the DWARF-specified
@@ -205,11 +196,9 @@ public:
     bool isSeeded() const { return _isSeeded; }
     int  seed() const { return _seed; }
 
-    std::string format() const;
-
-private:
-    bool _isSeeded;
-    int  _seed;
+    private:
+        bool _isSeeded{};
+        int _seed{};
 };
 
 #endif

@@ -31,11 +31,13 @@
 #if !defined(_R_CODE_MOVER_H_)
 #    define _R_CODE_MOVER_H_
 
-#    include "CFG.h"
-#    include "common/src/Types.h"
-#    include <list>
-#    include <map>
-#    include "dyninstAPI/src/codegen.h"  // codeGen structure
+#include "CFG.h"
+#include <set>
+#include <string>
+#include <utility>
+#include <list>
+#include <map>
+#include "dyninstAPI/src/codegen.h" // codeGen structure
 
 #    include "Transformers/Transformer.h"
 

@@ -36,7 +36,11 @@
 #    include "dataflowAPI/h/Absloc.h"
 #    include "SymReader.h"
 
-#    include <string>
+#include <string>
+#include <map>
+#include <set>
+#include <utility>
+#include <vector>
 
 namespace Dyninst
 {

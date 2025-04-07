@@ -31,10 +31,11 @@
 #if !defined(DWARF_HANDLE_H_)
 #    define DWARF_HANDLE_H_
 
-#    include "elfutils/libdw.h"
-#    include "dyntypes.h"
-#    include <map>
-#    include <string>
+#include "elfutils/libdw.h"
+#include "dyntypes.h"
+#include <map>
+#include <string>
+#include <boost/shared_ptr.hpp>
 
 namespace Dyninst
 {

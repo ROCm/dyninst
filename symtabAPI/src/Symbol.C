@@ -281,10 +281,6 @@ Dyninst::SymtabAPI::operator<<(ostream& os, const Symbol& s)
               << " }";
 }
 
-Offset   tryStart_;
-unsigned trySize_;
-Offset   catchStart_;
-bool     hasTry_;
 
 ostream&
 Dyninst::SymtabAPI::operator<<(ostream& s, const ExceptionBlock& eb)
@@ -313,16 +309,14 @@ Symbol::operator==(const Symbol& s) const
             return false;
     }
 
-    // compare modules by name, not pointer
-    if(!module_ && s.module_)
-        return false;
-    if(module_ && !s.module_)
-        return false;
-    if(module_)
-    {
-        if(module_->fullName() != s.module_->fullName())
-            return false;
-    }
+	// compare modules by name, not pointer
+	if (!module_ && s.module_) return false;
+	if (module_ && !s.module_) return false;
+	if (module_)
+	{
+		if (module_->fileName() != s.module_->fileName())
+			return false;
+	}
 
     return ((type_ == s.type_) && (linkage_ == s.linkage_) && (offset_ == s.offset_) &&
             (size_ == s.size_) && (isDynamic_ == s.isDynamic_) &&
@@ -409,4 +403,66 @@ Symbol*
 Symbol::getReferringSymbol() const
 {
     return referring_;
+}
+
+Symbol* Symbol::getReferringSymbol() const
+{
+	return referring_;
+}
+
+const char *Symbol::symbolType2Str(SymbolType t)
+{
+   switch (t)
+   {
+      CASE_RETURN_STR(ST_UNKNOWN);
+      CASE_RETURN_STR(ST_FUNCTION);
+      CASE_RETURN_STR(ST_OBJECT);
+      CASE_RETURN_STR(ST_MODULE);
+      CASE_RETURN_STR(ST_SECTION);
+      CASE_RETURN_STR(ST_TLS);
+      CASE_RETURN_STR(ST_DELETED);
+      CASE_RETURN_STR(ST_NOTYPE);
+      CASE_RETURN_STR(ST_INDIRECT);
+   };
+
+   return "invalid symbol type";
+}
+
+const char *Symbol::symbolLinkage2Str(SymbolLinkage t)
+{
+   switch (t)
+   {
+      CASE_RETURN_STR(SL_UNKNOWN);
+      CASE_RETURN_STR(SL_GLOBAL);
+      CASE_RETURN_STR(SL_LOCAL);
+      CASE_RETURN_STR(SL_WEAK);
+      CASE_RETURN_STR(SL_UNIQUE);
+   };
+
+   return "invalid symbol linkage";
+}
+
+const char *Symbol::symbolTag2Str(SymbolTag t)
+{
+   switch (t)
+   {
+      CASE_RETURN_STR(TAG_UNKNOWN);
+      CASE_RETURN_STR(TAG_USER);
+      CASE_RETURN_STR(TAG_LIBRARY);
+      CASE_RETURN_STR(TAG_INTERNAL);
+   };
+
+   return "invalid symbol tag";
+}
+
+const char *Symbol::symbolVisibility2Str(SymbolVisibility t)
+{
+   switch(t) {
+      CASE_RETURN_STR(SV_UNKNOWN);
+      CASE_RETURN_STR(SV_DEFAULT);
+      CASE_RETURN_STR(SV_INTERNAL);
+      CASE_RETURN_STR(SV_HIDDEN);
+      CASE_RETURN_STR(SV_PROTECTED);
+   }
+   return "invalid symbol visibility";
 }

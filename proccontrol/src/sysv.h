@@ -31,11 +31,15 @@
 #if !defined(SYSV_H_)
 #    define SYSV_H_
 
-#    include "common/h/ProcReader.h"
-#    include "int_process.h"
-#    include "processplat.h"
-#    include "Handler.h"
-#    include "common/src/addrtranslate.h"
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+#include "common/h/ProcReader.h"
+#include "int_process.h"
+#include "processplat.h"
+#include "Handler.h"
+#include "common/src/addrtranslate.h"
 
 using namespace Dyninst;
 using namespace ProcControlAPI;

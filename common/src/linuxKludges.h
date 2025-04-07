@@ -31,7 +31,10 @@
 #if !defined(_linux_kludges_h)
 #    define _linux_kludges_h
 
-#    include <vector>
+#include <vector>
+#include "dyntypes.h"
+#include "common/src/vm_maps.h"
+#include "common/h/util.h"
 
 COMMON_EXPORT bool
 PtraceBulkRead(Dyninst::Address inTraced, unsigned size, void* inSelf, int pid);

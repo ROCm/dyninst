@@ -498,24 +498,7 @@ PCEventMuxer::breakpointCallback(EventPtr ev)
         return ret;
     }
 
-    DEFAULT_RETURN;
-}
-
-PCEventMuxer::cb_ret_t
-PCEventMuxer::RPCCallback(EventPtr ev)
-{
-    INITIAL_MUXING;
-    EventRPC::const_ptr    evRPC = ev->getEventRPC();
-    inferiorRPCinProgress* rpcInProg =
-        static_cast<inferiorRPCinProgress*>(evRPC->getIRPC()->getData());
-    if(!rpcInProg)
-    {
-        // Not us!
-        return ret;
-    }
-
-    if(rpcInProg->resultRegister == REG_NULL)
-    {
+    if( rpcInProg->resultRegister == Null_Register ) {
         // If the resultRegister isn't set, the returnValue shouldn't matter
         rpcInProg->returnValue = NULL;
     }

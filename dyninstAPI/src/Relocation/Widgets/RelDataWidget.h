@@ -31,7 +31,8 @@
 #if !defined(_PATCHAPI_REL_DATA_ATOM_H_)
 #    define _PATCHAPI_REL_DATA_ATOM_H_
 
-#    include "Widget.h"
+#include <string>
+#include "Widget.h"
 class block_instance;
 
 namespace Dyninst
@@ -54,22 +55,37 @@ public:
 
     virtual ~RelDataWidget() {}
 
-    virtual std::string format() const;
-    virtual unsigned    size() const { return insn_.size(); }
-    virtual Address     addr() const { return addr_; }
+ private:
+   RelDataWidget(InstructionAPI::Instruction insn,
+				 Address addr,
+				 Address target) : insn_(insn), addr_(addr), target_(target) {}
+
+   InstructionAPI::Instruction insn_;
+   Address addr_;
+   Address target_;
+   // Read vs. write doesn't matter now but might
+   // in the future.
+};
+
+
+struct RelDataPatch : public Patch {
+  RelDataPatch(InstructionAPI::Instruction a, Address b, Address o) :
+   orig_insn(a), target_addr(b), orig(o) {}
+  
+  virtual bool apply(codeGen &gen, CodeBuffer *buffer);
+  virtual unsigned estimate(codeGen &templ);
+  virtual ~RelDataPatch() {}
+
+  void setFunc(func_instance *_func) { func = _func; }
+  void setBlock(block_instance *_block) { block = _block; }
+  
+  InstructionAPI::Instruction orig_insn;
+  Address target_addr{};
+  Address orig{};
 
 private:
-    RelDataWidget(InstructionAPI::Instruction insn, Address addr, Address target)
-    : insn_(insn)
-    , addr_(addr)
-    , target_(target)
-    {}
-
-    InstructionAPI::Instruction insn_;
-    Address                     addr_;
-    Address                     target_;
-    // Read vs. write doesn't matter now but might
-    // in the future.
+  func_instance *func{};
+  block_instance *block{};
 };
 
 struct RelDataPatch : public Patch

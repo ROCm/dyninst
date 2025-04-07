@@ -31,6 +31,10 @@
 #ifndef _BPatch_basicBlock_h_
 #define _BPatch_basicBlock_h_
 
+#include <iosfwd>
+#include <set>
+#include <utility>
+#include <vector>
 #include "BPatch_dll.h"
 #include "BPatch_Vector.h"
 #include "BPatch_Set.h"
@@ -38,6 +42,7 @@
 #include "BPatch_instruction.h"
 #include "Instruction.h"
 #include "BPatch_enums.h"
+#include "dyntypes.h"
 //#include "BPatch_edge.h"
 
 class image;
@@ -98,10 +103,12 @@ struct comparison<BPatch_basicBlock*>
 class BPatch_flowGraph;
 
 struct BPATCH_DLL_EXPORT insnPredicate
-: public std::unary_function<Dyninst::InstructionAPI::Instruction, bool>
 {
-    virtual result_type operator()(argument_type arg) = 0;
-    virtual ~insnPredicate() {}
+  using result_type = bool;
+  using argument_type = Dyninst::InstructionAPI::Instruction;
+  virtual result_type operator()(argument_type arg) = 0;
+  virtual ~insnPredicate() {}
+    
 };
 
 class BPATCH_DLL_EXPORT BPatch_basicBlock

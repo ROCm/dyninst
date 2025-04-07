@@ -41,8 +41,10 @@
 #include "BPatch_enums.h"
 #include "BPatch_callbacks.h"
 #include <set>
-
+#include <string>
+#include "dyntypes.h"
 #include "dyninstversion.h"
+#include "compiler_diagnostics.h"
 
 class BPatch_typeCollection;
 class BPatch_libInfo;
@@ -73,10 +75,6 @@ class func_instance;
 #define DYNINST_MINOR DYNINST_MINOR_VERSION
 #define DYNINST_SUBMINOR DYNINST_PATCH_VERSION
 
-#ifdef _MSC_VER
-#    pragma warning(push)
-#    pragma warning(disable : 4251)
-#endif
 
 //  BPatch_stats is a collection of instrumentation statistics.
 //  Introduced to export this information to paradyn, which
@@ -458,7 +456,8 @@ public:
     //  BPatch::setTypeChecking:
     //  Turn on/off line info truncating
 
-    void truncateLineInfoFilenames(bool x);
+    DYNINST_DEPRECATED("Does nothing")
+    void truncateLineInfoFilenames(bool);
 
     //  BPatch::setTrampRecursive:
     //  Turn on/off recursive trampolines
@@ -625,8 +624,5 @@ public:
     void addNonReturningFunc(std::string name);
 };
 
-#ifdef _MSC_VER
-#    pragma warning(pop)
-#endif
 
 #endif /* _BPatch_h_ */

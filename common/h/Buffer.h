@@ -30,14 +30,14 @@
 #if !defined(_BUFFER_H_)
 #    define _BUFFER_H_
 
-#    include <assert.h>
-#    include <string.h>
-#    include "util.h"
-#    include "dyntypes.h"
+#include <assert.h>
+#include <string.h>
+#include "util.h"
+#include "dyntypes.h"
+#include "unaligned_memory_access.h"
+namespace Dyninst {
 
-namespace Dyninst
-{
-// A class to support multiple forms of code generation. The design of this class is as
+// A class to support multiple forms of code generation. The design of this class is as 
 // a tiered model:
 
 // Tier 1: A buffer of bytes that represent position-dependent executable code
@@ -74,16 +74,14 @@ public:
     {
         friend class Buffer;
 
-    public:
-        iterator()
-        : pos((storage*) -1)
-        {}
-        ~iterator() {}
-        storage operator*() const
-        {
-            assert(valid);
-            return *pos;
-        }
+     public:
+     iterator() : pos((storage *)-1) {}
+      ~iterator() {}
+      iterator(const iterator&) = default;
+      storage operator*() const {
+         assert(valid);
+         return *pos;
+      }
 
         bool operator==(const iterator<storage>& rhs) const { return rhs.pos == pos; }
         bool operator!=(const iterator<storage>& rhs) const { return rhs.pos != pos; }
@@ -151,17 +149,15 @@ Buffer::copy(InputIterator begin, InputIterator end)
     }
 }
 
-template <class Input>
-void
-Buffer::push_back(const Input& i)
-{
-    if(size_ + sizeof(i) >= max_)
-    {
-        increase_allocation(sizeof(i));
-    }
-    Input* ptr = (Input*) cur_ptr();
-    *ptr       = i;
-    size_ += sizeof(i);
+
+
+template <class Input> 
+   void Buffer::push_back(const Input &i) {
+   if (size_ + sizeof(i) >= max_) {
+      increase_allocation(sizeof(i));
+   }
+   write_memory_as(cur_ptr(), i);
+   size_ += sizeof(i);
 }
 
 }  // namespace Dyninst

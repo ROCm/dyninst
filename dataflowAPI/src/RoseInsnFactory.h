@@ -27,29 +27,25 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-#pragma once
 
 #if !defined(_ROSE_INSN_FACTORY_H_)
 #    define _ROSE_INSN_FACTORY_H_
 
-#    include "entryIDs.h"
-#    include "external/rose/rose-compat.h"
-#    include "external/rose/powerpcInstructionEnum.h"
-#    include "external/rose/armv8InstructionEnum.h"
-#    include "external/rose/amdgpuInstructionEnum.h"
-#    include "Visitor.h"
-#    include "Instruction.h"
-#    include "common/h/util.h"
-#    include "boost/shared_ptr.hpp"
-#    include <vector>
-
-#    if defined(_MSC_VER)
-#        include "external/stdint-win.h"
-#    else
+#include "entryIDs.h"
+#include "external/rose/rose-compat.h"
+#include "external/rose/powerpcInstructionEnum.h"
+#include "external/rose/armv8InstructionEnum.h"
+#include "external/rose/amdgpuInstructionEnum.h"
+#include "Visitor.h"
+#include "Instruction.h"
+#include "common/h/util.h"
+#include "boost/shared_ptr.hpp"
+#include <vector>
+#include <stddef.h>
+#include <string>
 
 #        include <stdint.h>
 
-#    endif
 
 class SgAsmInstruction;
 
@@ -84,17 +80,16 @@ class Operand;
 class Instruction;
 }  // namespace InstructionAPI
 
-namespace DataflowAPI
-{
-class RoseInsnFactory
-{
-protected:
-    typedef boost::shared_ptr<InstructionAPI::Expression>  ExpressionPtr;
-    typedef boost::shared_ptr<InstructionAPI::Instruction> InstructionPtr;
-    uint64_t                                               _addr = 0;
+    namespace DataflowAPI {
+        class RoseInsnFactory {
+        protected:
+            typedef boost::shared_ptr<InstructionAPI::Expression> ExpressionPtr;
+            typedef boost::shared_ptr<InstructionAPI::Instruction> InstructionPtr;
+            uint64_t _addr = 0 ;
+        public:
+            DATAFLOW_EXPORT RoseInsnFactory(void) { }
 
-public:
-    DATAFLOW_EXPORT RoseInsnFactory(void){};
+            DATAFLOW_EXPORT virtual ~RoseInsnFactory(void) { }
 
     DATAFLOW_EXPORT virtual ~RoseInsnFactory(void){};
 
@@ -118,10 +113,112 @@ protected:
     virtual SgAsmExpression* convertOperand(const ExpressionPtr expression, int64_t addr,
                                             size_t insnSize);
 
-    friend class ExpressionConversionVisitor;
+            virtual Architecture arch() { return Arch_none; }
+        };
 
-    virtual Architecture arch() { return Arch_none; };
-};
+        class RoseInsnX86Factory : public RoseInsnFactory {
+        public:
+            DATAFLOW_EXPORT RoseInsnX86Factory(Architecture arch) : a(arch) { }
+
+            DATAFLOW_EXPORT virtual ~RoseInsnX86Factory() { }
+
+        private:
+            Architecture a;
+
+            virtual SgAsmInstruction *createInsn();
+
+            virtual void setOpcode(SgAsmInstruction *insn, entryID opcode, prefixEntryID prefix, std::string mnem);
+
+            virtual void setSizes(SgAsmInstruction *insn);
+
+            virtual bool handleSpecialCases(entryID opcode, SgAsmInstruction *rinsn, SgAsmOperandList *roperands);
+
+            virtual void massageOperands(const InstructionAPI::Instruction &insn,
+                                         std::vector<InstructionAPI::Operand> &operands);
+
+            X86InstructionKind convertKind(entryID opcode, prefixEntryID prefix);
+
+            virtual Architecture arch() { return a; }
+        };
+
+        class RoseInsnPPCFactory : public RoseInsnFactory {
+        public:
+            DATAFLOW_EXPORT RoseInsnPPCFactory(void) { }
+
+            DATAFLOW_EXPORT virtual ~RoseInsnPPCFactory(void) { }
+
+        private:
+            virtual SgAsmInstruction *createInsn();
+
+            virtual void setOpcode(SgAsmInstruction *insn, entryID opcode, prefixEntryID prefix, std::string mnem);
+
+            virtual void setSizes(SgAsmInstruction *insn);
+
+            virtual bool handleSpecialCases(entryID opcode, SgAsmInstruction *rinsn, SgAsmOperandList *roperands);
+
+            virtual void massageOperands(const InstructionAPI::Instruction &insn,
+                                         std::vector<InstructionAPI::Operand> &operands);
+
+            PowerpcInstructionKind convertKind(entryID opcode, std::string mnem);
+
+            PowerpcInstructionKind makeRoseBranchOpcode(entryID iapi_opcode, bool isAbsolute, bool isLink);
+
+            virtual Architecture arch() { return Arch_ppc32; }
+            PowerpcInstructionKind kind;
+        };
+
+        class RoseInsnArmv8Factory : public RoseInsnFactory {
+        public:
+            DATAFLOW_EXPORT RoseInsnArmv8Factory(Architecture arch) : a(arch) { }
+
+            DATAFLOW_EXPORT virtual ~RoseInsnArmv8Factory() { }
+
+        private:
+            Architecture a;
+
+            virtual SgAsmInstruction *createInsn();
+
+            virtual void setOpcode(SgAsmInstruction *insn, entryID opcode, prefixEntryID prefix, std::string mnem);
+
+            virtual bool handleSpecialCases(entryID opcode, SgAsmInstruction *rinsn, SgAsmOperandList *roperands);
+
+            virtual void massageOperands(const InstructionAPI::Instruction &insn,
+                                         std::vector<InstructionAPI::Operand> &operands);
+
+            virtual void setSizes(SgAsmInstruction *insn);
+
+            ARMv8InstructionKind convertKind(entryID opcode);
+
+            virtual Architecture arch() { return a; }
+        };
+
+        class RoseInsnAMDGPUFactory : public RoseInsnFactory {
+        public:
+            DATAFLOW_EXPORT RoseInsnAMDGPUFactory(Architecture arch) : a(arch) { }
+
+            DATAFLOW_EXPORT virtual ~RoseInsnAMDGPUFactory() { }
+
+        private:
+            Architecture a;
+
+            virtual SgAsmInstruction *createInsn();
+
+            virtual void setOpcode(SgAsmInstruction *insn, entryID opcode, prefixEntryID prefix, std::string mnem);
+
+            virtual bool handleSpecialCases(entryID opcode, SgAsmInstruction *rinsn, SgAsmOperandList *roperands);
+
+            virtual void massageOperands(const InstructionAPI::Instruction &insn,
+                                         std::vector<InstructionAPI::Operand> &operands );
+
+            virtual void setSizes(SgAsmInstruction *insn);
+
+            AMDGPUInstructionKind convertKind(entryID opcode);
+
+            virtual Architecture arch() { return a; }
+        };
+       
+    }
+}
 
 class RoseInsnX86Factory : public RoseInsnFactory
 {

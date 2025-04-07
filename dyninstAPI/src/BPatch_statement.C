@@ -30,7 +30,7 @@
 
 #include "BPatch_statement.h"
 #include "BPatch_module.h"
-#include "Module.h"
+#include "Statement.h"
 #include "mapped_object.h"
 #include "mapped_module.h"
 BPatch_statement::BPatch_statement(BPatch_module*                          mod,

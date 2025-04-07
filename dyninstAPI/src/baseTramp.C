@@ -196,12 +196,11 @@ baseTramp::shouldRegenBaseTramp(registerSpace* rs)
     return (saved_unneeded != 0);
 }
 
-bool
-baseTramp::generateCode(codeGen& gen, Address baseInMutatee)
-{
-    inst_printf("baseTramp %p ::generateCode(%p, 0x%lx, %u)\n", (void*) this,
-                gen.start_ptr(), baseInMutatee, gen.used());
-    initializeFlags();
+bool baseTramp::generateCode(codeGen &gen,
+                             Dyninst::Address baseInMutatee) {
+   inst_printf("baseTramp %p ::generateCode(%p, 0x%lx, %u)\n",
+               (void*)this, gen.start_ptr(), baseInMutatee, gen.used());
+   initializeFlags();
 
     doOptimizations();
 
@@ -275,8 +274,130 @@ baseTramp::generateCode(codeGen& gen, Address baseInMutatee)
 #include "BPatch.h"
 #include "BPatch_collections.h"
 
-bool
-baseTramp::generateCodeInlined(codeGen& gen, Address)
+bool baseTramp::generateCodeInlined(codeGen &gen,
+                                    Dyninst::Address) {
+   // We're generating something like so:
+   //
+   // <Save state>
+   // <If>
+   //    <compare>
+   //      <load>
+   //        <add>
+   //          <tramp guard addr>
+   //          <multiply>
+   //            <thread index>
+   //            <sizeof (int)>
+   //      <0>
+   //    <sequence>
+   //      <store>
+   //        <... tramp guard addr>
+   //        <1>
+   //      <mini tramp sequence>
+   //      <store>
+   //        <... tramp guard addr>
+   //        <0>
+   // <Cost section>
+   // <Load state>
+
+   // Break it down...
+   // <Save state>
+   //   -- TODO: an AST for saves that knows how many registers
+   //      we're using...
+
+   // Now we start building up the ASTs to generate. Let's get the
+   // pieces.
+
+   // Specialize for the instPoint...
+	
+   gen.setRegisterSpace(registerSpace::actualRegSpace(instP()));
+
+   std::vector<AstNodePtr> miniTramps;
+
+   if (point_) {
+      for (instPoint::instance_iter iter = point_->begin(); 
+           iter != point_->end(); ++iter) {
+         AstNodePtr ast = DCAST_AST((*iter)->snippet());
+         if (ast) 
+            miniTramps.push_back(ast);
+         else
+            miniTramps.push_back(AstNode::snippetNode((*iter)->snippet()));
+      }
+   }
+   else {
+      miniTramps.push_back(ast_);
+   }
+
+   AstNodePtr minis = AstNode::sequenceNode(miniTramps);
+
+   AstNodePtr baseTrampSequence;
+   std::vector<AstNodePtr > baseTrampElements;
+
+    
+   // Run the minitramps
+   baseTrampElements.push_back(minis);
+   vector<AstNodePtr> empty_args;
+    
+   if (guarded() &&
+       minis->containsFuncCall()) {
+     baseTrampElements.push_back(AstNode::funcCallNode("DYNINST_unlock_tramp_guard", empty_args));
+   }
+
+   baseTrampSequence = AstNode::sequenceNode(baseTrampElements);
+
+   AstNodePtr baseTrampAST;
+
+   // If trampAddr is non-NULL, then we wrap this with an IF. If not, 
+   // we just run the minitramps.
+   if (guarded() &&
+       minis->containsFuncCall()) {
+      baseTrampAST = AstNode::operatorNode(ifOp,
+                                           // trampGuardAddr,
+					   AstNode::funcCallNode("DYNINST_lock_tramp_guard", empty_args),
+                                           baseTrampSequence);
+   }
+   else {
+      baseTrampAST = baseTrampSequence;
+      baseTrampSequence.reset();
+   }
+
+
+
+   // Sets up state in the codeGen object (and gen.rs())
+   // that is later used when saving and restoring. This
+   // MUST HAPPEN BEFORE THE SAVES, and state should not
+   // be reset until AFTER THE RESTORES.
+   bool retval = baseTrampAST->initRegisters(gen);
+   if (!gen.insertNaked()) {
+       generateSaves(gen, gen.rs());
+   }
+
+   if (!baseTrampAST->generateCode(gen, false)) {
+      fprintf(stderr, "Gripe: base tramp creation failed\n");
+      retval = false;
+   }
+
+   if (!gen.insertNaked()) {
+       generateRestores(gen, gen.rs());
+   }
+
+   // And now to clean up after us
+   //if (minis) delete minis;
+   //if (trampGuardAddr) delete trampGuardAddr;
+   //if (baseTrampSequence) delete baseTrampSequence;
+   //if (baseTramp) delete baseTramp;
+
+   return retval;
+}
+
+AddressSpace *baseTramp::proc() const { 
+   if (point_)
+      return point_->proc();
+   if (as_)
+       return as_;
+   return NULL;
+}
+
+bool baseTramp::checkForFuncCalls()
 {
     // We're generating something like so:
     //
@@ -521,71 +642,32 @@ baseTramp::makesCall()
     if(checkForFuncCalls())
         return true;
 
-    return false;
-}
+   // See if any of our miniTramps are guarded
+   /*
+   for (instPoint::iterator iter = point_->begin(); 
+        iter != point_->end(); ++iter) {
+      if ((*iter)->recursive())
+         recursive = true;
+      else
+         guarded = true;
+   }
+   */
+   for (instPoint::instance_iter iter = point_->begin(); 
+        iter != point_->end(); ++iter) {
+      if ((*iter)->recursiveGuardEnabled()) {
+         guarded = true;
+      }
+      else {
+         recursive = true;
+      }
+   }
 
-bool
-baseTramp::saveFPRs()
-{
-    // Assume FPRs dead at function entry/exit/call,
-    // live at anything else.
-    if(!point_)
-    {
-        return true;
-    }
-
-    switch(point()->type())
-    {
-        case instPoint::FuncEntry:
-        case instPoint::FuncExit:
-        case instPoint::PreCall:
-        case instPoint::PostCall:
-            return false;
-        default:
-            return true;
-    }
-}
-
-bool
-baseTramp::guarded() const
-{
-    if(suppressGuards)
-        return false;
-    if(!point_)
-        return false;  // iRPCs never guarded
-
-    bool guarded   = false;
-    bool recursive = false;
-
-    // See if any of our miniTramps are guarded
-    /*
-    for (instPoint::iterator iter = point_->begin();
-         iter != point_->end(); ++iter) {
-       if ((*iter)->recursive())
-          recursive = true;
-       else
-          guarded = true;
-    }
-    */
-    for(instPoint::instance_iter iter = point_->begin(); iter != point_->end(); ++iter)
-    {
-        if((*iter)->recursiveGuardEnabled())
-        {
-            guarded = true;
-        }
-        else
-        {
-            recursive = true;
-        }
-    }
-
-    if(recursive && guarded)
-    {
-        cerr << "Warning: mix of recursive and guarded snippets @ " << point_
-             << ", picking guarded" << endl;
-        return true;
-    }
-    if(guarded)
-        return true;
-    return false;
+   if (recursive && guarded) {
+	  inst_printf(
+	    "Warning: mix of recursive and guarded snippets @ %p, picking guarded \n",
+		static_cast<void*>(point_));
+      return true;
+   }
+   if (guarded) return true;
+   return false;
 }

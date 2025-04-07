@@ -33,9 +33,12 @@
  * RTlinux.c: mutatee-side library function specific to Linux
  ************************************************************************/
 
+#define _GNU_SOURCE
+
 #include "dyninstAPI_RT/h/dyninstAPI_RT.h"
 #include "dyninstAPI_RT/src/RTthread.h"
 #include "dyninstAPI_RT/src/RTcommon.h"
+#include "unaligned_memory_access.h"
 #include <assert.h>
 #include <stdio.h>
 #include <errno.h>
@@ -113,8 +116,7 @@ t_kill(int pid, int sig)
     return (result == 0);
 }
 
-void
-DYNINSTbreakPoint()
+void DYNINSTbreakPoint(void)
 {
     if(DYNINSTstaticMode)
         return;
@@ -131,8 +133,7 @@ uncaught_breakpoint(int sig)
     failed_breakpoint = 1;
 }
 
-void
-DYNINSTsafeBreakPoint()
+void DYNINSTsafeBreakPoint(void)
 {
     if(DYNINSTstaticMode)
         return;
@@ -142,17 +143,14 @@ DYNINSTsafeBreakPoint()
     kill(dyn_lwp_self(), SIGSTOP);
 }
 
-void
-mark_heaps_exec()
-{
-    /* Grab the page size, to align the heap pointer. */
-    long int pageSize = sysconf(_SC_PAGESIZE);
-    if(pageSize == 0 || pageSize == -1)
-    {
-        fprintf(stderr, "*** Failed to obtain page size, guessing 16K.\n");
-        perror("mark_heaps_exec");
-        pageSize = 1024 * 16;
-    } /* end pageSize initialization */
+void mark_heaps_exec(void) {
+	/* Grab the page size, to align the heap pointer. */
+	long int pageSize = sysconf( _SC_PAGESIZE );
+	if( pageSize == 0 || pageSize == - 1 ) {
+		fprintf( stderr, "*** Failed to obtain page size, guessing 16K.\n" );
+		perror( "mark_heaps_exec" );
+		pageSize = 1024 * 16;
+		} /* end pageSize initialization */
 
     /* Align the heap pointer. */
     unsigned long int alignedHeapPointer =
@@ -216,8 +214,21 @@ typedef struct dlopen_args
 
 void* (*DYNINST_do_dlopen)(dlopen_args_t*) = NULL;
 
-static int
-get_dlopen_error()
+static int get_dlopen_error(void) {
+   char *err_str;
+   err_str = dlerror();
+   if (err_str) {
+      strncpy(gLoadLibraryErrorString, err_str, (size_t) ERROR_STRING_LENGTH);
+      return 1;
+   }
+   else {
+      sprintf(gLoadLibraryErrorString,"unknown error with dlopen");
+      return 0;
+   }
+   return 0;
+}
+
+int DYNINSTloadLibrary(char *libname)
 {
     char* err_str;
     err_str = dlerror();
@@ -291,8 +302,7 @@ DYNINSTloadLibrary(char* libname)
 
 #endif
 
-int
-dyn_lwp_self()
+int dyn_lwp_self(void)
 {
     static int gettid_not_valid = 0;
     int        result;
@@ -309,16 +319,14 @@ dyn_lwp_self()
     return result;
 }
 
-int
-dyn_pid_self()
+int dyn_pid_self(void)
 {
     return getpid();
 }
 
 dyntid_t (*DYNINST_pthread_self)(void);
 
-dyntid_t
-dyn_pthread_self()
+dyntid_t dyn_pthread_self(void)
 {
     dyntid_t me;
     if(DYNINSTstaticMode)
@@ -365,25 +373,23 @@ DYNINST_am_initial_thread(dyntid_t tid)
 
 // Register numbers experimentally verified
 
-#    if defined(arch_x86)
-#        define UC_PC(x) x->uc_mcontext.gregs[14]
-#    elif defined(arch_x86_64)
-#        if defined(MUTATEE_32)
-#            define UC_PC(x) x->uc_mcontext.gregs[14]
-#        else  // 64-bit
-#            define UC_PC(x) x->uc_mcontext.gregs[16]
-#        endif  // amd-64
-#    elif defined(arch_power)
-#        if defined(arch_64bit)
-#            define UC_PC(x) x->uc_mcontext.regs->nip
-#        else  // 32-bit
-#            define UC_PC(x) x->uc_mcontext.uc_regs->gregs[32]
-#        endif  // power
-#    elif defined(arch_aarch64)
-//#warning "UC_PC: in aarch64, pc is not directly accessable."
-// aarch64 pc is not one of 31 GPRs, but an independent reg
-#        define UC_PC(x) x->uc_mcontext.pc
-#    endif  // UC_PC
+#if defined(arch_x86)
+  #define UC_PC(x) x->uc_mcontext.gregs[14]
+#elif defined(arch_x86_64)
+  #if defined(MUTATEE_32)
+    #define UC_PC(x) x->uc_mcontext.gregs[14]
+  #else // 64-bit
+    #define UC_PC(x) x->uc_mcontext.gregs[16]
+  #endif // amd-64
+#elif defined(arch_power)
+  #if defined(arch_64bit)
+    #define UC_PC(x) x->uc_mcontext.regs->nip
+  #endif // power
+#elif defined(arch_aarch64)
+	//#warning "UC_PC: in aarch64, pc is not directly accessable."
+	//aarch64 pc is not one of 31 GPRs, but an independent reg
+	#define UC_PC(x) x->uc_mcontext.pc
+#endif // UC_PC
 
 extern volatile unsigned long  dyninstTrapTableUsed;
 extern volatile unsigned long  dyninstTrapTableVersion;
@@ -423,59 +429,38 @@ dyninstTrapHandler(int sig, siginfo_t* sg, ucontext_t* context)
     (void) sig; /* unused parameter */
     (void) sg;  /* unused parameter */
 
-    orig_ip = (void*) UC_PC(context);
-    assert(orig_ip);
-    // Find the new IP we're going to and substitute. Leave everything else untouched.
-    if(DYNINSTstaticMode)
-    {
-        unsigned long               zero = 0;
-        unsigned long               one  = 1;
-        struct trap_mapping_header* hdr  = getStaticTrapMap((unsigned long) orig_ip);
-        assert(hdr);
-        volatile trapMapping_t* mapping = &(hdr->traps[0]);
-        trap_to = dyninstTrapTranslate(orig_ip, (unsigned long*) &hdr->num_entries, &zero,
-                                       &mapping, &one);
-    }
-    else
-    {
-        trap_to =
-            dyninstTrapTranslate(orig_ip, &dyninstTrapTableUsed, &dyninstTrapTableVersion,
-                                 &dyninstTrapTable, &dyninstTrapTableIsSorted);
-    }
-    UC_PC(context) = (long) trap_to;
+   orig_ip = (void *) UC_PC(context);
+   assert(orig_ip);
+   // Find the new IP we're going to and substitute. Leave everything else untouched.
+   if (DYNINSTstaticMode) {
+      unsigned long zero = 0;
+      unsigned long one = 1;
+      struct trap_mapping_header *hdr = getStaticTrapMap((unsigned long) orig_ip);
+      assert(hdr);
+      volatile trapMapping_t *mapping = &(hdr->traps[0]);
+      trap_to = dyninstTrapTranslate(orig_ip,
+                                     CAST_WITHOUT_ALIGNMENT_WARNING(unsigned long *, &hdr->num_entries),
+                                     &zero,
+                                     &mapping,
+                                     &one);
+   }
+   else {
+      trap_to = dyninstTrapTranslate(orig_ip,
+                                     &dyninstTrapTableUsed,
+                                     &dyninstTrapTableVersion,
+                                     &dyninstTrapTable,
+                                     &dyninstTrapTableIsSorted);
+
+   }
+   UC_PC(context) = (long) trap_to;
 }
 
 #    if defined(cap_binary_rewriter)
 
-extern struct r_debug    _r_debug;
-// Remove because of an issue with glibc-2.35+ switching to namespaces.
-// Previously there was a dynamic relocation against _r_debug in the loader which
-// picked up the interposed definition, but glibc now uses a direct internal hidden
-// symbol reference and thus no longer updates the interposed object.
-//
-// DLLEXPORT struct r_debug _r_debug __attribute__((weak));
+extern struct r_debug _r_debug;
 
 /* Verify that the r_debug variable is visible */
-void
-r_debugCheck()
-{
-#        define LIBC_VERSION_BUFFER_LENGTH 1024
-    char _version_s[LIBC_VERSION_BUFFER_LENGTH];
-    snprintf(_version_s, LIBC_VERSION_BUFFER_LENGTH, "%s", gnu_get_libc_version());
-    unsigned long _version[2];
-    unsigned long idx = 0;
-    char* token = strtok(_version_s, ".");
-    while(token != NULL && idx < 2)
-    {
-        _version[idx++] = atol(token);
-        token = strtok(NULL, ".");
-    }
-    if(_version[0] < 2 || (_version[0] == 2 && _version[1] < 35))
-    {
-        assert(_r_debug.r_map);
-    }
-#        undef LIBC_VERSION_BUFFER_LENGTH
-}
+void r_debugCheck(void) { assert(_r_debug.r_map); }
 
 #        define NUM_LIBRARIES 512  // Important, max number of rewritten libraries
 
@@ -496,12 +481,9 @@ getStaticTrapMap(unsigned long addr);
 static unsigned all_headers_current[NUM_LIBRARIES_BITMASK_SIZE];
 static unsigned all_headers_last[NUM_LIBRARIES_BITMASK_SIZE];
 
-static int
-parse_libs();
-static int
-parse_link_map(struct link_map* l);
-static void
-clear_unloaded_libs();
+static int parse_libs(void);
+static int parse_link_map(struct link_map *l);
+static void clear_unloaded_libs(void);
 
 static void
 set_bit(unsigned* bit_mask, int bit, char value);
@@ -555,9 +537,8 @@ done:
 #        endif
 }
 
-#        if !defined(arch_aarch64)
-static int
-parse_libs()
+#if !defined (arch_aarch64)
+static int parse_libs(void)
 {
     struct link_map* l_current;
 
@@ -644,8 +625,7 @@ parse_link_map(struct link_map* l)
     return PARSED;
 }
 
-static void
-clear_unloaded_libs()
+static void clear_unloaded_libs(void)
 {
     unsigned i;
     for(i = 0; i < NUM_LIBRARIES_BITMASK_SIZE; i++)
@@ -762,14 +742,10 @@ get_next_set_bitmask(unsigned* bit_mask, int last_pos)
  * the binary. Leaving this code in would create a global constructor for the
  * function runDYNINSTBaseInit(). See DYNINSTglobal_ctors_handler.
  */
-extern void
-r_debugCheck();
-extern void
-DYNINSTBaseInit();
-void
-runDYNINSTBaseInit() __attribute__((constructor));
-void
-runDYNINSTBaseInit()
+extern void r_debugCheck(void);
+extern void DYNINSTBaseInit(void);
+void runDYNINSTBaseInit(void) __attribute__((constructor));
+void runDYNINSTBaseInit(void)
 {
     r_debugCheck();
     DYNINSTBaseInit();

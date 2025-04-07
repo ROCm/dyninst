@@ -1,12 +1,5 @@
 # Dyninst
 
-## Branch states
-
-| Branch                                  | Status        | Notes                                              |
-| --------------------------------------- |:-------------:|:--------------------------------------------------:|
-| master                                  | stable        | See below                                          |
-| aarch32                                 | experimental  | Contact Ray Chen (rchen at cs dot umd dot edu)     |
-
 ## Notes
 
 * Known issues should have open issues associated with them.
@@ -14,6 +7,14 @@
   For more details about current supported functionality refer to [Dyninst Support for the ARMv8 (64 bit)](https://github.com/dyninst/dyninst/wiki/DyninstAPI-ARMv8-status).
 
 ## Build DyninstAPI and its subcomponents
+
+### Docker Containers
+
+Containers are provided that can be used for Dyninst development (e.g., make changes to Dyninst and quickly rebuild it)
+or for development of your own tools (e.g., have a container ready to go with Dyninst). Links will be added
+here when the containers are pushed to the Dyninst associated package registries. Instructions for usage
+and building locally are provided in the [docker](docker) directory.
+
 
 ### Install with Spack
 
@@ -24,9 +25,6 @@
 1. Configure Dyninst with CMake
 
 	```cmake /path/to/dyninst/source -DCMAKE_INSTALL_PREFIX=/path/to/installation```
-
-
-	**NOTE:** If Dyninst builds TBB from source, see the [wiki](https://github.com/dyninst/dyninst/wiki/third-party-deps#tbb_correct_linking) for instructions on ensuring correct usage.
 
 2. Build and install Dyninst in parallel
 

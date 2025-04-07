@@ -38,10 +38,9 @@
 #    define LINUX_PD_HDR
 class PCProcess;
 
-#    include "common/src/Types.h"
-#    include "common/src/linuxKludges.h"
-#    include "symtabAPI/h/Symtab.h"
-#    include "symtabAPI/h/Archive.h"
+#include "common/src/linuxKludges.h"
+#include "symtabAPI/h/Symtab.h"
+#include "symtabAPI/h/Archive.h"
 
 #    define EXIT_NAME "_exit"
 

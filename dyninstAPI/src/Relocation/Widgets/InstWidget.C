@@ -31,12 +31,13 @@
 #include "InstWidget.h"
 #include "dyninstAPI/src/baseTramp.h"
 #include "dyninstAPI/src/instPoint.h"
-#include "../dyninstAPI/src/debug.h"
+#include "dyninstAPI/src/debug.h"
 #include "CFG.h"
 
 #include "../CodeTracker.h"
 #include "../CodeBuffer.h"
 #include <string>
+#include <iostream>
 
 using namespace Dyninst;
 using namespace Relocation;
@@ -86,11 +87,8 @@ InstWidget::format() const
 }
 
 // Could be a lot smarter here...
-bool
-InstWidgetPatch::apply(codeGen& gen, CodeBuffer*)
-{
-    relocation_cerr << "\t\t InstWidgetPatch::apply " << this << " /w/ tramp " << tramp
-                    << endl;
+bool InstWidgetPatch::apply(codeGen &gen, CodeBuffer *) {
+   relocation_cerr << "\t\t InstWidgetPatch::apply " << this << " /w/ tramp " << tramp << std::endl;
 
     gen.registerInstrumentation(tramp, gen.currAddr());
     bool ret = tramp->generateCode(gen, gen.currAddr());

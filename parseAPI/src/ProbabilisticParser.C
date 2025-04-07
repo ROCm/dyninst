@@ -38,10 +38,10 @@
 #    include <queue>
 #    include <iostream>
 
-#    include "entryIDs.h"
-#    include "dyn_regs.h"
-#    include "InstructionDecoder.h"
-#    include "Instruction.h"
+#include "entryIDs.h"
+#include "registers/x86_64_regs.h"
+#include "InstructionDecoder.h"
+#include "Instruction.h"
 
 using namespace std;
 using namespace Dyninst;

@@ -31,12 +31,11 @@
 #if !defined(_R_T_BASE_H_)
 #    define _R_T_BASE_H_
 
-#    include "common/src/Types.h"  // Address
-#    include <list>
-#    include <map>
-#    include <stack>
-#    include "parseAPI/h/CFG.h"
-#    include "boost/shared_ptr.hpp"
+#include <list>
+#include <map>
+#include <stack>
+#include "parseAPI/h/CFG.h"
+#include "boost/shared_ptr.hpp"
 
 class block_instance;
 class baseTramp;

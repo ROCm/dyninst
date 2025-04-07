@@ -4,25 +4,42 @@
 
 #include "ArchSpecificFormatters.h"
 #include <algorithm>
+#include <iterator>
 #include <sstream>
 #include <iostream>
 
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/shared_ptr.hpp>
+#include "../../common/h/compiler_diagnostics.h"
+#include "Architecture.h"
+#include "registers/AMDGPU/amdgpu_gfx908_regs.h"
+#include "registers/AMDGPU/amdgpu_gfx90a_regs.h"
+#include "registers/AMDGPU/amdgpu_gfx940_regs.h"
+
 
 using namespace Dyninst::InstructionAPI;
 
 ///////// Base Formatter
 
-std::string
-ArchSpecificFormatter::formatBinaryFunc(std::string left, std::string func,
-                                        std::string right)
+std::string ArchSpecificFormatter::getInstructionString(const std::vector<std::string> &operands) const
 {
+    // non-x86_64 operand formatter:  join non-empty operands strings with ", "
+    return boost::algorithm::join_if(operands, ", ", [](const std::string &op){return !op.empty();});
+}
+
+std::string ArchSpecificFormatter::formatBinaryFunc(const std::string &left, const std::string &func, const std::string &right) const  {
     // if(isAdd())
     // {
     return left + " " + func + " " + right;
     // } else retVal << "NOT VALID FOR AT&T";
+}
+
+bool ArchSpecificFormatter::operandPrintOrderReversed() const
+{
+    return false;
 }
 
 ///////////////////////////
@@ -31,21 +48,19 @@ ArchSpecificFormatter::formatBinaryFunc(std::string left, std::string func,
 
 PPCFormatter::PPCFormatter() {}
 
-std::string
-PPCFormatter::formatImmediate(std::string evalString)
-{
-    size_t       endPos;
-    long long    long_val = stoll(evalString, &endPos, 16);
-    signed short val      = static_cast<signed short>(long_val);
+std::string PPCFormatter::formatImmediate(const std::string &evalString) const  {
+    size_t endPos;
+    long long long_val = stoll(evalString, &endPos, 16);
+    signed short val = static_cast<signed short>(long_val);
     return std::to_string(val);
 }
 
-std::string
-PPCFormatter::formatRegister(std::string regName)
-{
-    if(regName == "ppc64::pc" || regName == "ppc64::ctr" || regName == "ppc64::lr" ||
-       regName == "ppc64::cr0")
-    {
+std::string PPCFormatter::formatRegister(const std::string &regName) const  {
+    if (regName == "ppc64::pc"  || 
+        regName == "ppc64::ctr" || 
+        regName == "ppc64::lr"  ||
+        regName == "ppc64::cr0") {
+
         return "";
     }
     std::string::size_type lastColon = regName.rfind(':');
@@ -59,9 +74,7 @@ PPCFormatter::formatRegister(std::string regName)
     return ret;
 }
 
-std::string
-PPCFormatter::formatDeref(std::string addrString)
-{
+std::string PPCFormatter::formatDeref(const std::string &addrString) const  {
     size_t commaPos = addrString.find(",");
     if(commaPos == std::string::npos || commaPos > addrString.length() - 2)
     {
@@ -72,32 +85,8 @@ PPCFormatter::formatDeref(std::string addrString)
     return offset + "(" + base + ")";
 }
 
-std::string
-PPCFormatter::getInstructionString(std::vector<std::string> operands)
-{
-    std::string out;
-
-    for(std::vector<std::string>::iterator itr = operands.begin(); itr != operands.end();
-        itr++)
-    {
-        if(*itr != "")
-        {
-            out += *itr;
-            if(itr != operands.end() - 1)
-            {
-                out += ", ";
-            }
-        }
-    }
-
-    return out;
-}
-
-std::string
-PPCFormatter::formatBinaryFunc(std::string left, std::string func, std::string right)
-{
-    if(left == "")
-    {
+std::string PPCFormatter::formatBinaryFunc(const std::string &left, const std::string &func, const std::string &right) const  {
+    if (left == "") {
         return right;
     }
     if(func == "+")
@@ -111,15 +100,11 @@ PPCFormatter::formatBinaryFunc(std::string left, std::string func, std::string r
 
 ArmFormatter::ArmFormatter() { binaryFuncModifier["<<"] = "lsl"; }
 
-std::string
-ArmFormatter::formatImmediate(std::string evalString)
-{
+std::string ArmFormatter::formatImmediate(const std::string &evalString) const  {
     return "0x" + evalString;
 }
 
-std::string
-ArmFormatter::formatRegister(std::string regName)
-{
+std::string ArmFormatter::formatRegister(const std::string &regName) const  {
     std::string::size_type substr = regName.rfind(':');
     std::string            ret    = regName;
 
@@ -133,9 +118,7 @@ ArmFormatter::formatRegister(std::string regName)
     return ret;
 }
 
-std::string
-ArmFormatter::formatDeref(std::string addrString)
-{
+std::string ArmFormatter::formatDeref(const std::string &addrString) const  {
     std::string out;
     size_t      pluspos = addrString.find("+");
 
@@ -157,27 +140,9 @@ ArmFormatter::formatDeref(std::string addrString)
     return out;
 }
 
-std::string
-ArmFormatter::getInstructionString(std::vector<std::string> operands)
-{
-    std::string out;
-
-    for(std::vector<std::string>::iterator itr = operands.begin(); itr != operands.end();
-        itr++)
-    {
-        out += *itr;
-        if(itr != operands.end() - 1)
-            out += ", ";
-    }
-
-    return out;
-}
-
-std::string
-ArmFormatter::formatBinaryFunc(std::string left, std::string func, std::string right)
-{
+std::string ArmFormatter::formatBinaryFunc(const std::string &left, const std::string &func, const std::string &right) const  {
     if(binaryFuncModifier.count(func) > 0)
-        return left + ", " + binaryFuncModifier[func] + " " + right;
+	    return left + ", " + binaryFuncModifier.at(func) + " " + right;
     /*else if(left == "PC")
         return right;*/
     else
@@ -188,24 +153,18 @@ ArmFormatter::formatBinaryFunc(std::string left, std::string func, std::string r
 
 AmdgpuFormatter::AmdgpuFormatter() { binaryFuncModifier["<<"] = "lsl"; }
 
-std::string
-AmdgpuFormatter::formatImmediate(std::string evalString)
-{
+std::string AmdgpuFormatter::formatImmediate(const std::string &evalString) const  {
     return "0x" + evalString;
 }
 
-std::string
-AmdgpuFormatter::formatRegister(std::string regName)
-{
+std::string AmdgpuFormatter::formatRegister(const std::string &regName) const  {
     std::string ret = regName;
     for(auto& c : ret)
         c = ::toupper(c);
     return ret;
 }
 
-std::string
-AmdgpuFormatter::formatDeref(std::string addrString)
-{
+std::string AmdgpuFormatter::formatDeref(const std::string &addrString) const  {
     std::string out;
     size_t      pluspos = addrString.find("+");
 
@@ -227,32 +186,99 @@ AmdgpuFormatter::formatDeref(std::string addrString)
     return out;
 }
 
-std::string
-AmdgpuFormatter::getInstructionString(std::vector<std::string> operands)
-{
-    std::string out;
-
-    for(std::vector<std::string>::iterator itr = operands.begin(); itr != operands.end();
-        itr++)
-    {
-        out += *itr;
-        if(itr != operands.end() - 1)
-            out += ", ";
-    }
-
-    return out;
-}
-
-std::string
-AmdgpuFormatter::formatBinaryFunc(std::string left, std::string func, std::string right)
-{
+std::string AmdgpuFormatter::formatBinaryFunc(const std::string &left, const std::string &func, const std::string &right) const  {
     if(binaryFuncModifier.count(func) > 0)
-        return "(" + left + ", " + binaryFuncModifier[func] + " " + right + ")";
+	    return "("+left + ", " + binaryFuncModifier.at(func) + " " + right+")";
     /*else if(left == "PC")
         return right;*/
     else
         return "(" + left + " " + func + " " + right + ")";
 }
+
+std::string AmdgpuFormatter::formatRegister(MachRegister  m_Reg, uint32_t m_num_elements, unsigned m_Low , unsigned m_High) {
+    std::string name = m_Reg.name();
+    std::string::size_type substr = name.rfind("::");
+    if(substr != std::string::npos){
+        name = name.substr(substr+2,name.length());
+    }
+    if( m_num_elements ==0 ){
+        return "";
+    }else if ( m_num_elements > 1){
+        uint32_t id = m_Reg & 0xff ;
+        uint32_t regClass = m_Reg.regClass();
+
+        uint32_t  size = m_num_elements;
+
+        DYNINST_DIAGNOSTIC_BEGIN_SUPPRESS_LOGICAL_OP
+
+        if(regClass == amdgpu_gfx908::SGPR || regClass == amdgpu_gfx90a::SGPR || 
+            regClass == amdgpu_gfx940::SGPR){
+            return "S["+std::to_string(id) + ":" + std::to_string(id+size-1)+"]";
+        }
+
+        if(regClass == amdgpu_gfx908::VGPR || regClass == amdgpu_gfx90a::VGPR || 
+            regClass == amdgpu_gfx940::VGPR){
+            return "V["+std::to_string(id) + ":" + std::to_string(id+size-1)+"]";
+        }
+
+        if(regClass == amdgpu_gfx908::ACC_VGPR || regClass == amdgpu_gfx90a::ACC_VGPR ||
+            regClass == amdgpu_gfx940::ACC_VGPR){
+            return "ACC["+std::to_string(id) + ":" + std::to_string(id+size-1)+"]";
+        }
+
+        DYNINST_DIAGNOSTIC_END_SUPPRESS_LOGICAL_OP
+
+        if(m_Reg == amdgpu_gfx908::vcc_lo || m_Reg == amdgpu_gfx90a::vcc_lo ||
+            m_Reg == amdgpu_gfx940::vcc_lo)
+            return "VCC";
+        if(m_Reg == amdgpu_gfx908::exec_lo || m_Reg == amdgpu_gfx90a::exec_lo || 
+            m_Reg == amdgpu_gfx940::exec_lo)
+            return "EXEC";
+
+
+    }else if ( m_High -m_Low > 32 && m_Reg.size()*8 != m_High - m_Low){
+
+        // Size of base register * 8 != m_High - mLow ( in bits) when we it is a register vector
+        uint32_t id = m_Reg & 0xff ;
+        uint32_t regClass = m_Reg.regClass();
+        uint32_t size = (m_High - m_Low ) / 32;
+
+        // Suppress warning (for compilers where it is a false positive)
+        // The values of the two *::SGPR constants are identical, as
+        // are the two *::VGPR constants
+        DYNINST_DIAGNOSTIC_BEGIN_SUPPRESS_LOGICAL_OP
+
+        if(regClass == amdgpu_gfx908::SGPR || regClass == amdgpu_gfx90a::SGPR ||
+            regClass == amdgpu_gfx940::SGPR){
+            return "S["+std::to_string(id) + ":" + std::to_string(id+size-1)+"]";
+        }
+
+        if(regClass == amdgpu_gfx908::VGPR || regClass == amdgpu_gfx90a::VGPR || 
+            regClass == amdgpu_gfx940::VGPR){
+            return "V["+std::to_string(id) + ":" + std::to_string(id+size-1)+"]";
+        }
+
+        if(regClass == amdgpu_gfx908::ACC_VGPR || regClass == amdgpu_gfx90a::ACC_VGPR ||
+            regClass == amdgpu_gfx940::ACC_VGPR){
+            return "ACC["+std::to_string(id) + ":" + std::to_string(id+size-1)+"]";
+        }
+
+        DYNINST_DIAGNOSTIC_END_SUPPRESS_LOGICAL_OP
+
+        if(m_Reg == amdgpu_gfx908::vcc_lo || m_Reg == amdgpu_gfx90a::vcc_lo || 
+            m_Reg == amdgpu_gfx940::vcc_lo)
+            return "VCC";
+
+        if(m_Reg == amdgpu_gfx908::exec_lo || m_Reg == amdgpu_gfx90a::exec_lo || 
+            m_Reg == amdgpu_gfx940::exec_lo)
+            return "EXEC";
+
+        name +=  "["+std::to_string(m_Low)+":"+std::to_string(m_High)+"]";
+    }
+
+    return name;
+}
+
 
 /////////////////////////// x86 Formatter functions
 
@@ -264,37 +290,30 @@ x86Formatter::formatImmediate(std::string evalString)
     return "$0x" + evalString;
 }
 
-std::string
-x86Formatter::formatRegister(std::string regName)
+std::string x86Formatter::formatImmediate(const std::string &evalString) const
 {
-    for(char& c : regName)
-        c = std::tolower(c);
-
-    char* orig = strdup(regName.c_str());
-
-    /* Get rid of the Arch*:: prefix */
-    int   ccount  = 0;
-    char* pointer = orig;
-    while(ccount < 2)
-    {
-        if(!*pointer)
-            break;
-
-        if(*pointer == ':')
-            ccount++;
-        pointer++;
-    }
-
-    /* convert to a standard string */
-    regName = pointer;
-    free(orig);
-    std::string ss = "%" + regName;
-    regName        = ss;
-    return ss;
+	return "$0x" + evalString;
 }
 
-std::string
-x86Formatter::formatDeref(std::string addrString)
+std::string x86Formatter::formatRegister(const std::string &regName) const
+{
+    std::string outReg{'%'};
+
+    auto regNameOffset = regName.find("::");
+    if (regNameOffset == std::string::npos)  {
+	regNameOffset = 0;	// no "::", copy whole string
+    }  else  {
+	regNameOffset += 2;	// skip "::"
+    }
+    auto sBegin = regName.cbegin() + regNameOffset;
+    auto sEnd = regName.cend();
+    auto outRegInserter = std::back_inserter(outReg);
+    std::transform(sBegin, sEnd, outRegInserter, [](unsigned char c){ return std::tolower(c);});
+
+    return outReg;
+}
+
+std::string x86Formatter::formatDeref(const std::string &addrString) const
 {
     // fprintf(stderr, "Must format dereference: %s\n", addrString.c_str());
 
@@ -305,65 +324,24 @@ x86Formatter::formatDeref(std::string addrString)
         return addrString;
 }
 
-std::string
-x86Formatter::getInstructionString(std::vector<std::string> operands)
+std::string x86Formatter::getInstructionString(const std::vector<std::string> &operands) const
 {
-    // fprintf(stderr, "Operands: ");
-    // for(auto iter = operands.begin(); iter != operands.end(); iter++)
-    // {
-    // if(iter == operands.begin())
-    // fprintf(stderr, "%s", (*iter).c_str());
-    // else fprintf(stderr, ", %s", (*iter).c_str());
-    // }
+    std::string s;
+    bool oneOperandAdded{false};
 
-    /* We have to reorder the operands here */
-    std::string source_ops = "";
-    std::string dest_op    = "";
-    std::string kmask_op   = "";
-
-    /**
-     * We have to convert the Intel syntax operand ordering to AT&T because
-     * our tables are in Intel ordering
-     */
-    for(auto itr = operands.begin(); itr != operands.end(); itr++)
-    {
-        std::string op = *itr;
-
-        /* If we still have a leading ##, it's an indirect call or SIB expression */
-        if(!op.compare(0, 2, "##"))
-        {
-            op = "0x0(" + op.substr(2) + ")";
-        }
-
-        if(itr == operands.begin())
-        {
-            dest_op = op;
-        }
-        else if(!op.compare(0, 2, "%k"))
-        {
-            kmask_op = "{" + op + "}";
-        }
-        else if(!source_ops.compare(""))
-        {
-            source_ops = op;
-        }
-        else
-        {
-            source_ops += "," + op;
-        }
+    // append the operands in reverse order to convert from Intel to AT&T syntax order
+    for (auto i = operands.crbegin(); i != operands.crend(); ++i)  {
+	if (oneOperandAdded)  {
+	    s += ',';
+	}
+	s += *i;
+	oneOperandAdded = true;
     }
 
-    /* Put the instruction together */
-    std::string ret = source_ops;
-    if(ret.compare(""))
-        ret += ",";
-    ret += dest_op;
-    ret += kmask_op;
-    return ret;
+    return s;
 }
 
-std::string
-x86Formatter::formatBinaryFunc(std::string left, std::string func, std::string right)
+std::string x86Formatter::formatBinaryFunc(const std::string &left, const std::string &func, const std::string &right) const
 {
     // fprintf(stderr, "left: %s  func: %s  right: %s\n", left.c_str(), func.c_str(),
     // right.c_str());
@@ -447,21 +425,23 @@ x86Formatter::formatBinaryFunc(std::string left, std::string func, std::string r
     return retval;
 }
 
+bool x86Formatter::operandPrintOrderReversed() const
+{
+    return true;
+}
+
 ///////////////////////////
 ArchSpecificFormatter&
 ArchSpecificFormatter::getFormatter(Architecture a)
 {
-    static dyn_tls
-            std::map<Dyninst::Architecture, boost::shared_ptr<ArchSpecificFormatter>>
-            theFormatters;
-    auto    found = theFormatters.find(a);
-    if(found != theFormatters.end())
-        return *found->second;
-    switch(a)
-    {
-        case Arch_amdgpu_vega:
-            theFormatters[a] =
-                boost::shared_ptr<ArchSpecificFormatter>(new AmdgpuFormatter());
+    static dyn_tls std::map<Dyninst::Architecture, boost::shared_ptr<ArchSpecificFormatter> > theFormatters;
+    auto found = theFormatters.find(a);
+    if(found != theFormatters.end()) return *found->second;
+    switch(a) {
+        case Arch_amdgpu_gfx908:
+        case Arch_amdgpu_gfx90a:
+        case Arch_amdgpu_gfx940:
+            theFormatters[a] = boost::shared_ptr<ArchSpecificFormatter>(new AmdgpuFormatter());
             break;
         case Arch_aarch32:
         case Arch_aarch64:

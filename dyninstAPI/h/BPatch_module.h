@@ -35,6 +35,7 @@
 #include "BPatch_sourceObj.h"
 #include "BPatch_enums.h"
 #include "dyntypes.h"
+#include <stddef.h>
 #include <vector>
 #include <map>
 
@@ -104,15 +105,13 @@ public:
     BPatch_module(BPatch_addressSpace* _addSpace, AddressSpace* as, mapped_module* _mod,
                   BPatch_image* img);
     virtual ~BPatch_module();
-    bool              getSourceObj(BPatch_Vector<BPatch_sourceObj*>&);
-    BPatch_sourceObj* getObjParent();
-    void              parseTypes();
-    char*             parseStabStringSymbol(int line, char* stabstr, void* stabptr);
-    void              setDefaultNamespacePrefix(char* name);
-    void              handleUnload();
-    bool isExploratoryModeOn();  // true if exploratory or defensive mode is on
-    bool setAnalyzedCodeWriteable(
-        bool writeable);  // sets write perm's analyzed code pages
+    bool getSourceObj(BPatch_Vector<BPatch_sourceObj *>&);
+    BPatch_sourceObj *getObjParent();
+    void parseTypes();
+    void setDefaultNamespacePrefix(char *name);    
+    void handleUnload();
+    bool isExploratoryModeOn();// true if exploratory or defensive mode is on
+    bool setAnalyzedCodeWriteable(bool writeable);//sets write perm's analyzed code pages
     bool isSystemLib();
     bool remove(BPatch_function*);
     bool remove(instPoint*);
@@ -251,9 +250,7 @@ private:
     bool                   parseTypesIfNecessary();
     BPatch_typeCollection* moduleTypes;
 
-    // In particular, we understand the type information
-    // in both DWARF and STABS format.
-    void parseStabTypes();
+    // We understand the type information in DWARF format.
     void parseDwarfTypes();
 
     BPatch_funcMap  func_map;

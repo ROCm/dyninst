@@ -36,9 +36,14 @@
 #    include "Elf_X.h"
 #    include <iostream>
 
-#    include <unordered_map>
-#    include <unordered_set>
-#    include <vector>
+#include <map>
+#include <set>
+#include <stddef.h>
+#include <string>
+#include <utility>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 using std::cerr;
 using std::cout;
@@ -49,8 +54,7 @@ extern const char* STRTAB_NAME;
 extern const char* SYMTAB_NAME;
 extern const char* INTERP_NAME;
 
-extern const char*
-pdelf_get_shnames(Elf_X* elf);
+extern const char *pdelf_get_shnames(Dyninst::Elf_X *elf);
 
 #    define PT_PAX_FLAGS (PT_LOOS + 0x5041580) /* PaX flags */
 
@@ -220,14 +224,13 @@ private:
     std::vector<std::pair<long, long>>        new_dynamic_entries;
     std::vector<std::string>                  unversionedNeededEntries;
 
-    // Symbol version table data
-    std::map<std::string, std::map<std::string, unsigned>>
-                                                 verneedEntries;  // verneed entries
-    std::map<std::string, unsigned>              verdefEntries;   // verdef entries
-    std::map<unsigned, std::vector<std::string>> verdauxEntries;
-    std::map<std::string, unsigned>              versionNames;
-    std::vector<Elf_Half>                        versionSymTable;
-    int curVersionNum, verneednum, verdefnum, dynsym_info;
+            // Symbol version table data
+            std::map<std::string, std::map<std::string, unsigned> >verneedEntries;    //verneed entries
+            std::map<std::string, unsigned> verdefEntries;                            //verdef entries
+            std::map<unsigned, std::vector<std::string> > verdauxEntries;
+            std::map<std::string, unsigned> versionNames;
+            std::vector<Elf_Half> versionSymTable;
+            int curVersionNum, verneednum, verdefnum, dynsym_info{};
 
     // Needed when adding a new segment
     Elf_Off   newSegmentStart;

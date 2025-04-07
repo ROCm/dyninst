@@ -30,9 +30,10 @@
 #ifndef _PARSEAPI_DEBUG_
 #define _PARSEAPI_DEBUG_
 
+#include <string>
 #include <stdlib.h>
 #include <stdio.h>
-#include <util.h>
+#include <common/h/util.h>
 #include "compiler_annotations.h"
 
 namespace Dyninst

@@ -39,22 +39,22 @@
 #        include <winsock2.h>
 #    endif
 
-#    ifndef FILE__
-#        if defined(_MSC_VER)
-#            define FILE__                                                               \
-                (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
-#        else
-#            define FILE__                                                               \
-                (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#        endif
-#    endif
+#ifndef FILE__
+#include <string.h>
+#if defined(_MSC_VER)
+#define FILE__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
+#else
+#define FILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#endif
+#endif
 
-#    if defined(_POWER) && !defined(__GNUC__)
-#        define XLC
-#    endif
+#ifdef __cplusplus
 
-#    include <unordered_set>
-#    include <unordered_map>
+#include <functional>
+#include <memory>
+#include <utility>
+#include <unordered_set>
+#include <unordered_map>
 
 // NB: std::hash has overloads for [un]scoped enums
 template <typename Key, typename Value, typename Hash = std::hash<Key>,
@@ -71,20 +71,22 @@ using dyn_hash_set = std::unordered_set<Key, Hash, Comp, Alloc>;
 
 namespace Dyninst
 {
-#    if defined(_WIN64)
-typedef uintptr_t Address;
-typedef uintptr_t Offset;
-#    else
-typedef unsigned long Address;
-typedef unsigned long Offset;
-#    endif
+#if defined(_WIN64)
+  typedef uintptr_t Address;
+  typedef uintptr_t Offset;
+#else
+  typedef unsigned long Address;
+  typedef unsigned long Offset;
+#endif
 
-#    if defined(_MSC_VER)
-typedef int    PID;
-typedef HANDLE PROC_HANDLE;
-typedef HANDLE LWP;
-typedef HANDLE THR_ID;
-typedef DWORD  psaddr_t;  // for breakpoints; match the debug struct
+  static constexpr Address ADDR_NULL{0};
+
+#if defined(_MSC_VER)
+   typedef int PID;
+   typedef HANDLE PROC_HANDLE;
+   typedef HANDLE LWP;
+   typedef HANDLE THR_ID;
+   typedef DWORD psaddr_t; // for breakpoints; match the debug struct
 
 #        define NULL_PID -1
 #        define NULL_LWP INVALID_HANDLE_VALUE
@@ -104,9 +106,8 @@ typedef long          THR_ID;
 #        endif
 #    endif
 
-int
-ThrIDToTid(Dyninst::THR_ID id);
-}  // namespace Dyninst
+   inline int ThrIDToTid(Dyninst::THR_ID id) { return id; }
+}
 
 namespace Dyninst
 {
@@ -118,5 +119,10 @@ typedef enum
     Windows
 } OSType;
 }
+
+#else
+# define ADDR_NULL (0)
+typedef unsigned long Address;
+#endif
 
 #endif
