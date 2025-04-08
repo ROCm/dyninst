@@ -43,6 +43,7 @@ dyninst_add_option(
 # These need to be done before anything else
 include(DyninstLibrarySettings)
 include(DyninstOptions)
+include(DyninstInstallDirs)
 
 # Set up Dyninst internals
 include(DyninstPlatform)
@@ -60,6 +61,7 @@ include(DyninstLibIberty)
 include(DyninstThread_DB)
 include(DyninstValgrind)
 include(DyninstOpenMP)
+
 # for packaging
 if(_DYNINST_BUILDING_TPLS)
     install(
