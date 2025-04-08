@@ -23,14 +23,22 @@ project(
   DESCRIPTION "Tools for binary instrumentation, analysis, and modification"
   HOMEPAGE_URL "https://github.com/dyninst/dyninst"
   LANGUAGES C CXX ASM)
-  set(DYNINST_ROOT ${PROJECT_SOURCE_DIR})
-  set(CMAKE_SKIP_BUILD_RPATH OFF)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-  set(CMAKE_INSTALL_MESSAGE LAZY) # only report new installations
+
+set(DYNINST_ROOT ${PROJECT_SOURCE_DIR})
+set(CMAKE_SKIP_BUILD_RPATH OFF)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_INSTALL_MESSAGE LAZY) # only report new installations
+
 list(INSERT CMAKE_MODULE_PATH 0 "${PROJECT_SOURCE_DIR}/cmake"
      "${PROJECT_SOURCE_DIR}/cmake/tpls" "${PROJECT_SOURCE_DIR}/cmake/Modules")
+
+include(DyninstUtilities)
+
+dyninst_add_option(
+    STERILE_BUILD "Do not download/build any third-party dependencies from source" OFF
+    ADVANCED)
 
 # These need to be done before anything else
 include(DyninstLibrarySettings)
