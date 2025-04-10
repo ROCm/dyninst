@@ -376,3 +376,44 @@ dyninst_message(STATUS "Boost includes: ${Boost_INCLUDE_DIRS}")
 dyninst_message(STATUS "Boost library dirs: ${Boost_LIBRARY_DIRS}")
 dyninst_message(STATUS "Boost thread library: ${Boost_THREAD_LIBRARY}")
 dyninst_message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
+
+# Find Boost after building it
+# Need at least 1.71 for a usable BoostConfig.cmake
+set(_min_version 1.71.0)
+
+# Use multithreaded libraries
+set(Boost_USE_MULTITHREADED ON)
+
+# Don't use libraries linked statically to the C++ runtime
+set(Boost_USE_STATIC_RUNTIME OFF)
+
+if(Boost_ROOT_DIR)
+  set(Boost_NO_SYSTEM_PATHS ON)
+  set(Boost_ROOT ${Boost_ROOT_DIR})
+endif()
+
+# Starting in CMake 3.20, suppress "unknown version" warnings
+set(Boost_NO_WARN_NEW_VERSIONS ON)
+
+# Library components that need to be linked against
+set(_boost_components atomic chrono date_time filesystem thread timer)
+find_package(
+  Boost
+  ${_min_version}
+  QUIET
+  REQUIRED
+  HINTS
+  ${PATH_BOOST}
+  ${BOOST_ROOT}
+  COMPONENTS ${_boost_components})
+
+# Just the headers (effectively a simplified Boost::headers target)
+add_library(Dyninst::Boost_headers INTERFACE IMPORTED)
+target_include_directories(Dyninst::Boost_headers SYSTEM
+                            INTERFACE ${Boost_INCLUDE_DIRS})
+target_compile_definitions(Dyninst::Boost_headers
+                            INTERFACE BOOST_MULTI_INDEX_DISABLE_SERIALIZATION)
+
+message(STATUS "Found Boost ${Boost_VERSION}")
+message(STATUS "Boost include directories: ${Boost_INCLUDE_DIRS}")
+message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
