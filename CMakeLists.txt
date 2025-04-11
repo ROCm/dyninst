@@ -210,12 +210,10 @@ if(BUILD_DOCS)
     endif()
 endif()
 
-# add_subdirectory(testsuite)
-
-# Copy out all of the cmake files so they can be used by the Testsuite
-install(DIRECTORY ${DYNINST_ROOT}/cmake DESTINATION ${INSTALL_CMAKE_DIR})
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-    install(FILES ${PROJECT_BINARY_DIR}/CMakeCache.txt DESTINATION ${INSTALL_CMAKE_DIR})
+if(DYNINST_ENABLE_TESTS)
+  enable_testing()
+  message(STATUS "Enabling tests")
+  add_subdirectory(tests)
 endif()
 
 include(DyninstInstall)
