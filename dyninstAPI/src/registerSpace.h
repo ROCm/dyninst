@@ -51,15 +51,13 @@ class AddressSpace;
 class parse_block;
 class baseTramp;
 
-// A class to retain information about where the original register can be found. It can be
-// in one of the following states: 1) Unsaved, and available via the register itself; 2)
-// Saved in a frame, e.g., a base tramp; 3) Pushed on the stack at a relative offset from
-// the current stack pointer. 4) TODO: we could subclass this and make "get me the current
-// value" a member function; not sure it's really worth it for the minimal amount of
-// memory multiple types will use.
+// A class to retain information about where the original register can be found. It can be in one of the following states:
+// 1) Unsaved, and available via the register itself;
+// 2) Saved in a frame, e.g., a base tramp;
+// 3) Pushed on the stack at a relative offset from the current stack pointer.
+// 4) TODO: we could subclass this and make "get me the current value" a member function; not sure it's really worth it for the minimal amount of memory multiple types will use.
 
-// We also need a better way of tracking what state a register is in. Here's some
-// possibilities, not at all mutually independent:
+// We also need a better way of tracking what state a register is in. Here's some possibilities, not at all mutually independent:
 
 // Live at the start of instrumentation, or dead;
 // Used during the generation of a subexpression
@@ -84,7 +82,7 @@ class RealRegister {
 };
 
 #if defined(arch_x86_64)
-#    include "inst-x86.h"
+#include "inst-x86.h"
 #endif
 
 class registerSlot {
@@ -93,55 +91,34 @@ class registerSlot {
     const Dyninst::Register number;    // what register is it, using our Dyninst::Register enum
     const std::string name;
 
-    typedef enum
-    {
-        deadAlways,
-        deadABI,
-        liveAlways
-    } initialLiveness_t;
+    typedef enum { deadAlways, deadABI, liveAlways } initialLiveness_t;
     const initialLiveness_t initialState;
 
     // Are we off limits for allocation in this particular instance?
     bool offLimits;
 
-    typedef enum
-    {
-        invalid,
-        GPR,
-        FPR,
-        SPR,
-        realReg
-    } regType_t;
+    typedef enum { invalid, GPR, FPR, SPR, realReg} regType_t;
     const regType_t type;
 
     ////////// Code generation
 
-    int refCount;  // == 0 if free
+    int refCount;      	// == 0 if free
 
-    typedef enum
-    {
-        live,
-        spilled,
-        dead
-    } livenessState_t;
+    typedef enum { live, spilled, dead } livenessState_t;
     livenessState_t liveState;
 
-    bool keptValue;  // Are we keeping this (as long as we can) to save
+    bool keptValue;     // Are we keeping this (as long as we can) to save
     // the pre-calculated value? Note: refCount can be 0 and
     // this still set.
 
-    bool beenUsed;  // Has this register been used by generated code?
+    bool beenUsed;      // Has this register been used by generated code?
 
     // New version of "if we were saved, then where?" It's a pair - true/false,
     // then offset from the "zeroed" stack pointer.
-    typedef enum
-    {
-        unspilled,
-        framePointer
-    } spillReference_t;
+    typedef enum { unspilled, framePointer } spillReference_t;
     spillReference_t spilledState;
-    int              saveOffset;  // Offset where this register can be
-                                  // retrieved.
+    int saveOffset; // Offset where this register can be
+                    // retrieved.
     // AMD-64: this is the number of words
     // POWER: this is the number of bytes
     // I know it's inconsistent, but it's easier this way since POWER
@@ -153,13 +130,12 @@ class registerSlot {
 
     void cleanSlot();
 
-    void markUsed(bool incRefCount)
-    {
+    void markUsed(bool incRefCount) {
         assert(offLimits == false);
         assert(refCount == 0);
         assert(liveState != live);
 
-        if(incRefCount)
+        if (incRefCount)
             refCount = 1;
         beenUsed = true;
     }
@@ -167,7 +143,7 @@ class registerSlot {
     // Default is just fine
     // registerSlot(const registerSlot &r)
 
-    void debugPrint(const char* str = NULL);
+    void debugPrint(const char *str = NULL);
 
     // Don't want to use this...
     registerSlot() :
@@ -203,75 +179,57 @@ class registerSlot {
         spilledState(unspilled),
         saveOffset(-1) {}
 
-    registerSlot(Register num, std::string name_, bool offLimits_,
-                 initialLiveness_t initial, regType_t type_)
-    : alloc_num(0)
-    , number(num)
-    , name(name_)
-    , initialState(initial)
-    , offLimits(offLimits_)
-    , type(type_)
-    , refCount(0)
-    , liveState(live)
-    , keptValue(false)
-    , beenUsed(false)
-    , spilledState(unspilled)
-    , saveOffset(-1)
-    {}
 };
 
 class instPoint;
 
-typedef struct
-{
-    bool          is_allocatable;
-    bool          been_used;
-    int           last_used;
-    registerSlot* contains;
+typedef struct {
+   bool is_allocatable;
+   bool been_used;
+   int last_used;
+   registerSlot *contains;
 } RealRegsState;
 
-class regState_t
-{
-public:
-    regState_t();
-    int                        pc_rel_offset;
-    int                        timeline;
-    int                        stack_height;
-    std::vector<RealRegsState> registerStates;
+
+class regState_t {
+ public:
+   regState_t();
+   int pc_rel_offset;
+   int timeline;
+   int stack_height;
+   std::vector<RealRegsState> registerStates;
 };
 
-class registerSpace
-{
-    friend class baseTramp;
-
-private:
+class registerSpace {
+   friend class baseTramp;
+ private:
     // A global mapping of register names to slots
-    static registerSpace* globalRegSpace_;
-    static registerSpace* globalRegSpace64_;
+    static registerSpace *globalRegSpace_;
+    static registerSpace *globalRegSpace64_;
 
-    static void createRegSpaceInt(std::vector<registerSlot*>& regs,
-                                  registerSpace*              regSpace);
+    static void createRegSpaceInt(std::vector<registerSlot *> &regs,
+                                  registerSpace *regSpace);
 
-public:
+ public:
     // Pre-set unknown register state:
     // Everything is live...
-    static registerSpace* conservativeRegSpace(AddressSpace* proc);
+    static registerSpace *conservativeRegSpace(AddressSpace *proc);
     // Everything is dead...
-    static registerSpace* optimisticRegSpace(AddressSpace* proc);
+    static registerSpace *optimisticRegSpace(AddressSpace *proc);
     // IRPC-specific - everything live for now
-    static registerSpace* irpcRegSpace(AddressSpace* proc);
+    static registerSpace *irpcRegSpace(AddressSpace *proc);
     // Aaand instPoint-specific
-    static registerSpace* actualRegSpace(instPoint* iP);
+    static registerSpace *actualRegSpace(instPoint *iP);
     // DO NOT DELETE THESE.
-    static registerSpace* savedRegSpace(AddressSpace* proc);
+    static registerSpace *savedRegSpace(AddressSpace *proc);
 
-    static registerSpace* getRegisterSpace(AddressSpace* proc);
-    static registerSpace* getRegisterSpace(unsigned addr_width);
+    static registerSpace *getRegisterSpace(AddressSpace *proc);
+    static registerSpace *getRegisterSpace(unsigned addr_width);
 
     registerSpace();
 
-    static void createRegisterSpace(std::vector<registerSlot*>& registers);
-    static void createRegisterSpace64(std::vector<registerSlot*>& registers);
+    static void createRegisterSpace(std::vector<registerSlot *> &registers);
+    static void createRegisterSpace64(std::vector<registerSlot *> &registers);
 
     ~registerSpace();
 
@@ -300,7 +258,6 @@ public:
     // to touch)
     Dyninst::Register getScratchRegister(codeGen &gen, std::vector<Dyninst::Register> &excluded, bool noCost = true, bool realReg = false);
 
-    bool trySpecificRegister(codeGen& gen, Register reg, bool noCost = true);
 
     bool trySpecificRegister(codeGen &gen, Dyninst::Register reg, bool noCost = true);
 
@@ -316,9 +273,9 @@ public:
 
     // Things that will be modified implicitly by anything else we
     // generate - condition registers, etc.
-    bool checkVolatileRegisters(codeGen& gen, registerSlot::livenessState_t);
-    bool saveVolatileRegisters(codeGen& gen);
-    bool restoreVolatileRegisters(codeGen& gen);
+    bool checkVolatileRegisters(codeGen &gen, registerSlot::livenessState_t);
+    bool saveVolatileRegisters(codeGen &gen);
+    bool restoreVolatileRegisters(codeGen &gen);
 
     // Free the specified register (decrement its refCount)
     void freeRegister(Dyninst::Register k);
@@ -326,6 +283,7 @@ public:
     void forceFreeRegister(Dyninst::Register k);
     // And mark a register as not being kept any more
     void unKeepRegister(Dyninst::Register k);
+
 
     // Mark all registers as unallocated, but keep live/dead info
     void cleanSpace();
@@ -353,7 +311,7 @@ public:
     // Used for assertion checking.
     void checkLeaks(Dyninst::Register to_exclude);
 
-    int  getAddressWidth() { return addr_width; }
+    int getAddressWidth() { return addr_width; }
     void debugPrint();
     void printAllocedRegisters();
 
@@ -362,13 +320,13 @@ public:
     int numSPRs() const { return SPRs_.size(); }
     int numRegisters() const { return registers_.size(); }
 
-    std::vector<registerSlot*>& GPRs() { return GPRs_; }
-    std::vector<registerSlot*>& FPRs() { return FPRs_; }
-    std::vector<registerSlot*>& SPRs() { return SPRs_; }
+    std::vector <registerSlot *> &GPRs() { return GPRs_; }
+    std::vector <registerSlot *> &FPRs() { return FPRs_; }
+    std::vector <registerSlot *> &SPRs() { return SPRs_; }
 
-    std::vector<registerSlot*>& realRegs();
+    std::vector <registerSlot *> &realRegs();
 
-    std::vector<registerSlot*>& trampRegs();  // realRegs() on x86-32, GPRs on all others
+    std::vector <registerSlot *> &trampRegs(); //realRegs() on x86-32, GPRs on all others
 
     registerSlot *physicalRegs(Dyninst::Register reg) { return physicalRegisters_[reg]; }
 
@@ -378,6 +336,7 @@ public:
     bool anyLiveGPRsAtEntry() const;
     bool anyLiveFPRsAtEntry() const;
     bool anyLiveSPRsAtEntry() const;
+
 
     /**
      * The following set of 'public' and 'private' methods and data deal with
@@ -394,10 +353,10 @@ public:
     void loadVirtualToSpecific(registerSlot *virt_r, RealRegister real_r, codeGen &gen);
     void loadVirtualToSpecific(Dyninst::Register virt_r, RealRegister real_r, codeGen &gen);
 
-    // Spill away any virtual register in a real so that the real
+    //Spill away any virtual register in a real so that the real
     // can be used freely.  Careful with this, no guarentee it won't
     // be reallocated in the next step.
-    void makeRegisterAvail(RealRegister r, codeGen& gen);
+    void makeRegisterAvail(RealRegister r, codeGen &gen);
 
     //Tell the tracker that we've manually put some virtual into a real
     void noteVirtualInReal(Dyninst::Register v_r, RealRegister r_r);
@@ -417,42 +376,41 @@ public:
     int getInstFrameSize();
     void setInstFrameSize(int val);
 
-    int  getStackHeight();
+    int getStackHeight();
     void setStackHeight(int val);
 
-    void unifyTopRegStates(codeGen& gen);
+    void unifyTopRegStates(codeGen &gen);
     void pushNewRegState();
 
-private:
+ private:
     int instFrameSize_;  // How much stack space we allocate for
                          // instrumentation before a frame is set up.
 
-    std::vector<regState_t*> regStateStack;
+    std::vector<regState_t *> regStateStack;
 
     std::vector<RealRegsState>& regState();
-    int&                        timeline();
+    int& timeline();
 
-    std::set<registerSlot*> regs_been_spilled;
+    std::set<registerSlot *> regs_been_spilled;
 
     void initRealRegSpace();
 
-    // High-level functions that track data structures and call code gen
-    RealRegister findReal(registerSlot* virt_r, bool& already_setup);
-    void         spillReal(RealRegister r, codeGen& gen);
-    void         loadReal(RealRegister r, registerSlot* v_r, codeGen& gen);
-    void         freeReal(RealRegister r);
+    //High-level functions that track data structures and call code gen
+    RealRegister findReal(registerSlot *virt_r, bool &already_setup);
+    void spillReal(RealRegister r, codeGen &gen);
+    void loadReal(RealRegister r, registerSlot *v_r, codeGen &gen);
+    void freeReal(RealRegister r);
 
-    // low-level functions for code gen
-    void spillToVReg(RealRegister reg, registerSlot* v_reg, codeGen& gen);
-    void movVRegToReal(registerSlot* v_reg, RealRegister r, codeGen& gen);
-    void movRegToReg(RealRegister dest, RealRegister src, codeGen& gen);
+    //low-level functions for code gen
+    void spillToVReg(RealRegister reg, registerSlot *v_reg, codeGen &gen);
+    void movVRegToReal(registerSlot *v_reg, RealRegister r, codeGen &gen);
+    void movRegToReg(RealRegister dest, RealRegister src, codeGen &gen);
 
     unsigned savedFlagSize;
 
-private:
-    registerSpace(const registerSpace&);
+ private:
 
-    registerSlot& getRegisterSlot(Register reg);
+    registerSpace(const registerSpace &);
 
     registerSlot &getRegisterSlot(Dyninst::Register reg);
 
@@ -476,26 +434,22 @@ private:
     std::map<Dyninst::Register, registerSlot *> physicalRegisters_;
 
     // And convenience vectors
-    std::vector<registerSlot*> GPRs_;
-    std::vector<registerSlot*> FPRs_;
-    std::vector<registerSlot*> SPRs_;
+    std::vector<registerSlot *> GPRs_;
+    std::vector<registerSlot *> FPRs_;
+    std::vector<registerSlot *> SPRs_;
 
     // Used on platforms that have "virtual" registers to provide a mapping
     // for real (e.g., architectural) registers
-    std::vector<registerSlot*> realRegisters_;
+    std::vector<registerSlot *> realRegisters_;
 
     static void initialize();
     static void initialize32();
     static void initialize64();
 
-    registerSpace& operator=(const registerSpace& src);
 
-    typedef enum
-    {
-        arbitrary,
-        ABI_boundary,
-        allSaved
-    } rs_location_t;
+    registerSpace &operator=(const registerSpace &src);
+
+    typedef enum {arbitrary, ABI_boundary, allSaved} rs_location_t;
 
     // Specialize liveness as represented by a bit array
     void specializeSpace(rs_location_t state);
@@ -505,10 +459,10 @@ private:
 
     unsigned addr_width;
 
-public:
+ public:
     static bool hasXMM;  // for Intel architectures, XMM registers
 
-public:
+ public:
 #if defined(arch_power)
     typedef enum { r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12,
                    r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23,

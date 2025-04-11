@@ -28,206 +28,190 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-// We have lots of PIMPL (private implementation) classes for FrameSteppers.  This file
-// contains a "template" for the common code.  Unfortunately, this isn't a real C++
-// template, as actual template classes wouldn't instanciate in the right place.  Instead
-// we'll fake a template with macros.  I'm bad, but this would otherwise be a lot of
-// repeated code.
+//We have lots of PIMPL (private implementation) classes for FrameSteppers.  This file
+//contains a "template" for the common code.  Unfortunately, this isn't a real C++ template,
+//as actual template classes wouldn't instanciate in the right place.  Instead we'll fake
+//a template with macros.  I'm bad, but this would otherwise be a lot of repeated code.
+
 
 #if defined(PIMPL_CLASS)
-// Can optionally define PIMPL_IMPL_CLASS
-// Can optionally define PIMPL_NAME
+//Can optionally define PIMPL_IMPL_CLASS
+//Can optionally define PIMPL_NAME
 
-const char*
-PIMPL_CLASS::getName() const
+const char *PIMPL_CLASS::getName() const
 {
-#    if defined(PIMPL_NAME)
-    return PIMPL_NAME;
-#    else
-    return "<ERROR>";
-#    endif
+#if defined(PIMPL_NAME)
+   return PIMPL_NAME;
+#else
+   return "<ERROR>";
+#endif
 }
 
-#    if defined(PIMPL_IMPL_CLASS)
+#if defined(PIMPL_IMPL_CLASS)
 
-const char*
-PIMPL_IMPL_CLASS::getName() const
+const char *PIMPL_IMPL_CLASS::getName() const
 {
-#        if defined(PIMPL_NAME)
-    return PIMPL_NAME;
-#        else
-    return "<ERROR>";
-#        endif
+#if defined(PIMPL_NAME)
+   return PIMPL_NAME;
+#else
+   return "<ERROR>";
+#endif
 }
 
-PIMPL_CLASS::PIMPL_CLASS(Walker* w
-#        if defined(PIMPL_ARG1)
-                         ,
-                         PIMPL_ARG1 arg1
-#        endif
-#        if defined(PIMPL_ARG2)
-                         ,
-                         PIMPL_ARG2 arg2
-#        endif
-                         )
-: FrameStepper(w)
+PIMPL_CLASS::PIMPL_CLASS(Walker *w
+#if defined(PIMPL_ARG1)
+			 , PIMPL_ARG1 arg1
+#endif
+#if defined(PIMPL_ARG2)
+			 , PIMPL_ARG2 arg2
+#endif
+			 ) :
+  FrameStepper(w)
 {
-#        if defined(PIMPL_NAME)
-    sw_printf("[%s:%d] - Constructing " PIMPL_NAME " at %p\n", FILE__, __LINE__,
-              (void*) this);
-#        endif
-    impl = new PIMPL_IMPL_CLASS(w, this
-#        if defined(PIMPL_ARG1)
-                                ,
-                                arg1
-#        endif
-#        if defined(PIMPL_ARG2)
-                                ,
-                                arg2
-#        endif
-    );
+
+#if defined(PIMPL_NAME)
+  sw_printf("[%s:%d] - Constructing " PIMPL_NAME " at %p\n",
+	    FILE__, __LINE__, (void*)this);
+#endif
+  impl = new PIMPL_IMPL_CLASS(w, this
+#if defined(PIMPL_ARG1)
+			      , arg1
+#endif
+#if defined(PIMPL_ARG2)
+			      , arg2
+#endif
+			      );
 }
 
-gcframe_ret_t
-PIMPL_CLASS::getCallerFrame(const Frame& in, Frame& out)
+gcframe_ret_t PIMPL_CLASS::getCallerFrame(const Frame &in, Frame &out)
 {
-    if(!impl)
-    {
-#        if defined(PIMPL_NAME)
-        sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-                  FILE__, __LINE__);
-        setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-        return gcf_error;
-#        else
-        return gcf_not_me;
-#        endif
-    }
-    return impl->getCallerFrame(in, out);
+  if (!impl) {
+#if defined(PIMPL_NAME)
+    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	      FILE__, __LINE__);
+    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+    return gcf_error;
+#else
+    return gcf_not_me;
+#endif
+  }
+  return impl->getCallerFrame(in, out);
 }
 
-#        if defined(OVERLOAD_NEWLIBRARY)
-void
-PIMPL_CLASS::newLibraryNotification(LibAddrPair* la, lib_change_t change)
+#if defined(OVERLOAD_NEWLIBRARY)
+void PIMPL_CLASS::newLibraryNotification(LibAddrPair *la, lib_change_t change)
 {
-    if(!impl)
-    {
-#            if defined(PIMPL_NAME)
-        sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-                  FILE__, __LINE__);
-        setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-#            endif
-        return;
-    }
-    impl->newLibraryNotification(la, change);
+  if (!impl) {
+#if defined(PIMPL_NAME)
+    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	      FILE__, __LINE__);
+    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+#endif
+    return;
+  }
+  impl->newLibraryNotification(la, change);
 }
-#        endif
+#endif
 
-unsigned
-PIMPL_CLASS::getPriority() const
+unsigned PIMPL_CLASS::getPriority() const
 {
-    if(!impl)
-    {
-#        if defined(PIMPL_NAME)
-        sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-                  FILE__, __LINE__);
-        setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-#        endif
-        return 0;
-    }
-    return impl->getPriority();
+  if (!impl) {
+#if defined(PIMPL_NAME)
+    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	      FILE__, __LINE__);
+    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+#endif
+    return 0;
+  }
+  return impl->getPriority();
 }
 
-void
-PIMPL_CLASS::registerStepperGroup(StepperGroup* group)
+void PIMPL_CLASS::registerStepperGroup(StepperGroup *group)
 {
-    if(!impl)
-    {
-#        if defined(PIMPL_NAME)
-        sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-                  FILE__, __LINE__);
-        setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-#        endif
-        return;
-    }
-    impl->registerStepperGroup(group);
+  if (!impl) {
+#if defined(PIMPL_NAME)
+    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	      FILE__, __LINE__);
+    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+#endif
+    return;
+  }
+  impl->registerStepperGroup(group);
 }
 
 PIMPL_CLASS::~PIMPL_CLASS()
 {
-#        if defined(PIMPL_NAME)
-    sw_printf("[%s:%d] - Destructing " PIMPL_NAME " at %p\n", FILE__, __LINE__,
-              (void*) this);
-#        endif
-    if(impl)
-        delete impl;
-    impl = NULL;
+#if defined(PIMPL_NAME)
+  sw_printf("[%s:%d] - Destructing " PIMPL_NAME " at %p\n", FILE__, __LINE__, (void*)this);
+#endif
+  if (impl)
+    delete impl;
+  impl = NULL;
 }
 
-#    else
+#else
 
-PIMPL_CLASS::PIMPL_CLASS(Walker* w
-#        if defined(PIMPL_ARG1)
-                         ,
-                         PIMPL_ARG1
-#        endif
-#        if defined(PIMPL_ARG2)
-                         ,
-                         PIMPL_ARG2
-#        endif
-                         )
-: FrameStepper(w)
-, impl(NULL)
-{}
-
-gcframe_ret_t
-PIMPL_CLASS::getCallerFrame(const Frame&, Frame&)
+PIMPL_CLASS::PIMPL_CLASS(Walker *w
+#if defined(PIMPL_ARG1)
+			 , PIMPL_ARG1
+#endif
+#if defined(PIMPL_ARG2)
+			 , PIMPL_ARG2
+#endif
+			 ) :
+  FrameStepper(w),
+  impl(NULL)
 {
-#        if defined(PIMPL_NAME)
-    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-              FILE__, __LINE__);
-    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-    return gcf_error;
-#        else
-    return gcf_not_me;
-#        endif
 }
 
-#        if defined(OVERLOAD_NEWLIBRARY)
-void
-PIMPL_CLASS::newLibraryNotification(LibAddrPair*, lib_change_t)
+gcframe_ret_t PIMPL_CLASS::getCallerFrame(const Frame &, Frame &)
 {
-#            if defined(PIMPL_NAME)
-    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-              FILE__, __LINE__);
-    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-#            endif
+#if defined(PIMPL_NAME)
+  sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	    FILE__, __LINE__);
+  setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+  return gcf_error;
+#else
+  return gcf_not_me;
+#endif
 }
-#        endif
 
-unsigned
-PIMPL_CLASS::getPriority() const
+#if defined(OVERLOAD_NEWLIBRARY)
+void PIMPL_CLASS::newLibraryNotification(LibAddrPair *, lib_change_t)
 {
-#        if defined(PIMPL_NAME)
-    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-              FILE__, __LINE__);
-    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-#        endif
-    return 0;
+#if defined(PIMPL_NAME)
+  sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	    FILE__, __LINE__);
+  setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+#endif
 }
+#endif
 
-void
-PIMPL_CLASS::registerStepperGroup(StepperGroup*)
+unsigned PIMPL_CLASS::getPriority() const
 {
-#        if defined(PIMPL_NAME)
-    sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
-              FILE__, __LINE__);
-    setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
-#        endif
-    return;
+#if defined(PIMPL_NAME)
+  sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	    FILE__, __LINE__);
+  setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+#endif
+  return 0;
 }
 
-PIMPL_CLASS::~PIMPL_CLASS() {}
+void PIMPL_CLASS::registerStepperGroup(StepperGroup *)
+{
+#if defined(PIMPL_NAME)
+  sw_printf("[%s:%d] - Error, " PIMPL_NAME " not implemented on this platform\n",
+	    FILE__, __LINE__);
+  setLastError(err_unsupported, PIMPL_NAME " not supported on this platform");
+#endif
+  return;
+}
 
-#    endif
+PIMPL_CLASS::~PIMPL_CLASS()
+{
+}
 
 #endif
+
+#endif
+

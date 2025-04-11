@@ -4,7 +4,7 @@
 //
 
 #if !defined(_INJECTOR_CODEGEN_H_)
-#    define _INJECTOR_CODEGEN_H_
+#define _INJECTOR_CODEGEN_H_
 
 #include <map>
 #include <string>
@@ -12,74 +12,76 @@
 #include "PCProcess.h"
 #include "Buffer.h"
 
-namespace Dyninst
-{
-namespace ProcControlAPI
-{
-class Codegen
-{
-public:
-    Codegen(ProcControlAPI::Process* proc, std::string libname);
-    ~Codegen();
+namespace Dyninst {
 
-    // Override for assembly generation
-    bool generate();
+namespace ProcControlAPI {
 
-    const Buffer& buffer() { return buffer_; }
-    unsigned      startOffset() const;
+class Codegen {
+  public:
+   Codegen(ProcControlAPI::Process *proc,
+           std::string libname);
+   ~Codegen();
 
-private:
-    unsigned estimateSize();
-    bool     generateInt();
-    Address  findSymbolAddr(const std::string name, bool saveTOC = false);
-    Address  copyString(std::string);
-    Address  copyBuf(void* buf, unsigned size);
-    Address  copyByte(unsigned char);
-    Address  copyInt(unsigned int);
-    Address  copyLong(unsigned long);
+   // Override for assembly generation
+   bool generate();
 
-#    if defined(os_linux)
-    Address buildLinuxArgStruct(Address libbase, unsigned mode);
-    bool    generateStackUnprotect(Address var, Address mprotect);
-#    endif
+   const Buffer &buffer() { return buffer_; }
+   unsigned startOffset() const;
 
-    bool generateCall(Address addr, const std::vector<Address>& args);
+  private:
 
-    bool generateCallIA32(Address addr, const std::vector<Address>& args);
-    bool generateCallAMD64(Address addr, const std::vector<Address>& args);
+   unsigned estimateSize();
+   bool generateInt();
+   Address findSymbolAddr(const std::string name, bool saveTOC = false);
+   Address copyString(std::string);
+   Address copyBuf(void *buf, unsigned size);
+   Address copyByte(unsigned char);
+   Address copyInt(unsigned int);
+   Address copyLong(unsigned long);
 
-    bool generateCallPPC32(Address addr, const std::vector<Address>& args);
-    bool generateCallPPC64(Address addr, const std::vector<Address>& args);
+#if defined(os_linux)
+   Address buildLinuxArgStruct(Address libbase, unsigned mode);
+   bool generateStackUnprotect(Address var, Address mprotect);
+#endif
 
-    bool generatePreamble();
-    bool generatePreambleIA32();
-    bool generatePreambleAMD64();
+   bool generateCall(Address addr, const std::vector<Address> &args);
 
-    bool generatePreamblePPC32();
-    bool generatePreamblePPC64();
+   bool generateCallIA32(Address addr, const std::vector<Address> &args);
+   bool generateCallAMD64(Address addr, const std::vector<Address> &args);
 
-    void generatePPC32(Address val, unsigned reg);
-    void generatePPC64(Address val, unsigned reg);
+   bool generateCallPPC32(Address addr, const std::vector<Address> &args);
+   bool generateCallPPC64(Address addr, const std::vector<Address> &args);
 
-    bool generatePreambleAARCH64();
-    bool generateCallAARCH64(Address addr, const std::vector<Address>& args);
 
-    bool generateTrap();
-    bool generateNoops();
+   bool generatePreamble();
+   bool generatePreambleIA32();
+   bool generatePreambleAMD64();
 
-    ProcControlAPI::Process* proc_;
-    std::string              libname_;
+   bool generatePreamblePPC32();
+   bool generatePreamblePPC64();
 
-    Address codeStart_;
-    Buffer  buffer_;
+   void generatePPC32(Address val, unsigned reg);
+   void generatePPC64(Address val, unsigned reg);
 
-    // PPC64 only, but it's handy to stash it here
-    std::map<Address, Address> toc_;
-    int                        abimajversion_;
-    int                        abiminversion_;
+   bool generatePreambleAARCH64();
+   bool generateCallAARCH64(Address addr, const std::vector<Address> &args);
+
+   bool generateTrap();
+   bool generateNoops();
+
+   ProcControlAPI::Process *proc_;
+   std::string libname_;
+
+   Address codeStart_;
+   Buffer buffer_;
+
+   // PPC64 only, but it's handy to stash it here
+   std::map<Address, Address> toc_;
+   int abimajversion_;
+   int abiminversion_;
 };
 
-}  // namespace ProcControlAPI
-}  // namespace Dyninst
+}
+}
 
 #endif

@@ -28,8 +28,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+
 #if !defined(DYN_REGS_H_)
-#    define DYN_REGS_H_
+#define DYN_REGS_H_
 
 #include "util.h"
 #include "Architecture.h"

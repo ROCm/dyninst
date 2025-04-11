@@ -1,28 +1,28 @@
 /*
  * See the dyninst/COPYRIGHT file for copyright information.
- *
+ * 
  * We provide the Paradyn Tools (below described as "Paradyn")
  * on an AS IS basis, and do not warrant its validity or performance.
  * We reserve the right to update, modify, or discontinue this
  * software at any time.  We shall have no obligation to supply such
  * updates or modifications or any other form of support to you.
- *
+ * 
  * By your use of Paradyn, you understand and agree that we (or any
  * other person or entity with proprietary rights in Paradyn) are
  * under no obligation to provide either maintenance services,
  * update services, notices of latent defects, or correction of
  * defects for Paradyn.
- *
+ * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
+ * 
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
@@ -38,15 +38,14 @@
 class AddressSpace;
 class codeGen;
 
-class insnCodeGen
-{
-public:
-    static instructUnion* insnPtr(codeGen& gen);
-    // static instructUnion *ptrAndInc(codeGen &gen);
+class insnCodeGen {
+ public:
+    static instructUnion *insnPtr(codeGen &gen);
+    //static instructUnion *ptrAndInc(codeGen &gen);
 
     // All of these write into a buffer
-    static void generateTrap(codeGen& gen);
-    static void generateIllegal(codeGen& gen);
+    static void generateTrap(codeGen &gen);
+    static void generateIllegal(codeGen &gen);
 
     static void generateBranch(codeGen &gen,
                                long jump_off,
@@ -110,8 +109,8 @@ public:
     static void generateMoveToLR(codeGen &gen, Dyninst::Register rs);
     static void generateMoveToCR(codeGen &gen, Dyninst::Register rs);
 
-    static void generate(codeGen& gen, instruction& insn);
-    static void write(codeGen& gen, instruction& insn) { generate(gen, insn); }
+    static void generate(codeGen &gen, instruction &insn);
+    static void write(codeGen &gen, instruction &insn) { generate(gen,insn); }
 
     static bool generate(codeGen &gen,
                          instruction &insn,
@@ -132,9 +131,6 @@ public:
    static int createStackFrame(codeGen &gen, int numRegs, std::vector<Dyninst::Register>& freeReg,  std::vector<Dyninst::Register>& excludeReg);
    static void removeStackFrame(codeGen &gen);
 
-    static void generateVectorLoad(codeGen& gen, unsigned vectorReg, Register RegAddress);
-    static void generateVectorStore(codeGen& gen, unsigned vectorReg,
-                                    Register RegAddress);
 
    static void generateVectorLoad(codeGen &gen, unsigned vectorReg, Dyninst::Register RegAddress);
    static void generateVectorStore(codeGen & gen, unsigned vectorReg, Dyninst::Register RegAddress);

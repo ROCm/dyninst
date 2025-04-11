@@ -1,28 +1,28 @@
 /*
  * See the dyninst/COPYRIGHT file for copyright information.
- *
+ * 
  * We provide the Paradyn Tools (below described as "Paradyn")
  * on an AS IS basis, and do not warrant its validity or performance.
  * We reserve the right to update, modify, or discontinue this
  * software at any time.  We shall have no obligation to supply such
  * updates or modifications or any other form of support to you.
- *
+ * 
  * By your use of Paradyn, you understand and agree that we (or any
  * other person or entity with proprietary rights in Paradyn) are
  * under no obligation to provide either maintenance services,
  * update services, notices of latent defects, or correction of
  * defects for Paradyn.
- *
+ * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
+ * 
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
@@ -49,18 +49,15 @@ using std::vector;
 /*** The image_* object factory ***/
 class image;
 
-namespace Dyninst
-{
-namespace ParseAPI
-{
-class CodeObject;
+namespace Dyninst {
+namespace ParseAPI {
+   class CodeObject;
 }
-}  // namespace Dyninst
+}
 
-class DynCFGFactory : public Dyninst::ParseAPI::CFGFactory
-{
-public:
-    DynCFGFactory(image* im);
+class DynCFGFactory : public Dyninst::ParseAPI::CFGFactory {
+  public:
+    DynCFGFactory(image * im);
     ~DynCFGFactory() {}
     
     Dyninst::ParseAPI::Function * mkfunc(Dyninst::Address addr, FuncSource src, std::string name,
@@ -78,22 +75,17 @@ public:
     //void free_block(Dyninst::ParseAPI::Block * b);
     //void free_edge(Dyninst::ParseAPI::Edge * e);
 
-    // leaving default atm
-    // void free_func(ParseAPI::Function * f);
-    // void free_block(ParseAPI::Block * b);
-    // void free_edge(ParseAPI::Edge * e);
-
-    // void free_all();
+    //void free_all();
     void dump_stats();
 
-private:
-    boost::mutex     _mtx;
-    image*           _img;
+  private:
+    boost::mutex _mtx;
+    image * _img;     
     std::vector<int> _func_allocs;
     std::vector<int> _edge_allocs;
-    int              _block_allocs;
-    int              _sink_block_allocs;
-    // int _sink_edge_allocs; FIXME can't determine
+    int _block_allocs;
+    int _sink_block_allocs;
+    //int _sink_edge_allocs; FIXME can't determine
 
     void _record_func_alloc(Dyninst::ParseAPI::FuncSource fs)
     {
@@ -105,8 +97,8 @@ private:
         assert(et < Dyninst::ParseAPI::_edgetype_end_);
         ++_edge_allocs[et];
 
-        // if(sink)
-        //++_sink_block_allocs;
+        //if(sink)
+            //++_sink_block_allocs;
     }
     void _record_block_alloc(bool sink)
     {
@@ -146,8 +138,9 @@ class DynParseCallback : public Dyninst::ParseAPI::ParseCallback {
 #if defined(arch_power) || defined(arch_aarch64)
   void instruction_cb(Dyninst::ParseAPI::Function*, Dyninst::ParseAPI::Block *, Dyninst::Address, insn_details*);
 #endif
-private:
-    image* _img;
+ private:
+    image * _img;
 };
+
 
 #endif

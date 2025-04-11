@@ -1,35 +1,35 @@
 /*
  * See the dyninst/COPYRIGHT file for copyright information.
- *
+ * 
  * We provide the Paradyn Tools (below described as "Paradyn")
  * on an AS IS basis, and do not warrant its validity or performance.
  * We reserve the right to update, modify, or discontinue this
  * software at any time.  We shall have no obligation to supply such
  * updates or modifications or any other form of support to you.
- *
+ * 
  * By your use of Paradyn, you understand and agree that we (or any
  * other person or entity with proprietary rights in Paradyn) are
  * under no obligation to provide either maintenance services,
  * update services, notices of latent defects, or correction of
  * defects for Paradyn.
- *
+ * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
+ * 
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #if !defined(DYN_OPERATION_H)
-#    define DYN_OPERATION_H
+#define DYN_OPERATION_H
 
 #include "Register.h"
 #include "Expression.h"
@@ -40,10 +40,10 @@
 #include <set>
 #include <mutex>
 
-#    include "util.h"
-#    include <boost/thread/lockable_adapter.hpp>
-#    include <boost/thread/recursive_mutex.hpp>
-#    include <boost/flyweight.hpp>
+#include "util.h"
+#include <boost/thread/lockable_adapter.hpp>
+#include <boost/thread/recursive_mutex.hpp>
+#include <boost/flyweight.hpp>
 
 // OpCode = operation + encoding
 // contents:
@@ -61,11 +61,10 @@
 // OpCode + raw instruction -> Operation + ExpressionPtrs
 // Operation + ExpressionPtrs -> Instruction + Operands
 
-namespace NS_x86
-{
+namespace NS_x86 {
 struct ia32_entry;
 class ia32_prefixes;
-}  // namespace NS_x86
+}
 class ia32_locations;
 
 namespace Dyninst
@@ -149,18 +148,27 @@ namespace Dyninst
       INSTRUCTION_EXPORT const VCSet& getImplicitMemWrites() const;
       bool isVectorInsn;
 
-private:
-    std::once_flag data_initialized;
-    void           SetUpNonOperandData();
+    private:
+        std::once_flag data_initialized;
+      void SetUpNonOperandData();
+      
+      mutable registerSet otherRead;
+      mutable registerSet otherWritten;
+      mutable VCSet otherEffAddrsRead;
+      mutable VCSet otherEffAddrsWritten;
 
-    mutable registerSet otherRead;
-    mutable registerSet otherWritten;
-    mutable VCSet       otherEffAddrsRead;
-    mutable VCSet       otherEffAddrsWritten;
+    protected:
+        mutable entryID operationID;
+      Architecture archDecodedFrom;
+      prefixEntryID prefixID;
+      Result_Type addrWidth;
+      int segPrefix;
+      mutable std::string mnemonic;
 
       
     };
   }
 }
 
-#endif  //! defined(DYN_OPERATION_H)
+
+#endif //!defined(DYN_OPERATION_H)

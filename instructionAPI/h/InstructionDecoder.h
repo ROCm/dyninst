@@ -29,54 +29,25 @@
  */
 
 #if !defined(INSTRUCTION_DECODER_H)
-#    define INSTRUCTION_DECODER_H
+#define INSTRUCTION_DECODER_H
 
 #include "Instruction.h"
 #include <stddef.h>
 
 namespace Dyninst
 {
-namespace InstructionAPI
-{
-/// The %InstructionDecoder class decodes instructions, given a buffer of bytes and a
-/// length, and the architecture for which to decode instructions, and constructs shared
-/// pointers to %Instruction objects representing those instructions. %InstructionDecoder
-/// objects are given a buffer from which to decode at construction. Calls to \c decode
-/// will proceed to decode instructions sequentially from that buffer until its end is
-/// reached.  At that point, all subsequent calls to \c decode will return a null
-/// %Instruction pointer.
-///
-class InstructionDecoderImpl;
+  namespace InstructionAPI
+  {
+    /// The %InstructionDecoder class decodes instructions, given a buffer of bytes and a length, and
+    /// the architecture for which to decode instructions,
+    /// and constructs shared pointers to %Instruction objects representing those instructions.
+    /// %InstructionDecoder objects are given a buffer from which to decode at construction.
+    /// Calls to \c decode will proceed to decode instructions sequentially from that buffer until its
+    /// end is reached.  At that point, all subsequent calls to \c decode will return a null %Instruction pointer.
+    ///
+      class InstructionDecoderImpl;
 
-class INSTRUCTION_EXPORT InstructionDecoder
-{
-    friend class Instruction;
-
-public:
-    static const unsigned int maxInstructionLength = 16;
-    /// Construct an %InstructionDecoder object that decodes \c arch from \c buffer, up to
-    /// \c size bytes. Valid values for \c arch are \c Arch_x86, \c Arch_x86_64, \c
-    /// Arch_ppc32, and \c Arch_ppc64.
-    InstructionDecoder(const unsigned char* buffer, size_t size, Architecture arch);
-    InstructionDecoder(const void* buffer, size_t size, Architecture arch);
-
-    INSTRUCTION_EXPORT ~InstructionDecoder()                           = default;
-    INSTRUCTION_EXPORT InstructionDecoder(const InstructionDecoder& o) = default;
-    INSTRUCTION_EXPORT InstructionDecoder& operator=(const InstructionDecoder& o) =
-        default;
-    /// Decode the current instruction in this %InstructionDecoder object's buffer,
-    /// interpreting it as machine language of the type understood by this
-    /// %InstructionDecoder. If the buffer does not contain a valid instruction stream, a
-    /// null %Instruction pointer will be returned.  The %Instruction's \c size field will
-    /// contain the size of the instruction decoded.
-    Instruction decode();
-    /// Decode the instruction at \c buffer, interpreting it as machine language of the
-    /// type understood by this %InstructionDecoder.  If the buffer does not contain a
-    /// valid instruction stream, a null %Instruction pointer will be returned.  The
-    /// %Instruction's \c size field will contain the size of the instruction decoded.
-    Instruction               decode(const unsigned char* buffer);
-    void                      doDelayedDecode(const Instruction* insn_to_complete);
-    struct INSTRUCTION_EXPORT buffer
+    class INSTRUCTION_EXPORT InstructionDecoder
     {
       friend class Instruction;
         public:
@@ -128,12 +99,7 @@ public:
       boost::shared_ptr<InstructionDecoderImpl> m_Impl;
     };
 
-private:
-    buffer                                    m_buf;
-    boost::shared_ptr<InstructionDecoderImpl> m_Impl;
-};
+  }
+}
 
-}  // namespace InstructionAPI
-}  // namespace Dyninst
-
-#endif  //! defined(INSTRUCTION_DECODER_H)
+#endif //!defined(INSTRUCTION_DECODER_H)

@@ -37,20 +37,6 @@
 #include <string>
 #include "util.h"
 
-#    include <sstream>
-#    include <string.h>  // memcmp
-#    if !defined(_MSC_VER)
-#        include <inttypes.h>
-#    else
-typedef __int64          int64_t;
-typedef __int32          int32_t;
-typedef __int16          int16_t;
-typedef unsigned __int64 uint64_t;
-typedef unsigned __int32 uint32_t;
-typedef unsigned __int16 uint16_t;
-#    endif
-#    include <assert.h>
-#    include <string>
 
 namespace Dyninst
 {
@@ -714,52 +700,6 @@ namespace Dyninst
                         }
                     }
 
-    template <typename to_type>
-    to_type convert() const
-    {
-        switch(type)
-        {
-            case s8:
-                return to_type(val.s8val);
-            case u8:
-                return to_type(val.u8val);
-            case s16:
-                return to_type(val.s16val);
-            case u16:
-                return to_type(val.u16val);
-            case u24:
-                return to_type(val.u24val);
-            case s32:
-                return to_type(val.s32val);
-            case u32:
-                return to_type(val.u32val);
-            case s48:
-                return to_type(val.s48val);
-            case u48:
-                return to_type(val.u48val);
-            case s64:
-                return to_type(val.s64val);
-            case u64:
-                return to_type(val.u64val);
-            case sp_float:
-                return to_type(val.floatval);
-            case dp_float:
-                return to_type(val.dblval);
-            case bit_flag:
-                return to_type(val.bitval);
-            case m512:
-            case dbl128:
-            case m192:
-            case m256:
-            case m384:
-            case m96:
-                assert(!"M512 and DBL128 types cannot be converted yet");
-                return to_type(0);
-            default:
-                assert(!"Invalid type in result!");
-                return to_type(0);
-        }
-    }
 
                 /// Returns the size of the contained type, in bytes
                 int size() const
@@ -849,4 +789,3 @@ namespace Dyninst
 
 #endif // !defined(RESULT_H)
 
-#endif  // !defined(RESULT_H)

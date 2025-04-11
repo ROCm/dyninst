@@ -29,7 +29,7 @@
  */
 
 #if !defined(DWARF_HANDLE_H_)
-#    define DWARF_HANDLE_H_
+#define DWARF_HANDLE_H_
 
 #include "elfutils/libdw.h"
 #include "dyntypes.h"
@@ -37,68 +37,63 @@
 #include <string>
 #include <boost/shared_ptr.hpp>
 
-namespace Dyninst
-{
+namespace Dyninst {
 class Elf_X;
 
-namespace DwarfDyninst
-{
+namespace DwarfDyninst {
 class DwarfFrameParser;
 
 typedef boost::shared_ptr<DwarfFrameParser> DwarfFrameParserPtr;
 
-class DYNDWARF_EXPORT DwarfHandle
-{
-public:
-    typedef DwarfHandle* ptr;
+class DYNDWARF_EXPORT DwarfHandle {
+  public:
+   typedef DwarfHandle* ptr;
+  private:
+   DwarfFrameParserPtr sw;
+   typedef enum {
+      dwarf_status_uninitialized,
+      dwarf_status_error,
+      dwarf_status_ok
+   } dwarf_status_t;
+   dwarf_status_t init_dwarf_status;
 
-private:
-    DwarfFrameParserPtr sw;
-    typedef enum
-    {
-        dwarf_status_uninitialized,
-        dwarf_status_error,
-        dwarf_status_ok
-    } dwarf_status_t;
-    dwarf_status_t init_dwarf_status;
+   Dwarf *dbg_file_data;
+   Dwarf *file_data;
+   Dwarf **line_data;
+   Dwarf **type_data;
+   Dwarf **frame_data;
 
-    Dwarf*  dbg_file_data;
-    Dwarf*  file_data;
-    Dwarf** line_data;
-    Dwarf** type_data;
-    Dwarf** frame_data;
+   Elf_X *file;
+   Elf_X *dbg_file;
+   /*Dwarf_Handler err_func;*/
+   bool init_dbg();
+   void locate_dbg_file();
+   bool hasFrameData(Elf_X *elfx);
+   std::string filename;
+   std::string debug_filename;
+   static std::map<std::string, DwarfHandle::ptr> all_dwarf_handles;
+   /*static Dwarf_Handler defaultErrFunc;
+   static void defaultDwarfError(Dwarf_Error err, Dwarf_Ptr arg);*/
 
-    Elf_X* file;
-    Elf_X* dbg_file;
-    /*Dwarf_Handler err_func;*/
-    bool                                           init_dbg();
-    void                                           locate_dbg_file();
-    bool                                           hasFrameData(Elf_X* elfx);
-    std::string                                    filename;
-    std::string                                    debug_filename;
-    static std::map<std::string, DwarfHandle::ptr> all_dwarf_handles;
-    /*static Dwarf_Handler defaultErrFunc;
-    static void defaultDwarfError(Dwarf_Error err, Dwarf_Ptr arg);*/
+   DwarfHandle(std::string filename_, Elf_X *file_,
+           void* /*, Dwarf_Handler err_func_*/);
+  public:
+   ~DwarfHandle();
 
-    DwarfHandle(std::string filename_, Elf_X* file_, void* /*, Dwarf_Handler err_func_*/);
+   static DwarfHandle::ptr createDwarfHandle(
+           std::string filename_, Elf_X *file_,
+           void *e=NULL /*, Dwarf_Handler err_func_ = defaultErrFunc*/);
 
-public:
-    ~DwarfHandle();
-
-    static DwarfHandle::ptr createDwarfHandle(
-        std::string filename_, Elf_X* file_,
-        void* e = NULL /*, Dwarf_Handler err_func_ = defaultErrFunc*/);
-
-    Elf_X*              origFile();
-    Elf_X*              debugLinkFile();
-    Dwarf**             line_dbg();
-    Dwarf**             type_dbg();
-    Dwarf**             frame_dbg();
-    DwarfFrameParserPtr frameParser();
-    const std::string&  getDebugFilename() { return debug_filename; }
+   Elf_X *origFile();
+   Elf_X *debugLinkFile();
+   Dwarf **line_dbg();
+   Dwarf **type_dbg();
+   Dwarf **frame_dbg();
+   DwarfFrameParserPtr frameParser();
+   const std::string& getDebugFilename() { return debug_filename; }
 };
 
-}  // namespace DwarfDyninst
-}  // namespace Dyninst
+}
+}
 
 #endif

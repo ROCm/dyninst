@@ -40,10 +40,8 @@
 
 // "Casting" methods. We use a "base + offset" model, but often need to
 // turn that into "current instruction pointer".
-codeBuf_t*
-insnCodeGen::insnPtr(codeGen& gen)
-{
-    return (instructUnion*) gen.cur_ptr();
+codeBuf_t *insnCodeGen::insnPtr(codeGen &gen) {
+    return (instructUnion *)gen.cur_ptr();
 }
 
 #if 0
@@ -58,22 +56,18 @@ codeBuf_t *insnCodeGen::ptrAndInc(codeGen &gen) {
 }
 #endif
 
-void
-insnCodeGen::generate(codeGen& gen, instruction& insn)
-{
+void insnCodeGen::generate(codeGen &gen, instruction &insn) {
 #if defined(endian_mismatch)
-    // Writing an instruction.  Convert byte order if necessary.
-    unsigned raw = swapBytesIfNeeded(insn.asInt());
+  // Writing an instruction.  Convert byte order if necessary.
+  unsigned raw = swapBytesIfNeeded(insn.asInt());
 #else
-    unsigned raw = insn.asInt();
+  unsigned raw = insn.asInt();
 #endif
 
-    gen.copy(&raw, sizeof(unsigned));
+  gen.copy(&raw, sizeof(unsigned));
 }
 
-void
-insnCodeGen::generate(codeGen& gen, instruction& insn, unsigned position)
-{
+void insnCodeGen::generate(codeGen &gen, instruction &insn, unsigned position) {
 #if defined(endian_mismatch)
     // Writing an instruction.  Convert byte order if necessary.
     unsigned raw = swapBytesIfNeeded(insn.asInt());
@@ -84,41 +78,33 @@ insnCodeGen::generate(codeGen& gen, instruction& insn, unsigned position)
     gen.insert(&raw, sizeof(unsigned), position);
 }
 
-void
-insnCodeGen::generateIllegal(codeGen& gen)
-{  // instP.h
+void insnCodeGen::generateIllegal(codeGen &gen) { // instP.h
     instruction insn;
-    generate(gen, insn);
+    generate(gen,insn);
 }
 
-void
-insnCodeGen::generateTrap(codeGen& gen)
-{
+void insnCodeGen::generateTrap(codeGen &gen) {
     instruction insn(BREAK_POINT_INSN);
-    generate(gen, insn);
+    generate(gen,insn);
 }
 
-void
-insnCodeGen::generateBranch(codeGen& gen, long disp, bool link)
-{
-    if(labs(disp) > MAX_BRANCH_OFFSET)
-    {
-        fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n", (unsigned long) labs(disp),
-                (unsigned long) MAX_BRANCH_OFFSET);
-        bperr("Error: attempted a branch of 0x%lx\n", (unsigned long) disp);
+void insnCodeGen::generateBranch(codeGen &gen, long disp, bool link) {
+    if (labs(disp) > MAX_BRANCH_OFFSET) {
+        fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n",
+                (unsigned long)labs(disp), (unsigned long) MAX_BRANCH_OFFSET);
+        bperr( "Error: attempted a branch of 0x%lx\n", (unsigned long)disp);
         logLine("a branch too far\n");
         showErrorCallback(52, "Internal error: branch too far");
-        bperr("Attempted to make a branch of offset 0x%lx\n", (unsigned long) disp);
+        bperr( "Attempted to make a branch of offset 0x%lx\n", (unsigned long)disp);
         assert(0);
     }
 
     instruction insn;
     INSN_SET(insn, 26, 30, BOp);
-    // Set the displacement immediate
+    //Set the displacement immediate
     INSN_SET(insn, 0, 25, disp >> 2);
 
-    // Bit 31 is set if it's a branch-and-link (essentially, a call), unset if it's just a
-    // branch
+    //Bit 31 is set if it's a branch-and-link (essentially, a call), unset if it's just a branch
     if(link)
         INSN_SET(insn, 31, 31, 1);
     else
@@ -130,11 +116,9 @@ insnCodeGen::generateBranch(codeGen& gen, long disp, bool link)
 void insnCodeGen::generateBranch(codeGen &gen, Dyninst::Address from, Dyninst::Address to, bool link) {
     long disp = (to - from);
 
-    if(labs(disp) > MAX_BRANCH_OFFSET)
-    {
+    if (labs(disp) > MAX_BRANCH_OFFSET) {
         generateLongBranch(gen, from, to, link);
-    }
-    else
+    }else
         generateBranch(gen, disp, link);
 }
 
@@ -152,11 +136,11 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
         instruction branchInsn;
         branchInsn.clear();
 
-        // Set bits which are 0 for both BR and BLR
+        //Set bits which are 0 for both BR and BLR
         INSN_SET(branchInsn, 0, 4, 0);
         INSN_SET(branchInsn, 10, 15, 0);
 
-        // Set register
+        //Set register
         INSN_SET(branchInsn, 5, 9, s);
 
         // Set other bits . Basically, these are the opcode bits.
@@ -181,10 +165,10 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
         return;
     }
 
-    instPoint* point = gen.point();
+    instPoint *point = gen.point();
     if(point)
     {
-        registerSpace* rs = registerSpace::actualRegSpace(point);
+        registerSpace *rs = registerSpace::actualRegSpace(point);
         gen.setRegisterSpace(rs);
 
         scratch = rs->getScratchRegister(gen, true);
@@ -192,8 +176,7 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
 
     if (scratch == Null_Register)
     {
-        // fprintf(stderr, " %s[%d] No registers. Calling generateBranchViaTrap...\n",
-        // FILE__, __LINE__);
+        //fprintf(stderr, " %s[%d] No registers. Calling generateBranchViaTrap...\n", FILE__, __LINE__);
         generateBranchViaTrap(gen, from, to, isCall);
         return;
     }
@@ -204,29 +187,25 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
 
 void insnCodeGen::generateBranchViaTrap(codeGen &gen, Dyninst::Address from, Dyninst::Address to, bool isCall) {
     long disp = to - from;
-    if(labs(disp) <= MAX_BRANCH_OFFSET)
-    {
+    if (labs(disp) <= MAX_BRANCH_OFFSET) {
         // We shouldn't be here, since this is an internal-called-only func.
         generateBranch(gen, disp, isCall);
     }
 
-    assert(!isCall);  // Can't do this yet
+    assert (!isCall); // Can't do this yet
 
-    if(gen.addrSpace())
-    {
+    if (gen.addrSpace()) {
         // Too far to branch.  Use trap-based instrumentation.
         gen.addrSpace()->trapMapping.addTrapMapping(from, to, true);
         insnCodeGen::generateTrap(gen);
-    }
-    else
-    {
+    } else {
         // Too far to branch and no proc to register trap.
-        fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n", (unsigned long) labs(disp),
-                (unsigned long) MAX_BRANCH_OFFSET);
-        bperr("Error: attempted a branch of 0x%lx\n", (unsigned long) disp);
+        fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n",
+                (unsigned long)labs(disp), (unsigned long) MAX_BRANCH_OFFSET);
+        bperr( "Error: attempted a branch of 0x%lx\n", (unsigned long)disp);
         logLine("a branch too far\n");
         showErrorCallback(52, "Internal error: branch too far");
-        bperr("Attempted to make a branch of offset 0x%lx\n", (unsigned long) disp);
+        bperr( "Attempted to make a branch of offset 0x%lx\n", (unsigned long)disp);
         assert(0);
     }
 }
@@ -236,46 +215,32 @@ void insnCodeGen::generateConditionalBranch(codeGen& gen, Dyninst::Address to, u
     instruction insn;
     insn.clear();
 
-    // Set opcode
+    //Set opcode
     INSN_SET(insn, 25, 31, BCondOp);
 
-    // Set imm19 field
+    //Set imm19 field
     INSN_SET(insn, 5, 23, to >> 2);
 
-    auto getConditionCode = [&opcode, &s]() -> unsigned {
-        switch(opcode)
-        {
+    auto getConditionCode = [&opcode, &s]() -> unsigned
+    {
+        switch(opcode){
             case lessOp:
-                if(s)
-                    return 0xB;
-                else
-                    return 0x3;
-            case leOp:
-                if(s)
-                    return 0xD;
-                else
-                    return 0x9;
-            case greaterOp:
-                if(s)
-                    return 0xC;
-                else
-                    return 0x8;
-            case geOp:
-                if(s)
-                    return 0xA;
-                else
-                    return 0x2;
-            case eqOp:
-                return 0x0;
-            case neOp:
-                return 0x1;
+	      if (s) return 0xB; else return 0x3;
+            case leOp:      
+	      if (s) return 0xD; else return 0x9;
+            case greaterOp: 
+	      if (s) return 0xC; else return 0x8;
+            case geOp:      
+	      if (s) return 0xA; else return 0x2;
+            case eqOp:      return 0x0;
+            case neOp:      return 0x1;
             default:
-                assert(0);  // wrong condition passed
+                assert(0); // wrong condition passed
                 break;
         }
     };
 
-    // Set condition
+    //Set condition 
     INSN_SET(insn, 0, 3, getConditionCode());
 
     insnCodeGen::generate(gen, insn);
@@ -289,21 +254,21 @@ void insnCodeGen::generateAddSubShifted(
     instruction insn;
     insn.clear();
 
-    // Set bit 31 to 1 if using 64-bit registers
+    //Set bit 31 to 1 if using 64-bit registers
     if(is64bit)
         INSN_SET(insn, 31, 31, 1);
-    // Set opcode
+    //Set opcode
     INSN_SET(insn, 24, 30, op == Add ? ADDShiftOp : SUBShiftOp);
 
-    // Set shift field
+    //Set shift field
     assert(shift >= 0 && shift <= 3);
     INSN_SET(insn, 22, 23, (shift & 0x3));
 
-    // Set imm6 field
+    //Set imm6 field
     assert(imm6 >= 0 && imm6 < (is64bit ? 64 : 32));
     INSN_SET(insn, 10, 15, imm6);
 
-    // Set registers
+    //Set registers
     INSN_SET(insn, 0, 4, rd);
     INSN_SET(insn, 5, 9, rn);
     INSN_SET(insn, 16, 20, rm);
@@ -317,20 +282,20 @@ void insnCodeGen::generateAddSubImmediate(
     instruction insn;
     insn.clear();
 
-    // Set bit 31 to 1 if using 64-bit registers
+    //Set bit 31 to 1 if using 64-bit registers
     if(is64bit)
         INSN_SET(insn, 31, 31, 1);
-    // Set opcode
+    //Set opcode
     INSN_SET(insn, 24, 30, op == Add ? ADDImmOp : SUBImmOp);
 
-    // Set shift field
+    //Set shift field
     assert(shift >= 0 && shift <= 3);
     INSN_SET(insn, 22, 23, (shift & 0x3));
 
-    // Set imm12 field
+    //Set imm12 field
     INSN_SET(insn, 10, 21, imm12);
 
-    // Set registers
+    //Set registers
     INSN_SET(insn, 5, 9, rn);
     INSN_SET(insn, 0, 4, rd);
 
@@ -341,16 +306,16 @@ void insnCodeGen::generateMul(codeGen &gen, Dyninst::Register rm, Dyninst::Regis
     instruction insn;
     insn.clear();
 
-    // Set bit 31 to 1 if using 64-bit registers
+    //Set bit 31 to 1 if using 64-bit registers
     if(is64bit)
         INSN_SET(insn, 31, 31, 1);
-    // Set opcode
+    //Set opcode
     INSN_SET(insn, 21, 28, MULOp);
 
-    // Bits 10 to 14 are 1 for MUL
+    //Bits 10 to 14 are 1 for MUL
     INSN_SET(insn, 10, 14, 0x1F);
 
-    // Set registers
+    //Set registers
     INSN_SET(insn, 16, 20, rm);
     INSN_SET(insn, 5, 9, rn);
     INSN_SET(insn, 0, 4, rd);
@@ -373,21 +338,19 @@ void insnCodeGen::generateDiv(
     INSN_SET(insn, 21, 30, SDIVOp);
 
     INSN_SET(insn, 11, 15, 0x1);
-    if(s)
-    {
-        INSN_SET(insn, 10, 10, 0x1);  // signed: SDIV
-    }
-    else
-    {
-        INSN_SET(insn, 10, 10, 0x0);  // unsigned: UDIV
+    if (s) {
+        INSN_SET(insn, 10, 10, 0x1); // signed: SDIV
+    } else {
+        INSN_SET(insn, 10, 10, 0x0); // unsigned: UDIV
     }
 
-    // Set registers
+    //Set registers
     INSN_SET(insn, 16, 20, rm);
     INSN_SET(insn, 5, 9, rn);
     INSN_SET(insn, 0, 4, rd);
 
     insnCodeGen::generate(gen, insn);
+
 }
 
 void insnCodeGen::generateBitwiseOpShifted(
@@ -397,37 +360,33 @@ void insnCodeGen::generateBitwiseOpShifted(
     instruction insn;
     insn.clear();
 
-    // Set bit 31 to 1 if using 64-bit registers
+    //Set bit 31 to 1 if using 64-bit registers
     if(is64bit)
         INSN_SET(insn, 31, 31, 1);
 
-    // Set opcode
+    //Set opcode
     int opcode;
-    switch(op)
-    {
-        case insnCodeGen::And:
-            opcode = ANDShiftOp;
+    switch(op) {
+        case insnCodeGen::And: opcode = ANDShiftOp;
             break;
-        case insnCodeGen::Or:
-            opcode = ORRShiftOp;
+        case insnCodeGen::Or: opcode = ORRShiftOp;
             break;
-        case insnCodeGen::Eor:
-            opcode = EORShiftOp;
+        case insnCodeGen::Eor: opcode = EORShiftOp;
             break;
         default:
             assert(!"insnCodeGen::generateBitwiseOpShifted op is not And, Or or Eor");
     }
     INSN_SET(insn, 24, 30, opcode);
 
-    // Set shift field
+    //Set shift field
     assert(shift >= 0 && shift <= 3);
     INSN_SET(insn, 22, 23, (shift & 0x3));
 
-    // Set imm6 field
+    //Set imm6 field
     assert(imm6 >= 0 && imm6 < (is64bit ? 64 : 32));
     INSN_SET(insn, 10, 15, imm6);
 
-    // Set registers
+    //Set registers
     INSN_SET(insn, 16, 20, rm);
     INSN_SET(insn, 5, 9, rn);
     INSN_SET(insn, 0, 4, rd);
@@ -439,28 +398,28 @@ void insnCodeGen::generateLoadReg(codeGen &, Dyninst::Register,
                                   Dyninst::Register, Dyninst::Register)
 {
     assert(0);
-    //#warning "This function is not implemented yet!"
+//#warning "This function is not implemented yet!"
 }
 
 void insnCodeGen::generateStoreReg(codeGen &, Dyninst::Register,
                                    Dyninst::Register, Dyninst::Register)
 {
     assert(0);
-    //#warning "This function is not implemented yet!"
+//#warning "This function is not implemented yet!"
 }
 
 void insnCodeGen::generateLoadReg64(codeGen &, Dyninst::Register,
                                     Dyninst::Register, Dyninst::Register)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 void insnCodeGen::generateStoreReg64(codeGen &, Dyninst::Register,
                                      Dyninst::Register, Dyninst::Register)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 void insnCodeGen::generateMove(codeGen &gen, int imm16, int shift, Dyninst::Register rd, MoveOp movOp)
@@ -468,19 +427,19 @@ void insnCodeGen::generateMove(codeGen &gen, int imm16, int shift, Dyninst::Regi
     instruction insn;
     insn.clear();
 
-    // Set the sf bit to 1 since we always want to use 64-bit registers
+    //Set the sf bit to 1 since we always want to use 64-bit registers
     INSN_SET(insn, 31, 31, 1);
 
-    // Set opcode
+    //Set opcode
     INSN_SET(insn, 23, 30, movOp);
 
-    // Set immediate
+    //Set immediate
     INSN_SET(insn, 5, 20, imm16);
 
-    // Set register
+    //Set register
     INSN_SET(insn, 0, 4, rd);
 
-    // Set shift amount for immediate
+    //Set shift amount for immediate
     INSN_SET(insn, 21, 22, (shift & 0x3));
 
     insnCodeGen::generate(gen, insn);
@@ -489,22 +448,21 @@ void insnCodeGen::generateMove(codeGen &gen, int imm16, int shift, Dyninst::Regi
 void insnCodeGen::generateMove(
         codeGen &gen, Dyninst::Register rd, Dyninst::Register rm, bool is64bit)
 {
-    insnCodeGen::generateBitwiseOpShifted(gen, insnCodeGen::Or, 0, rm, 0, 0x1f, rd,
-                                          is64bit);
+    insnCodeGen::generateBitwiseOpShifted(gen, insnCodeGen::Or, 0, rm, 0, 0x1f, rd, is64bit);  
 }
 
 void insnCodeGen::generateMoveSP(codeGen &gen, Dyninst::Register rn, Dyninst::Register rd, bool is64bit) {
     instruction insn;
     insn.clear();
 
-    // Set source and destination registers
+    //Set source and destination registers
     INSN_SET(insn, 0, 4, rd & 0x1f);
     INSN_SET(insn, 5, 9, rn & 0x1f);
 
-    // Set opcode
+    //Set opcode
     INSN_SET(insn, 10, 30, MOVSPOp);
 
-    // Set if using 64-bit registers
+    //Set if using 64-bit registers
     INSN_SET(insn, 31, 31, is64bit);
 
     insnCodeGen::generate(gen, insn);
@@ -514,9 +472,9 @@ void insnCodeGen::generateMoveSP(codeGen &gen, Dyninst::Register rn, Dyninst::Re
 Dyninst::Register insnCodeGen::moveValueToReg(codeGen &gen, long int val, std::vector<Dyninst::Register> *exclude) {
     Dyninst::Register scratchReg;
     if(exclude)
-        scratchReg = gen.rs()->getScratchRegister(gen, *exclude, true);
+	    scratchReg = gen.rs()->getScratchRegister(gen, *exclude, true);
     else
-        scratchReg = gen.rs()->getScratchRegister(gen, true);
+	    scratchReg = gen.rs()->getScratchRegister(gen, true);
 
     if (scratchReg == Null_Register) {
         fprintf(stderr, " %s[%d] No scratch register available to generate add instruction!", FILE__, __LINE__);
@@ -541,30 +499,27 @@ void insnCodeGen::generateMemAccess(codeGen &gen, LoadStore accType,
     instruction insn;
     insn.clear();
 
-    assert(size == 1 || size == 2 || size == 4 || size == 8);
+    assert( size==1 || size==2 || size==4 || size==8 );
 
-    static unsigned short map_size[9] = {
-        0, 0, 1, 0, 2, 0, 0, 0, 3
-    };  // map `size` to 00,01,10,11
+    static unsigned short map_size[9] = {0,0,1,0,2,0,0,0,3}; // map `size` to 00,01,10,11
     INSN_SET(insn, 30, 31, map_size[size]);
 
-    switch(im)
-    {
+    switch(im){
         case Post:
         case Pre:
             assert(immd >= -256 && immd <= 255);
             INSN_SET(insn, 21, 29, (accType == Load) ? LDRImmOp : STRImmOp);
-            INSN_SET(insn, 10, 11, im == Post ? 0x1 : 0x3);
-            INSN_SET(insn, 12, 20, immd);  // can be negative so no enconding
+            INSN_SET(insn, 10, 11, im==Post?0x1:0x3);
+            INSN_SET(insn, 12, 20, immd); // can be negative so no enconding
             break;
         case Offset:
-            assert(immd >= 0);  // this offset is supposed to be unsigned, i.e. positive
+            assert(immd>=0); // this offset is supposed to be unsigned, i.e. positive
             INSN_SET(insn, 22, 29, (accType == Load) ? LDRImmUIOp : STRImmUIOp);
-            INSN_SET(insn, 10, 21, immd / size);  // always positive so encode
+            INSN_SET(insn, 10, 21, immd/size); // always positive so encode
             break;
     }
 
-    // Set memory access register and register for address calculation.
+    //Set memory access register and register for address calculation.
     INSN_SET(insn, 0, 4, r1 & 0x1F);
     INSN_SET(insn, 5, 9, r2 & 0x1F);
 
@@ -578,27 +533,22 @@ void insnCodeGen::generateMemAccessFP(codeGen &gen, LoadStore accType,
     instruction insn;
     insn.clear();
 
-    switch(im)
-    {
+    switch(im){
         case Post:
         case Pre:
-            // Set opcode, index and offset bits
-            if(immd >= -256 && immd <= 255)
-            {
+            //Set opcode, index and offset bits
+            if(immd >= -256 && immd <= 255) {
                 INSN_SET(insn, 21, 29, (accType == Load) ? LDRFPImmOp : STRFPImmOp);
-                INSN_SET(insn, 10, 11, im == Post ? 0x1 : 0x3);
-                INSN_SET(insn, 12, 20, immd);  // can be negative so no enconding
-            }
-            else
-            {
-                assert(!"Cannot perform a post/pre-indexed memory access for offsets not "
-                        "in range [-256, 255]!");
+                INSN_SET(insn, 10, 11, im==Post?0x1:0x3);
+                INSN_SET(insn, 12, 20, immd); // can be negative so no enconding
+            } else {
+                assert(!"Cannot perform a post/pre-indexed memory access for offsets not in range [-256, 255]!");
             }
             break;
         case Offset:
             INSN_SET(insn, 22, 29, (accType == Load) ? LDRFPImmUOp : STRFPImmUOp);
-            assert(immd >= 0);  // this offset is supposed to be unsigned, i.e. positive
-            INSN_SET(insn, 10, 21, immd >> 4);  //#sasha change encoding to appropriate
+            assert(immd>=0); // this offset is supposed to be unsigned, i.e. positive
+            INSN_SET(insn, 10, 21, immd>>4); //#sasha change encoding to appropriate
             break;
     }
 
@@ -608,11 +558,10 @@ void insnCodeGen::generateMemAccessFP(codeGen &gen, LoadStore accType,
         INSN_SET(insn, 23, 23, 1);
 
     if(size < 0 || size > 3)
-        assert(!"Size field for STR (immediate, SIMD&FP) variant has to be in the range "
-                "[0-3]!");
+        assert(!"Size field for STR (immediate, SIMD&FP) variant has to be in the range [0-3]!");
     INSN_SET(insn, 30, 31, size & 0x3);
 
-    // Set memory access register and register for address calculation.
+    //Set memory access register and register for address calculation.
     INSN_SET(insn, 0, 4, rt);
     INSN_SET(insn, 5, 9, rn);
 
@@ -622,41 +571,38 @@ void insnCodeGen::generateMemAccessFP(codeGen &gen, LoadStore accType,
 // rlwinm ra,rs,n,0,31-n
 void insnCodeGen::generateLShift(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 // rlwinm ra,rs,32-n,n,31
 void insnCodeGen::generateRShift(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 // sld ra, rs, rb
 void insnCodeGen::generateLShift64(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 // srd ra, rs, rb
 void insnCodeGen::generateRShift64(codeGen &, Dyninst::Register, int, Dyninst::Register)
 {
-    assert(0);
-    // not implemented
+assert(0);
+//not implemented
 }
 
 //
 // generate an instruction that does nothing and has to side affect except to
 //   advance the program counter.
 //
-void
-insnCodeGen::generateNOOP(codeGen& gen, unsigned size)
-{
+void insnCodeGen::generateNOOP(codeGen &gen, unsigned size) {
     assert((size % instruction::size()) == 0);
-    while(size)
-    {
+    while (size) {
         instruction insn(NOOP);
         insnCodeGen::generate(gen, insn);
         size -= instruction::size();
@@ -666,8 +612,8 @@ insnCodeGen::generateNOOP(codeGen& gen, unsigned size)
 void insnCodeGen::generateRelOp(codeGen &, int, int, Dyninst::Register,
                                 Dyninst::Register, Dyninst::Register)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 
@@ -682,13 +628,14 @@ void insnCodeGen::restoreRegister(codeGen &gen, Dyninst::Register r, int sp_offs
     generateMemAccess(gen, Load, r, REG_SP, sp_offset, 8, im);
 }
 
+
 // Helper method.  Fills register with partial value to be completed
 // by an operation with a 16-bit signed immediate.  Such as loads and
 // stores.
 void insnCodeGen::loadPartialImmIntoReg(codeGen &, Dyninst::Register, long)
 {
-    assert(0);
-    //#warning "This function is not implemented yet!"
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 int insnCodeGen::createStackFrame(codeGen &, int, std::vector<Dyninst::Register>& freeReg, std::vector<Dyninst::Register>&){
@@ -697,11 +644,9 @@ assert(0);
 		return freeReg.size();
 }
 
-void
-insnCodeGen::removeStackFrame(codeGen&)
-{
-    assert(0);
-    //#warning "This function is not implemented yet!"
+void insnCodeGen::removeStackFrame(codeGen &) {
+assert(0);
+//#warning "This function is not implemented yet!"
 }
 
 bool insnCodeGen::generateMem(codeGen &,
@@ -739,22 +684,24 @@ bool insnCodeGen::modifyJump(Dyninst::Address target,
         return true;
     }
 
-    if(labs(disp) > MAX_BRANCH_OFFSET)
-    {
+    if (labs(disp) > MAX_BRANCH_OFFSET) {
         generateBranchViaTrap(gen, gen.currAddr(), target, INSN_GET_ISCALL(insn));
         return true;
     }
 
-    generateBranch(gen, gen.currAddr(), target, INSN_GET_ISCALL(insn));
+    generateBranch(gen,
+                   gen.currAddr(),
+                   target,
+                   INSN_GET_ISCALL(insn));
     return true;
 }
 
 /* TODO and/or FIXME
- * The logic used by this function is common across architectures but is replicated
+ * The logic used by this function is common across architectures but is replicated 
  * in architecture-specific manner in all codegen-* files.
- * This means that the logic itself needs to be refactored into the (platform
+ * This means that the logic itself needs to be refactored into the (platform 
  * independent) codegen.C file. Appropriate architecture-specific,
- * bit-twiddling functions can then be defined if necessary in the codegen-* files
+ * bit-twiddling functions can then be defined if necessary in the codegen-* files 
  * and called as necessary by the common, refactored logic.
 */
 bool insnCodeGen::modifyJcc(Dyninst::Address target,
@@ -762,8 +709,9 @@ bool insnCodeGen::modifyJcc(Dyninst::Address target,
 			    codeGen &gen) {
     long disp = target - gen.currAddr();
     auto isTB = insn.isInsnType(COND_BR_t::TB_MASK, COND_BR_t::TB);
-
-    if(labs(disp) > MAX_CBRANCH_OFFSET || (isTB && labs(disp) > MAX_TBRANCH_OFFSET))
+    
+    if(labs(disp) > MAX_CBRANCH_OFFSET ||
+            (isTB && labs(disp) > MAX_TBRANCH_OFFSET))
     {
         Dyninst::Address origFrom = gen.currAddr();
 
@@ -771,8 +719,7 @@ bool insnCodeGen::modifyJcc(Dyninst::Address target,
          * A conditional branch of the form:
          *    b.cond A
          * C: ...next insn...:
-         * [Note that b.cond could also be cbz, cbnz, tbz or tbnz -- all valid conditional
-         * branch instructions]
+         * [Note that b.cond could also be cbz, cbnz, tbz or tbnz -- all valid conditional branch instructions]
          *
          * Gets converted to:
          *    b.cond B
@@ -781,14 +728,12 @@ bool insnCodeGen::modifyJcc(Dyninst::Address target,
          * C: ...next insn...
          */
 
-        // Store start index of code buffer to later calculate how much the original
-        // instruction's will have moved
+        // Store start index of code buffer to later calculate how much the original instruction's will have moved
         codeBufIndex_t startIdx = gen.getIndex();
 
-        /* Generate the --b.cond B-- instruction. Directly modifying the offset
+        /* Generate the --b.cond B-- instruction. Directly modifying the offset 
          * bits of the instruction passed since other bits are to remain the same anyway.
-           B will be 4 bytes from the next instruction. (it will get multiplied by 4 by
-         the CPU) */
+           B will be 4 bytes from the next instruction. (it will get multiplied by 4 by the CPU) */
         instruction newInsn(insn);
         if(insn.isInsnType(COND_BR_t::TB_MASK, COND_BR_t::TB))
             INSN_SET(newInsn, 5, 18, 0x1);
@@ -796,7 +741,7 @@ bool insnCodeGen::modifyJcc(Dyninst::Address target,
             INSN_SET(newInsn, 5, 23, 0x1);
         generate(gen, newInsn);
 
-        /* Generate the --b C-- instruction. C will be 4 bytes from the next
+        /* Generate the --b C-- instruction. C will be 4 bytes from the next 
          * instruction, hence offset for this instruction is set to 1.
           (it will get multiplied by 4 by the CPU) */
         newInsn.clear();
@@ -811,7 +756,7 @@ bool insnCodeGen::modifyJcc(Dyninst::Address target,
         codeBufIndex_t curIdx = gen.getIndex();
         Dyninst::Address newFrom = origFrom + (unsigned)(curIdx - startIdx);
         insnCodeGen::generateBranch(gen, newFrom, target);
-    }
+    } 
     else
     {
         instruction condBranchInsn(insn);
@@ -841,10 +786,10 @@ bool insnCodeGen::modifyData(Dyninst::Address target,
         NS_aarch64::instruction &insn,
         codeGen &gen) 
 {
-    int  raw   = insn.asInt();
+    int raw = insn.asInt();
     bool isneg = false;
 
-    if(target < gen.currAddr())
+    if (target < gen.currAddr())
         isneg = true;
 
     if (((raw >> 24) & 0x1F) == 0x10) {
@@ -858,17 +803,10 @@ bool insnCodeGen::modifyData(Dyninst::Address target,
             Dyninst::Address cur = gen.currAddr();
             offset = isneg ? (cur - target) : (target - cur);
         }
-        else
-        {
-            Address cur = gen.currAddr();
-            offset      = isneg ? (cur - target) : (target - cur);
-        }
-        signed long imm = isneg ? -((signed long) offset) : offset;
+        signed long imm = isneg ? -((signed long)offset) : offset;
 
-        // If offset is within +/- 1 MB, modify the instruction (ADR/ADRP) with the new
-        // offset
-        if(offset <= (1 << 20))
-        {
+        //If offset is within +/- 1 MB, modify the instruction (ADR/ADRP) with the new offset
+        if (offset <= (1 << 20)) {
             instruction newInsn(insn);
             INSN_SET(newInsn, 5, 23, ((imm >> 2) & 0x7FFFF));
             INSN_SET(newInsn, 29, 30, (imm & 0x3));
@@ -881,8 +819,7 @@ bool insnCodeGen::modifyData(Dyninst::Address target,
             instruction newInsn;
             instruction newInsn2;
             newInsn.clear();
-            signed long page_rel =
-                ((long) (target >> 12)) - ((long) (gen.currAddr() >> 12));
+            signed long page_rel = ((long)(target >> 12)) - ((long)(gen.currAddr() >> 12));
             signed long off = target & 0xFFFF;
             INSN_SET(newInsn, 0, 4, raw & 0x1F);
             INSN_SET(newInsn, 5, 23, ((page_rel >> 2) & 0x7FFFF));
@@ -895,7 +832,8 @@ bool insnCodeGen::modifyData(Dyninst::Address target,
             INSN_SET(newInsn2, 5, 9, raw & 0x1F);
             INSN_SET(newInsn2, 10, 21, off);
             INSN_SET(newInsn2, 22, 31, 0x244);
-            generate(gen, newInsn2);
+            generate(gen , newInsn2);
+
         }
     } else if (((raw >> 24) & 0x3F) == 0x18 || ((raw >> 24) & 0x3F) == 0x1C) {
         Dyninst::Address offset = !isneg ? (target - gen.currAddr()) : (gen.currAddr() - target);
@@ -909,9 +847,8 @@ bool insnCodeGen::modifyData(Dyninst::Address target,
 
             generate(gen, newInsn);
         }
-        // If it's larger than |1MB|, move target to register and generate LDR
-        else
-        {
+        //If it's larger than |1MB|, move target to register and generate LDR
+        else {
             // Get scratch register
             Dyninst::Register scratch = gen.rs()->getScratchRegister(gen, true);
             if(scratch == Null_Register)
@@ -925,12 +862,10 @@ bool insnCodeGen::modifyData(Dyninst::Address target,
             Dyninst::Register r = raw & 0x1F;
             generateMemAccess(gen, Load, r, scratch, 0, 8, Offset);
         }
-    }
-    else
-    {
-        assert(!"Got an instruction other than ADR/ADRP/LDR(literal)/LDRSW(literal) in "
-                "PC-relative data access!");
+    } else {
+        assert(!"Got an instruction other than ADR/ADRP/LDR(literal)/LDRSW(literal) in PC-relative data access!");
     }
 
     return true;
 }
+

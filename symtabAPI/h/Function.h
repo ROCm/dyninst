@@ -31,10 +31,10 @@
 /************************************************************************
  * $Id: Symbol.h,v 1.20 2008/11/03 15:19:24 jaw Exp $
  * Symbol.h: symbol table objects.
- ************************************************************************/
+************************************************************************/
 
 #if !defined(_Function_h_)
-#    define _Function_h_
+#define _Function_h_
 
 #include <iosfwd>
 #include <stddef.h>
@@ -46,35 +46,33 @@
 #include "Variable.h"
 #include "VariableLocation.h"
 
-SYMTAB_EXPORT std::ostream&
-              operator<<(std::ostream& os, const Dyninst::SymtabAPI::Function&);
+SYMTAB_EXPORT std::ostream &operator<<(std::ostream &os, const Dyninst::SymtabAPI::Function &);
 
-namespace Dyninst
-{
-namespace SymtabAPI
-{
+namespace Dyninst{
+namespace SymtabAPI{
+
 class Symbol;
 class Type;
 class FunctionBase;
 class DwarfWalker;
 
-class SYMTAB_EXPORT FuncRange
-{
-public:
-    FuncRange(Dyninst::Offset off_, size_t size_, FunctionBase* cont_)
-    : container(cont_)
-    , off(off_)
-    , size(size_)
-    {}
+class SYMTAB_EXPORT FuncRange {
+  public:
+   FuncRange(Dyninst::Offset off_, size_t size_, FunctionBase *cont_) :
+     container(cont_),
+     off(off_),
+     size(size_)
+   {
+   }
 
-    FunctionBase*   container;
-    Dyninst::Offset off;
-    unsigned long   size;
+   FunctionBase *container;
+   Dyninst::Offset off;
+   unsigned long size;
 
-    // For interval tree
-    Dyninst::Offset         low() const { return off; }
-    Dyninst::Offset         high() const { return off + size; }
-    typedef Dyninst::Offset type;
+   //For interval tree
+   Dyninst::Offset low() const { return off; }
+   Dyninst::Offset high() const { return off + size; }
+   typedef Dyninst::Offset type;
 };
 
 typedef std::vector<FuncRange> FuncRangeCollection;
@@ -92,47 +90,41 @@ class SYMTAB_EXPORT FunctionBase
      return getReturnType(Type::share).get();
    }
 
-public:
-    /***** Return Type Information *****/
-    dyn_mutex               ret_lock;
-    boost::shared_ptr<Type> getReturnType(Type::do_share_t) const;
-    Type* getReturnType() const { return getReturnType(Type::share).get(); }
+   /***** Local Variable Information *****/
+   bool findLocalVariable(std::vector<localVar *>&vars, std::string name);
+   bool getLocalVariables(std::vector<localVar *>&vars);
+   bool getParams(std::vector<localVar *>&params);
 
-    /***** Local Variable Information *****/
-    bool findLocalVariable(std::vector<localVar*>& vars, std::string name);
-    bool getLocalVariables(std::vector<localVar*>& vars);
-    bool getParams(std::vector<localVar*>& params);
+   bool operator==(const FunctionBase &);
 
-    bool operator==(const FunctionBase&);
+   FunctionBase *getInlinedParent();
+   const InlineCollection &getInlines();
 
-    FunctionBase*           getInlinedParent();
-    const InlineCollection& getInlines();
+   const FuncRangeCollection &getRanges();
 
-    const FuncRangeCollection& getRanges();
+   /***** Frame Pointer Information *****/
+   bool setFramePtr(std::vector<VariableLocation> *locs);
+   std::vector<VariableLocation> &getFramePtrRefForInit();
+   std::vector<VariableLocation> &getFramePtr();
+   dyn_mutex &getFramePtrLock();
 
-    /***** Frame Pointer Information *****/
-    bool                           setFramePtr(std::vector<VariableLocation>* locs);
-    std::vector<VariableLocation>& getFramePtrRefForInit();
-    std::vector<VariableLocation>& getFramePtr();
-    dyn_mutex&                     getFramePtrLock();
+   /***** Primary name *****/
+   virtual std::string getName() const = 0;
+   virtual bool addMangledName(std::string name, bool isPrimary, bool isDebug=false) = 0;
+   virtual bool addPrettyName(std::string name, bool isPrimary, bool isDebug=false) = 0;
 
-    /***** Primary name *****/
-    virtual std::string getName() const                      = 0;
-    virtual bool        addMangledName(std::string name, bool isPrimary,
-                                       bool isDebug = false) = 0;
-    virtual bool        addPrettyName(std::string name, bool isPrimary,
-                                      bool isDebug = false)  = 0;
+   /***** Opaque data object pointers, usable by user ****/
+   void *getData();
+   void setData(void *d);
 
    /* internal helper functions */
    bool addLocalVar(localVar *);
    bool addParam(localVar *);
    bool	setReturnType(boost::shared_ptr<Type>);
 
-    /* internal helper functions */
-    bool addLocalVar(localVar*);
-    bool addParam(localVar*);
-    bool setReturnType(boost::shared_ptr<Type>);
-    bool setReturnType(Type* t) { return setReturnType(t->reshare()); }
+   virtual Offset getOffset() const = 0;
+   virtual unsigned getSize() const = 0;
+   virtual Module* getModule() const = 0;
 
    virtual ~FunctionBase();
 
@@ -142,11 +134,12 @@ public:
    localVarCollection *locals;
    localVarCollection *params;
 
-    localVarCollection* locals;
-    localVarCollection* params;
+   mutable unsigned functionSize_;
+   boost::shared_ptr<Type>          retType_;
 
-    mutable unsigned        functionSize_;
-    boost::shared_ptr<Type> retType_;
+   dyn_mutex inlines_lock;
+   InlineCollection inlines;
+   FunctionBase *inline_parent;
 
    FuncRangeCollection ranges;
    std::vector<VariableLocation> frameBase_;
@@ -174,22 +167,13 @@ public:
    /* Symbol management */
    bool removeSymbol(Symbol *sym) override;
 
-    /***** PPC64 Linux Specific Information *****/
-    Offset getPtrOffset() const;
-    Offset getTOCOffset() const;
+   /***** IA64-Specific Frame Pointer Information *****/
+   bool  setFramePtrRegnum(int regnum);
+   int   getFramePtrRegnum() const;
 
-    virtual unsigned    getSymbolSize() const;
-    virtual unsigned    getSize() const;
-    virtual std::string getName() const;
-    virtual Offset      getOffset() const { return Aggregate::getOffset(); }
-    virtual bool addMangledName(std::string name, bool isPrimary, bool isDebug = false)
-    {
-        return Aggregate::addMangledName(name, isPrimary, isDebug);
-    }
-    virtual bool addPrettyName(std::string name, bool isPrimary, bool isDebug = false)
-    {
-        return Aggregate::addPrettyName(name, isPrimary, isDebug);
-    }
+   /***** PPC64 Linux Specific Information *****/
+   Offset getPtrOffset() const;
+   Offset getTOCOffset() const;
 
    unsigned getSymbolSize() const;
    unsigned getSize() const override;
@@ -230,7 +214,7 @@ class SYMTAB_EXPORT InlinedFunction : public FunctionBase
    Dyninst::Offset offset_;
 };
 
-}  // namespace SymtabAPI
-}  // namespace Dyninst
+}
+}
 
 #endif

@@ -29,7 +29,7 @@
  */
 
 #if !defined(ENTRYIDS_IA32_H)
-#    define ENTRYIDS_IA32_H
+#define ENTRYIDS_IA32_H
 
 #include <string>
 #include "dyntypes.h"
@@ -55,10 +55,9 @@ enum prefixEntryID : unsigned int {
   prefix_repnz
 };
 
-namespace NS_x86
-{
-COMMON_EXPORT extern dyn_hash_map<entryID, std::string>       entryNames_IAPI;
+namespace NS_x86 {
+COMMON_EXPORT extern dyn_hash_map<entryID, std::string> entryNames_IAPI;
 COMMON_EXPORT extern dyn_hash_map<prefixEntryID, std::string> prefixEntryNames_IAPI;
-}  // namespace NS_x86
+}
 
 #endif

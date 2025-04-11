@@ -28,12 +28,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+
 #ifdef __cplusplus
-extern "C"
-{
+extern "C"  {
 #endif
 
-    char* symbol_demangle(const char* symName, int includeParams);
+
+char *symbol_demangle(const char *symName, int includeParams);
+
 
 #ifdef __cplusplus
 }

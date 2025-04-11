@@ -1,28 +1,28 @@
 /*
  * See the dyninst/COPYRIGHT file for copyright information.
- *
+ * 
  * We provide the Paradyn Tools (below described as "Paradyn")
  * on an AS IS basis, and do not warrant its validity or performance.
  * We reserve the right to update, modify, or discontinue this
  * software at any time.  We shall have no obligation to supply such
  * updates or modifications or any other form of support to you.
- *
+ * 
  * By your use of Paradyn, you understand and agree that we (or any
  * other person or entity with proprietary rights in Paradyn) are
  * under no obligation to provide either maintenance services,
  * update services, notices of latent defects, or correction of
  * defects for Paradyn.
- *
+ * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
+ * 
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
@@ -49,35 +49,36 @@
 #include <limits>
 
 bool shouldAssertIfInLongBranch = true;
-bool failedLongBranchLocal      = false;
-class TrackStacktraces
-{
+bool failedLongBranchLocal = false;
+class TrackStacktraces {
 public:
-    std::ofstream         _out;
-    std::set<std::string> _stacks;
-    TrackStacktraces() { _out.open("generatorStacks.txt", std::ofstream::out); }
+  std::ofstream _out;
+  std::set<std::string> _stacks;
+  TrackStacktraces() {
+    _out.open("generatorStacks.txt", std::ofstream::out);
+  }
 
-    void Insert(std::string s)
-    {
-        if(_stacks.find(s) == _stacks.end())
-            _stacks.insert(s);
-    }
-    ~TrackStacktraces()
-    {
-        for(auto i : _stacks)
-            _out << i << std::endl;
-        _out.close();
-    }
+  void Insert(std::string s) {
+    if (_stacks.find(s) == _stacks.end())
+      _stacks.insert(s);
+  }
+  ~TrackStacktraces() {
+    for (auto i : _stacks)
+      _out << i << std::endl;
+    _out.close();
+  }
+
 };
+
 
 std::shared_ptr<TrackStacktraces> _global_stack_track;
 
-// "Casting" methods. We use a "base + offset" model, but often need to
+
+
+// "Casting" methods. We use a "base + offset" model, but often need to 
 // turn that into "current instruction pointer".
-codeBuf_t*
-insnCodeGen::insnPtr(codeGen& gen)
-{
-    return (instructUnion*) gen.cur_ptr();
+codeBuf_t *insnCodeGen::insnPtr(codeGen &gen) {
+    return (instructUnion *)gen.cur_ptr();
 }
 
 #if 0
@@ -92,119 +93,109 @@ codeBuf_t *insnCodeGen::ptrAndInc(codeGen &gen) {
 }
 #endif
 
-void
-insnCodeGen::generate(codeGen& gen, instruction& insn)
-{
-    // void *buffer[50];
-    // char **strings;
-    // int nptrs;
-    // nptrs = backtrace(buffer, 50);
-    // strings = backtrace_symbols(buffer, nptrs);
-    // std::stringstream ss;
-    // if (strings != NULL) {
-    //   for (int i = 0; i < nptrs; i++)
-    //     ss << strings[i] << std::endl;
-    // }
+void insnCodeGen::generate(codeGen &gen, instruction&insn) {
+  // void *buffer[50];
+  // char **strings;
+  // int nptrs;
+  // nptrs = backtrace(buffer, 50);
+  // strings = backtrace_symbols(buffer, nptrs);
+  // std::stringstream ss;
+  // if (strings != NULL) {
+  //   for (int i = 0; i < nptrs; i++) 
+  //     ss << strings[i] << std::endl;
+  // }
 
-    /*
-    AddressSpace *as = gen.addrSpace();
-    bool isLittleEndian = true;
-    if (as) {
-      const std::vector<mapped_object*> objs = as->mappedObjects();
-      if (objs.size() > 0) {
-        mapped_object *mo = objs[0];
-        SymtabAPI::Symtab* sym = mo->parse_img()->getObject();
-        isLittleEndian = !sym->isBigEndianDataEncoding();
-      } else {
-        fprintf(stderr, "No mapped_object object\n");
-      }
+  /*
+  AddressSpace *as = gen.addrSpace();
+  bool isLittleEndian = true;
+  if (as) {
+    const std::vector<mapped_object*> objs = as->mappedObjects();
+    if (objs.size() > 0) {
+      mapped_object *mo = objs[0];
+      SymtabAPI::Symtab* sym = mo->parse_img()->getObject(); 
+      isLittleEndian = !sym->isBigEndianDataEncoding();
     } else {
-      fprintf(stderr, "No AddressSpace object\n");
+      fprintf(stderr, "No mapped_object object\n");
     }
-    unsigned raw;
-    if (isLittleEndian) {
-      // Writing an instruction.  Convert byte order if necessary.
-      raw = swapBytesIfNeeded(insn.asInt());
-    } else {
-      raw = insn.asInt();
-    }
-    */
-    // if (_global_stack_track.get() == NULL)
-    //   _global_stack_track.reset(new TrackStacktraces());
-    // _global_stack_track->Insert(ss.str());
-    // if (gen.currAddr() == 0xe5f88d4) {
-    //   fprintf(stderr, "%s\n", "Hello!, whats next???? " );
-    //   fprintf(stderr, "%08x\n", insn.asInt());
-    // }
-    unsigned raw = insn.asInt();
-    if(gen.currAddr() == 0xe93e3fc)
-    {
-        std::cerr << "Generating b e93e3fc, e93e88c" << std::endl;
-        // assert(1==0);
-    }
-    // fprintf(stderr, "Instruction Written: %08x at position: %16x\n", insn.asInt(),
-    // gen.currAddr());
-    // fprintf(stderr, "Raw Written value %u\n", raw);
-    gen.copy(&raw, sizeof(unsigned));
+  } else {
+    fprintf(stderr, "No AddressSpace object\n");
+  }
+  unsigned raw;
+  if (isLittleEndian) {
+    // Writing an instruction.  Convert byte order if necessary.
+    raw = swapBytesIfNeeded(insn.asInt());
+  } else {
+    raw = insn.asInt();
+  }
+  */
+  // if (_global_stack_track.get() == NULL)
+  //   _global_stack_track.reset(new TrackStacktraces());
+  // _global_stack_track->Insert(ss.str());
+  // if (gen.currAddr() == 0xe5f88d4) {
+  //   fprintf(stderr, "%s\n", "Hello!, whats next???? " );
+  //   fprintf(stderr, "%08x\n", insn.asInt());
+  // }
+  unsigned raw = insn.asInt();
+  if (gen.currAddr() == 0xe93e3fc){
+    std::cerr << "Generating b e93e3fc, e93e88c" << std::endl;
+    //assert(1==0);
+  }
+  // fprintf(stderr, "Instruction Written: %08x at position: %16x\n", insn.asInt(), gen.currAddr());
+  //fprintf(stderr, "Raw Written value %u\n", raw);
+  gen.copy(&raw, sizeof(unsigned));
 }
 
-void
-insnCodeGen::generateIllegal(codeGen& gen)
-{  // instP.h
+void insnCodeGen::generateIllegal(codeGen &gen) { // instP.h
     instruction insn;
-    generate(gen, insn);
+    generate(gen,insn);
 }
 
-void
-insnCodeGen::generateTrap(codeGen& gen)
-{
+void insnCodeGen::generateTrap(codeGen &gen) {
     instruction insn(BREAK_POINT_INSN);
-    generate(gen, insn);
+    generate(gen,insn);
 }
 
-void
-insnCodeGen::generateBranch(codeGen& gen, long disp, bool link)
+void insnCodeGen::generateBranch(codeGen &gen, long disp, bool link)
 {
-    // fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__);
-    if(ABS(disp) > MAX_BRANCH)
-    {
-        // Too far to branch, and no proc to register trap.
-        fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n", (unsigned long) ABS(disp),
-                (unsigned long) MAX_BRANCH);
-        bperr("Error: attempted a branch of 0x%lx\n", (unsigned long) disp);
-        logLine("a branch too far\n");
-        showErrorCallback(52, "Internal error: branch too far");
-        bperr("Attempted to make a branch of offset 0x%lx\n", (unsigned long) disp);
-        assert(0);
+  //fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__); 
+    if (ABS(disp) > MAX_BRANCH) {
+	// Too far to branch, and no proc to register trap.
+	fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n",
+           (unsigned long)ABS(disp), (unsigned long) MAX_BRANCH);
+	bperr( "Error: attempted a branch of 0x%lx\n", (unsigned long)disp);
+	logLine("a branch too far\n");
+	showErrorCallback(52, "Internal error: branch too far");
+	bperr( "Attempted to make a branch of offset 0x%lx\n", (unsigned long)disp);
+	assert(0);
     }
+
 
     instruction insn;
     IFORM_OP_SET(insn, Bop);
     IFORM_LI_SET(insn, disp >> 2);
     IFORM_AA_SET(insn, 0);
-    if(link)
+    if (link)
         IFORM_LK_SET(insn, 1);
     else
         IFORM_LK_SET(insn, 0);
 
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate(gen,insn);
 }
 
 void insnCodeGen::generateBranch(codeGen &gen, Dyninst::Address from, Dyninst::Address to, bool link) {
 
     long disp = (to - from);
-    //    fprintf(stderr, "[insnCodeGen::generateBranch] Generating branch from %p to
-    //    %p\n", from, to);
+//    fprintf(stderr, "[insnCodeGen::generateBranch] Generating branch from %p to %p\n", from, to);
     // if (from == 0x10000750 || from == 0x10000758) {
     //   fprintf(stderr, "Stop here\n");
     // }
-    if(ABS(disp) > MAX_BRANCH)
-    {
-        // fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__);
+    if (ABS(disp) > MAX_BRANCH) {
+      //fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__); 
         return generateLongBranch(gen, from, to, link);
     }
-    // fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__);
+    //fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__); 
     return generateBranch(gen, disp, link);
+   
 }
 
 void insnCodeGen::generateCall(codeGen &gen, Dyninst::Address from, Dyninst::Address to) {
@@ -212,10 +203,9 @@ void insnCodeGen::generateCall(codeGen &gen, Dyninst::Address from, Dyninst::Add
     generateBranch(gen, from, to, true);
 }
 
-void
-GenerateSavesBaseTrampStyle(codeGen& gen)
-{
-    // Save everything, then all things are scratch registers...
+
+void GenerateSavesBaseTrampStyle(codeGen &gen) {
+  // Save everything, then all things are scratch registers...
 
     unsigned int width = gen.width();
 
@@ -229,18 +219,17 @@ GenerateSavesBaseTrampStyle(codeGen& gen)
     // Save GPRs
     saveGPRegisters(gen, gen.rs(), gpr_off);
 
+
     saveFPRegisters(gen, gen.rs(), fpr_off);
-    // fprintf(stderr, "I am called!\n");
-    // Save LR
+    //fprintf(stderr, "I am called!\n");
+    // Save LR            
     saveLR(gen, REG_SCRATCH /* register to use */, TRAMP_SPR_OFFSET(width) + STK_LR);
 
-    saveSPRegisters(gen, gen.rs(), TRAMP_SPR_OFFSET(width),
-                    true);  // FIXME get liveness fixed
+    saveSPRegisters(gen, gen.rs(), TRAMP_SPR_OFFSET(width), true); // FIXME get liveness fixed
 }
 
-void
-GenerateRestoresBaseTrampStyle(codeGen& gen)
-{
+
+void GenerateRestoresBaseTrampStyle(codeGen &gen) {
     unsigned int width = gen.width();
 
     int gpr_off, fpr_off;
@@ -253,7 +242,7 @@ GenerateRestoresBaseTrampStyle(codeGen& gen)
     // LR
     restoreLR(gen, REG_SCRATCH, TRAMP_SPR_OFFSET(width) + STK_LR);
 
-    restoreFPRegisters(gen, gen.rs(), fpr_off);
+  restoreFPRegisters(gen, gen.rs(), fpr_off);
 
     // GPRs
     restoreGPRegisters(gen, gen.rs(), gpr_off);
@@ -272,15 +261,15 @@ void insnCodeGen::generateMoveToSPR(codeGen &gen, Dyninst::Register toSPR,
   if (sprReg != SPR_TAR && sprReg != SPR_LR && sprReg != SPR_CTR)
     assert("SPR Dyninst::Register is not valid" == 0);
 
-    // Move the register to the spr
-    instruction moveToBr;
-    moveToBr.clear();
-    XFXFORM_OP_SET(moveToBr, MTSPRop);
-    XFXFORM_RT_SET(moveToBr, toSPR);
-    XFORM_RA_SET(moveToBr, sprReg & 0x1f);
-    XFORM_RB_SET(moveToBr, (sprReg >> 5) & 0x1f);
-    XFXFORM_XO_SET(moveToBr, MTSPRxop);  // From assembly manual
-    insnCodeGen::generate(gen, moveToBr);
+  // Move the register to the spr 
+  instruction moveToBr;
+  moveToBr.clear();
+  XFXFORM_OP_SET(moveToBr, MTSPRop);
+  XFXFORM_RT_SET(moveToBr, toSPR);
+  XFORM_RA_SET(moveToBr, sprReg & 0x1f);
+  XFORM_RB_SET(moveToBr, (sprReg >> 5) & 0x1f);
+  XFXFORM_XO_SET(moveToBr, MTSPRxop); // From assembly manual
+  insnCodeGen::generate(gen,moveToBr); 
 }
 
 void insnCodeGen::generateMoveFromSPR(codeGen &gen,  Dyninst::Register toSPR,
@@ -289,15 +278,15 @@ void insnCodeGen::generateMoveFromSPR(codeGen &gen,  Dyninst::Register toSPR,
   if (sprReg != SPR_TAR && sprReg != SPR_LR && sprReg != SPR_CTR)
     assert("SPR Dyninst::Register is not valid" == 0);
 
-    // Move the register to the spr
-    instruction moveToBr;
-    moveToBr.clear();
-    XFXFORM_OP_SET(moveToBr, MFSPRop);
-    XFXFORM_RT_SET(moveToBr, toSPR);
-    XFORM_RA_SET(moveToBr, sprReg & 0x1f);
-    XFORM_RB_SET(moveToBr, (sprReg >> 5) & 0x1f);
-    XFXFORM_XO_SET(moveToBr, MFSPRxop);  // From assembly manual
-    insnCodeGen::generate(gen, moveToBr);
+  // Move the register to the spr 
+  instruction moveToBr;
+  moveToBr.clear();
+  XFXFORM_OP_SET(moveToBr, MFSPRop);
+  XFXFORM_RT_SET(moveToBr, toSPR);
+  XFORM_RA_SET(moveToBr, sprReg & 0x1f);
+  XFORM_RB_SET(moveToBr, (sprReg >> 5) & 0x1f);
+  XFXFORM_XO_SET(moveToBr, MFSPRxop); // From assembly manual
+  insnCodeGen::generate(gen,moveToBr); 
 }
 
 void insnCodeGen::generateVectorLoad(codeGen &gen, unsigned vectorReg, Dyninst::Register RegAddress) {
@@ -323,25 +312,17 @@ void insnCodeGen::generateVectorStore(codeGen & gen, unsigned vectorReg, Dyninst
   insnCodeGen::generate(gen,storeInstruction);  
 }
 
-void
-insnCodeGen::saveVectors(codeGen& gen, int startStackOffset)
-{
-    for(int i = 0; i < 32; i++)
-    {
-        insnCodeGen::generateImm(gen, CALop, registerSpace::r10, registerSpace::r1,
-                                 BOT_LO(startStackOffset + (16 * (i + 1))));
-        insnCodeGen::generateVectorStore(gen, i, registerSpace::r10);
-    }
+void insnCodeGen::saveVectors(codeGen & gen, int startStackOffset) {
+  for (int i = 0; i < 32; i++) {
+    insnCodeGen::generateImm(gen, CALop, registerSpace::r10 , registerSpace::r1,  BOT_LO(startStackOffset + (16*(i+1))));
+    insnCodeGen::generateVectorStore(gen, i, registerSpace::r10);
+  }
 }
-void
-insnCodeGen::restoreVectors(codeGen& gen, int startStackOffset)
-{
-    for(int i = 0; i < 32; i++)
-    {
-        insnCodeGen::generateImm(gen, CALop, registerSpace::r10, registerSpace::r1,
-                                 BOT_LO(startStackOffset + (16 * (i + 1))));
-        insnCodeGen::generateVectorLoad(gen, i, registerSpace::r10);
-    }
+void insnCodeGen::restoreVectors(codeGen & gen, int startStackOffset) {
+  for (int i = 0; i < 32; i++) {
+    insnCodeGen::generateImm(gen, CALop, registerSpace::r10 , registerSpace::r1,  BOT_LO(startStackOffset + (16*(i+1))));
+    insnCodeGen::generateVectorLoad(gen, i, registerSpace::r10);
+  }
 }
 
 bool insnCodeGen::generateBranchTar(codeGen &gen, Dyninst::Register scratch,
@@ -350,26 +331,26 @@ bool insnCodeGen::generateBranchTar(codeGen &gen, Dyninst::Register scratch,
   // Generates a branch using TAR to the address specified in dest. 
   // Returns true if this branch type was successfully used
 
-    // TODO: Add liveness checking for TAR. We are assuming this is not live.
+  // TODO: Add liveness checking for TAR. We are assuming this is not live.
 
-    // Move the address to the scratch register
-    // Done because TAR can only be set called using a register value
-    insnCodeGen::loadImmIntoReg(gen, scratch, dest);
+  // Move the address to the scratch register
+  // Done because TAR can only be set called using a register value
+  insnCodeGen::loadImmIntoReg(gen, scratch, dest);
 
-    // Generate the instruction to move the reg -> tar
-    insnCodeGen::generateMoveToSPR(gen, scratch, SPR_TAR);
+  // Generate the instruction to move the reg -> tar
+  insnCodeGen::generateMoveToSPR(gen, scratch, SPR_TAR);
 
-    // Aaaand now branch, linking if appropriate
-    instruction branchToBr;
-    branchToBr.clear();
-    XLFORM_OP_SET(branchToBr, BCTARop);
-    XLFORM_BT_SET(branchToBr, 0x14);  // From architecture manual
-    XLFORM_BA_SET(branchToBr, 0);     // Unused
-    XLFORM_BB_SET(branchToBr, 0);     // Unused
-    XLFORM_XO_SET(branchToBr, BCTARxop);
-    XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
-    insnCodeGen::generate(gen, branchToBr);
-    return true;
+  // Aaaand now branch, linking if appropriate
+  instruction branchToBr;
+  branchToBr.clear();
+  XLFORM_OP_SET(branchToBr, BCTARop);
+  XLFORM_BT_SET(branchToBr, 0x14); // From architecture manual
+  XLFORM_BA_SET(branchToBr, 0); // Unused
+  XLFORM_BB_SET(branchToBr, 0); // Unused
+  XLFORM_XO_SET(branchToBr, BCTARxop);
+  XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
+  insnCodeGen::generate(gen,branchToBr);
+  return true;
 }
 
 bool insnCodeGen::generateBranchLR(codeGen &gen, Dyninst::Register scratch,
@@ -378,33 +359,28 @@ bool insnCodeGen::generateBranchLR(codeGen &gen, Dyninst::Register scratch,
   // Generates a branch using LR to the address specified in dest. 
   // Returns true if this branch type was successfully used
 
-    // TODO: Add liveness checking for LR. We are assuming this is not live.
+  // TODO: Add liveness checking for LR. We are assuming this is not live.
 
-    // Move the address to the scratch register
-    // Done because TAR can only be set called using a register value
-    insnCodeGen::loadImmIntoReg(gen, scratch, dest);
+  // Move the address to the scratch register
+  // Done because TAR can only be set called using a register value
+  insnCodeGen::loadImmIntoReg(gen, scratch, dest);
 
-    // Generate the instruction to move the reg -> tar
-    insnCodeGen::generateMoveToSPR(gen, scratch, SPR_LR);
+  // Generate the instruction to move the reg -> tar
+  insnCodeGen::generateMoveToSPR(gen, scratch, SPR_LR);
 
-    // Aaaand now branch, linking if appropriate
-    instruction branchToBr;
-    branchToBr.clear();
-    XLFORM_OP_SET(branchToBr, BCLRop);
-    XLFORM_BT_SET(branchToBr, 0x14);  // From architecture manual
-    XLFORM_BA_SET(branchToBr, 0);     // Unused
-    XLFORM_BB_SET(branchToBr, 0);     // Unused
-    XLFORM_XO_SET(branchToBr, BCLRxop);
-    XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
-    insnCodeGen::generate(gen, branchToBr);
-    return true;
+  // Aaaand now branch, linking if appropriate
+  instruction branchToBr;
+  branchToBr.clear();
+  XLFORM_OP_SET(branchToBr, BCLRop);
+  XLFORM_BT_SET(branchToBr, 0x14); // From architecture manual
+  XLFORM_BA_SET(branchToBr, 0); // Unused
+  XLFORM_BB_SET(branchToBr, 0); // Unused
+  XLFORM_XO_SET(branchToBr, BCLRxop);
+  XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
+  insnCodeGen::generate(gen,branchToBr);
+  return true;
 }
 
-bool
-insnCodeGen::generateBranchCTR(codeGen& gen, Register scratch, Address dest, bool isCall)
-{
-    // Generates a branch using TAR to the address specified in dest.
-    // Returns true if this branch type was successfully used
 
 bool insnCodeGen::generateBranchCTR(codeGen &gen, 
                                     Dyninst::Register scratch,
@@ -413,54 +389,56 @@ bool insnCodeGen::generateBranchCTR(codeGen &gen,
   // Generates a branch using TAR to the address specified in dest. 
   // Returns true if this branch type was successfully used
 
-    // Move the address to the scratch register
-    // Done because TAR can only be set called using a register value
-    insnCodeGen::loadImmIntoReg(gen, scratch, dest);
+  // TODO: Add liveness checking for TAR. We are assuming this is not live.
 
-    // Generate the instruction to move the reg -> tar
-    insnCodeGen::generateMoveToSPR(gen, scratch, SPR_LR);
+  // Move the address to the scratch register
+  // Done because TAR can only be set called using a register value
+  insnCodeGen::loadImmIntoReg(gen, scratch, dest);
 
-    // Aaaand now branch, linking if appropriate
-    instruction branchToBr;
-    branchToBr.clear();
-    XLFORM_OP_SET(branchToBr, BCCTRop);
-    XLFORM_BT_SET(branchToBr, 0x14);  // From architecture manual
-    XLFORM_BA_SET(branchToBr, 0);     // Unused
-    XLFORM_BB_SET(branchToBr, 0);     // Unused
-    XLFORM_XO_SET(branchToBr, BCCTRxop);
-    XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
-    insnCodeGen::generate(gen, branchToBr);
-    return true;
+  // Generate the instruction to move the reg -> tar
+  insnCodeGen::generateMoveToSPR(gen, scratch, SPR_LR);
+
+  // Aaaand now branch, linking if appropriate
+  instruction branchToBr;
+  branchToBr.clear();
+  XLFORM_OP_SET(branchToBr, BCCTRop);
+  XLFORM_BT_SET(branchToBr, 0x14); // From architecture manual
+  XLFORM_BA_SET(branchToBr, 0); // Unused
+  XLFORM_BB_SET(branchToBr, 0); // Unused
+  XLFORM_XO_SET(branchToBr, BCCTRxop);
+  XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
+  insnCodeGen::generate(gen,branchToBr);
+  return true;
 }
+
+
 
 #include "addressSpace.h"
 #include "instPoint.h"
 #include "function.h"
 instPoint * GetInstPointPower(codeGen & gen, Dyninst::Address from) {
     // If this point is straight availible from the generator, return it
-    instPoint* point = gen.point();
-    if(point)
-        return point;
+    instPoint *point = gen.point();
+    if (point) 
+      return point;
 
     // Take the hardest road....
 
     // Grab the function instance from addressSpace.
-    AddressSpace* curAddressSpace = gen.addrSpace();
+    AddressSpace * curAddressSpace = gen.addrSpace();
 
     // Find the func instance
-    std::set<func_instance*> funcList;
+    std::set<func_instance *> funcList;
     curAddressSpace->findFuncsByAddr(from, funcList);
 
-    for(auto i : funcList)
+    for (auto i :  funcList)
     {
-        point = instPoint::funcEntry(i);
-        if(point != NULL)
-        {
-            if(point->addr_compat() == from)
-            {
-                return point;
-            }
+      point = instPoint::funcEntry(i);
+      if (point != NULL){
+        if (point->addr_compat() == from){
+          return point;
         }
+      }
     }
     return NULL;
 }
@@ -483,9 +461,8 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
       insnCodeGen::loadImmIntoReg(gen, registerSpace::r10, to);
       insnCodeGen::generateMoveToSPR(gen,registerSpace::r10, SPR_LR);
 
-        // r10 is now free to setup the branch instruction
-        insnCodeGen::loadImmIntoReg(gen, registerSpace::r10, to);
-        insnCodeGen::generateMoveToSPR(gen, registerSpace::r10, SPR_LR);
+      // Return r10 to its original state
+      insnCodeGen::generateMoveFromSPR(gen, registerSpace::r10, SPR_TAR);
 
       // Emit the branch instruction
       instruction branchToBr;
@@ -551,47 +528,6 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
         insnCodeGen::generateBranchTar(gen, scratch, to, isCall);
         return;
     }
-    else
-    {
-        // fprintf(stderr, "%s\n", "generating non-call long branch using TAR");
-        // What this does is the following:
-        // 1. Attempt to allocate a scratch register, this is needed to store the
-        // destination
-        //    address temporarily because you can only move registers to SPRs like
-        //    CTR/LR/TAR.
-        //    - If a scratch register cannot be obtained, see if either CTR or LR are
-        //    free.
-        //    - If one of those are, store r11 (our new scratch register) into CTR or LR.
-        //    - after the destination address has been loaded to TAR, we will restore R11
-        //    from this value
-        // 2. Calculate the destination address storing it into scratch.
-        // 3. Move the register to the SPR (tar)
-        // 4. Restore the original register value (if a scratch register was not found)
-        // 5. build the branch instruction.
-        // fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__);
-        Register scratch = REG_NULL;
-        // TODO: Fix this, this should work....
-        //= gen.rs()->getScratchRegister(gen);
-        if(scratch == REG_NULL)
-        {
-            // fprintf(stderr, "info: %s:%d: \n", __FILE__, __LINE__);
-            instPoint* point = GetInstPointPower(gen, from);  // gen.point();
-            if(!point)
-            {
-                // No clue if CTR or LR are filled, use broken trap and likely fail.
-                // fprintf(stderr, "%s\n", "Couldn't grab point - Using a trap
-                // instruction.....");
-                return generateBranchViaTrap(gen, from, to, isCall);
-            }
-            // Grab the register space, and see if LR or CTR are free.
-            // What we are going to do here is use the LR/CTR as temporary store for an
-            // existing register value
-            std::vector<Register> potentialRegisters = {
-                registerSpace::r3, registerSpace::r4, registerSpace::r5,
-                registerSpace::r6, registerSpace::r7, registerSpace::r8,
-                registerSpace::r9, registerSpace::r10
-            };
-            bitArray liveRegs = point->liveRegisters();
 
     if (scratch == Null_Register) {
       // Now the fun stuff....
@@ -608,19 +544,40 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
       insnCodeGen::loadImmIntoReg(gen, scratch, to);
       insnCodeGen::generateMoveToSPR(gen, scratch, SPR_TAR);      
     }
-    return;
+    // Emit the call instruction.
+    instruction branchToBr;
+    branchToBr.clear();
+    XLFORM_OP_SET(branchToBr, BCTARop);
+    XLFORM_BT_SET(branchToBr, 0x14); // From architecture manual
+    XLFORM_BA_SET(branchToBr, 0); // Unused
+    XLFORM_BB_SET(branchToBr, 0); // Unused
+    XLFORM_XO_SET(branchToBr, BCTARxop);
+    XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
+    insnCodeGen::generate(gen, branchToBr);    
+  }
+  return;
 
-    // bool everythingSaved = false;
-    // //fprintf(stderr, "[insnCodeGen::generateLongBranch] Generating long branch from %p
-    // to %p\n", from, to);
-    //   // First, see if we can cheap out
-    //   long disp = (to - from);
-    //   if (ABS(disp) <= MAX_BRANCH) {
-    //       return generateBranch(gen, disp, isCall);
-    //   }
+  // bool everythingSaved = false;
+  // //fprintf(stderr, "[insnCodeGen::generateLongBranch] Generating long branch from %p to %p\n", from, to);
+  //   // First, see if we can cheap out
+  //   long disp = (to - from);
+  //   if (ABS(disp) <= MAX_BRANCH) {
+  //       return generateBranch(gen, disp, isCall);
+  //   }
 
-    //   // We can use a register branch via the LR or CTR, if either of them
-    //   // is free.
+  //   // We can use a register branch via the LR or CTR, if either of them
+  //   // is free.
+    
+  //   // Let's see if we can grab a free GPregister...
+  //   instPoint *point = gen.point();
+  //   if (!point) {
+  //       // fprintf(stderr, " %s[%d] No point generateBranchViaTrap \n", FILE__, __LINE__);
+  //       fprintf(stderr, "This is an instruction which we would trap on\n");
+  //       fprintf(stderr, "[insnCodeGen::generateLongBranch] Building long branch from %llx to %llx at position %llx and this branch call status is %d\n", from, to, gen.currAddr(), isCall);
+  //       // Generate branch via traps is broken, never call it. 
+  //       // assert(1 == 0);
+  //       // return generateBranchViaTrap(gen, from, to, isCall);
+  //   }
 
   //   if 
   //   // Could see if the codeGen has it, but right now we have assert
@@ -664,160 +621,120 @@ void insnCodeGen::generateLongBranch(codeGen &gen,
   //   //     }
   //   // }
 
-    //   if (scratch == REG_NULL) {
-    //       // Just save and restore everything, this is bad but its likely safe and can
-    //       be revisted later.
-    //       // GenerateSavesBaseTrampStyle(gen);
-    //       // everythingSaved = true;
-    //       // do nothing, return
+  //   if (!branchRegister) {
+  //       fprintf(stderr, " %s[%d] No branch register generateBranchViaTrap \n", FILE__, __LINE__);
+  //       return generateBranchViaTrap(gen, from, to, isCall); 
+  //   }
+    
+  //   assert(branchRegister);
 
-    //       // scratch = registerSpace::r12;
-    //       // assert(everythingSaved != true)
-    //       // On Linux we save under the stack and hope it doesn't
-    //       // cause problems.
+  //   instruction moveToBr;
+  //   moveToBr.clear();
+  //   XFXFORM_OP_SET(moveToBr, MTSPRop);
+  //   XFXFORM_RT_SET(moveToBr, scratch);
+  //   if (branchRegister == registerSpace::lr) {
+  //       XFORM_RA_SET(moveToBr, SPR_LR & 0x1f);
+  //       XFORM_RB_SET(moveToBr, (SPR_LR >> 5) & 0x1f);
+  //       // The two halves (top 5 bits/bottom 5 bits) are _reversed_ in this encoding. 
+  //   }
+  //   else {
+  //       XFORM_RA_SET(moveToBr, SPR_CTR & 0x1f);
+  //       XFORM_RB_SET(moveToBr, (SPR_CTR >> 5) & 0x1f);
+  //   }
+  //   XFXFORM_XO_SET(moveToBr, MTSPRxop); // From assembly manual
+  //   insnCodeGen::generate(gen,moveToBr);
+  //   // Aaaand now branch, linking if appropriate
+  //   instruction branchToBr;
+  //   branchToBr.clear();
+  //   XLFORM_OP_SET(branchToBr, BCLRop);
+  //   XLFORM_BT_SET(branchToBr, 0x14); // From architecture manual
+  //   XLFORM_BA_SET(branchToBr, 0); // Unused
+  //   XLFORM_BB_SET(branchToBr, 0); // Unused
+  //   if (branchRegister == registerSpace::lr) {
+  //       XLFORM_XO_SET(branchToBr, BCLRxop);
+  //   }
+  //   else {
+  //       XLFORM_XO_SET(branchToBr, BCCTRxop);
+  //   }
+  //   XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
+  //   insnCodeGen::generate(gen,branchToBr);
 
-    //       // original
-    //       //fprintf(stderr, " %s[%d] No registers generateBranchViaTrap \n", FILE__,
-    //       __LINE__); return generateBranchViaTrap(gen, from, to, isCall);
-    //   }
-
-    //   // Load the destination into our scratch register
-    //   insnCodeGen::loadImmIntoReg(gen, scratch, to);
-    //   unsigned branchRegister = registerSpace::lr;
-    //   // Find out whether the LR or CTR is "dead"...
-    //   //bitArray liveRegs = point->liveRegisters();
-    //   // unsigned branchRegister = 0;
-    //   // if (liveRegs[registerSpace::lr] == false || everythingSaved == true) {
-    //   //     branchRegister = registerSpace::lr;
-    //   // }
-    //   // else {
-    //   //     // live LR means we need to save/restore somewhere
-    //   //     if(isCall) return generateBranchViaTrap(gen, from, to, isCall);
-    //   //     if (liveRegs[registerSpace::ctr] == false) {
-    //   //         branchRegister = registerSpace::ctr;
-    //   //     }
-    //   // }
-
-    //   if (!branchRegister) {
-    //       fprintf(stderr, " %s[%d] No branch register generateBranchViaTrap \n",
-    //       FILE__, __LINE__); return generateBranchViaTrap(gen, from, to, isCall);
-    //   }
-
-    //   assert(branchRegister);
-
-    //   instruction moveToBr;
-    //   moveToBr.clear();
-    //   XFXFORM_OP_SET(moveToBr, MTSPRop);
-    //   XFXFORM_RT_SET(moveToBr, scratch);
-    //   if (branchRegister == registerSpace::lr) {
-    //       XFORM_RA_SET(moveToBr, SPR_LR & 0x1f);
-    //       XFORM_RB_SET(moveToBr, (SPR_LR >> 5) & 0x1f);
-    //       // The two halves (top 5 bits/bottom 5 bits) are _reversed_ in this encoding.
-    //   }
-    //   else {
-    //       XFORM_RA_SET(moveToBr, SPR_CTR & 0x1f);
-    //       XFORM_RB_SET(moveToBr, (SPR_CTR >> 5) & 0x1f);
-    //   }
-    //   XFXFORM_XO_SET(moveToBr, MTSPRxop); // From assembly manual
-    //   insnCodeGen::generate(gen,moveToBr);
-    //   // Aaaand now branch, linking if appropriate
-    //   instruction branchToBr;
-    //   branchToBr.clear();
-    //   XLFORM_OP_SET(branchToBr, BCLRop);
-    //   XLFORM_BT_SET(branchToBr, 0x14); // From architecture manual
-    //   XLFORM_BA_SET(branchToBr, 0); // Unused
-    //   XLFORM_BB_SET(branchToBr, 0); // Unused
-    //   if (branchRegister == registerSpace::lr) {
-    //       XLFORM_XO_SET(branchToBr, BCLRxop);
-    //   }
-    //   else {
-    //       XLFORM_XO_SET(branchToBr, BCCTRxop);
-    //   }
-    //   XLFORM_LK_SET(branchToBr, (isCall ? 1 : 0));
-    //   insnCodeGen::generate(gen,branchToBr);
-
-    //   // restore the world
-    //   if(everythingSaved)
-    //     GenerateRestoresBaseTrampStyle(gen);
+  //   // restore the world
+  //   if(everythingSaved)
+  //     GenerateRestoresBaseTrampStyle(gen);
 }
 
 void insnCodeGen::generateBranchViaTrap(codeGen &gen, Dyninst::Address from, Dyninst::Address to, bool isCall) {
 
   //fprintf(stderr, "[insnCodeGen::generateBranchViaTrap] Generating branch via trap from %p to %p\n", from, to);
     long disp = to - from;
-    if(ABS(disp) <= MAX_BRANCH)
-    {
+    if (ABS(disp) <= MAX_BRANCH) {
         // We shouldn't be here, since this is an internal-called-only func.
         return generateBranch(gen, disp, isCall);
     }
-    // assert (isCall == false); // Can't do this yet
-    if(isCall)
-    {
-        // Screw using a trap, just emit a call and save/restore all registers (painful
-        // but whatever).
-        // emitCall()
-        assert(isCall == false);
-        // assert(shouldAssertIfInLongBranch != true);
-        // failedLongBranchLocal = true;
-    }
-    else
-    {
-        if(gen.addrSpace())
-        {
-            // Too far to branch.  Use trap-based instrumentation.
+    //assert (isCall == false); // Can't do this yet
+    if (isCall) {
+      // Screw using a trap, just emit a call and save/restore all registers (painful but whatever).
+      //emitCall()
+      assert(isCall == false);       
+      //assert(shouldAssertIfInLongBranch != true);
+      // failedLongBranchLocal = true;
+    } else {    
+      if (gen.addrSpace()) {
+          // Too far to branch.  Use trap-based instrumentation.
 
-            // fprintf(stderr, "I am in where we should be generating instructions\n" );
+        //fprintf(stderr, "I am in where we should be generating instructions\n" );
+        
+        // Here is a potential strategy
+        // 1. Create a stack frame
+        // 2. Push a (we like r10) register to the frame.
+        // 3. Calculate the effective address into the register
+        // 4. Push to TAR
+        // 5. Restore previous register
+        // 6. Delete frame
+        // 7. branch to tar. 
 
-            // Here is a potential strategy
-            // 1. Create a stack frame
-            // 2. Push a (we like r10) register to the frame.
-            // 3. Calculate the effective address into the register
-            // 4. Push to TAR
-            // 5. Restore previous register
-            // 6. Delete frame
-            // 7. branch to tar.
 
-            // instruction insn(NOOPraw);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            // insnCodeGen::generate(gen,insn);
-            gen.addrSpace()->trapMapping.addTrapMapping(from, to, true);
-            insnCodeGen::generateTrap(gen);
-        }
-        else
-        {
-            // Too far to branch and no proc to register trap.
-            fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n", (unsigned long) ABS(disp),
-                    (unsigned long) MAX_BRANCH);
-            bperr("Error: attempted a branch of 0x%lx\n", (unsigned long) disp);
-            logLine("a branch too far\n");
-            showErrorCallback(52, "Internal error: branch too far");
-            bperr("Attempted to make a branch of offset 0x%lx\n", (unsigned long) disp);
-            assert(0);
-        }
+        //instruction insn(NOOPraw);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        //insnCodeGen::generate(gen,insn);
+        gen.addrSpace()->trapMapping.addTrapMapping(from, to, true);
+        insnCodeGen::generateTrap(gen);        
+      } else {
+          // Too far to branch and no proc to register trap.
+          fprintf(stderr, "ABS OFF: 0x%lx, MAX: 0x%lx\n",
+                  (unsigned long)ABS(disp), (unsigned long) MAX_BRANCH);
+          bperr( "Error: attempted a branch of 0x%lx\n", (unsigned long)disp);
+          logLine("a branch too far\n");
+          showErrorCallback(52, "Internal error: branch too far");
+          bperr( "Attempted to make a branch of offset 0x%lx\n", (unsigned long)disp);
+          assert(0);
+      }
     }
 }
 
 void insnCodeGen::generateAddReg (codeGen & gen, int op, Dyninst::Register rt,
 				   Dyninst::Register ra, Dyninst::Register rb)
 {
-    instruction insn;
-    insn.clear();
-    XOFORM_OP_SET(insn, op);
-    XOFORM_RT_SET(insn, rt);
-    XOFORM_RA_SET(insn, ra);
-    XOFORM_RB_SET(insn, rb);
-    XOFORM_OE_SET(insn, 0);
-    XOFORM_XO_SET(insn, 266);
-    XOFORM_RC_SET(insn, 0);
 
-    insnCodeGen::generate(gen, insn);
+  instruction insn;
+  insn.clear();
+  XOFORM_OP_SET(insn, op);
+  XOFORM_RT_SET(insn, rt);
+  XOFORM_RA_SET(insn, ra);
+  XOFORM_RB_SET(insn, rb);
+  XOFORM_OE_SET(insn, 0);
+  XOFORM_XO_SET(insn, 266);
+  XOFORM_RC_SET(insn, 0);
+
+  insnCodeGen::generate (gen,insn);
 }
 
 void insnCodeGen::generateLoadReg(codeGen &gen, Dyninst::Register rt,
@@ -832,7 +749,7 @@ void insnCodeGen::generateLoadReg(codeGen &gen, Dyninst::Register rt,
     XFORM_XO_SET(insn, LXxop);
     XFORM_RC_SET(insn, 0);
 
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate (gen,insn);
 }
 
 void insnCodeGen::generateStoreReg(codeGen &gen, Dyninst::Register rt,
@@ -847,7 +764,7 @@ void insnCodeGen::generateStoreReg(codeGen &gen, Dyninst::Register rt,
     XFORM_XO_SET(insn, STXxop);
     XFORM_RC_SET(insn, 0);
 
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate (gen,insn);
 }
 
 void insnCodeGen::generateLoadReg64(codeGen &gen, Dyninst::Register rt,
@@ -894,17 +811,16 @@ void insnCodeGen::generateImm(codeGen &gen, int op, Dyninst::Register rt, Dynins
   assert (((immd & 0xffff0000) == (0xffff0000)) ||
           ((immd & 0xffff0000) == (0x00000000)));
 
-    instruction insn;
+  instruction insn;
+  
+  insn.clear();
+  DFORM_OP_SET(insn, op);
+  DFORM_RT_SET(insn, rt);
+  DFORM_RA_SET(insn, ra);
+  if (op==SIop) immd = -immd;
+  DFORM_SI_SET(insn, immd);
 
-    insn.clear();
-    DFORM_OP_SET(insn, op);
-    DFORM_RT_SET(insn, rt);
-    DFORM_RA_SET(insn, ra);
-    if(op == SIop)
-        immd = -immd;
-    DFORM_SI_SET(insn, immd);
-
-    insnCodeGen::generate(gen, insn);
+  insnCodeGen::generate(gen,insn);
 }
 
 void insnCodeGen::generateMemAccess64(codeGen &gen, int op, int xop, Dyninst::Register r1, Dyninst::Register r2, int immd)
@@ -921,7 +837,7 @@ void insnCodeGen::generateMemAccess64(codeGen &gen, int op, int xop, Dyninst::Re
     DSFORM_DS_SET(insn, immd >> 2);
     DSFORM_XO_SET(insn, xop);
 
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate(gen,insn);
 }
 
 // rlwinm ra,rs,n,0,31-n
@@ -929,22 +845,20 @@ void insnCodeGen::generateLShift(codeGen &gen, Dyninst::Register rs, int shift, 
 {
     instruction insn;
 
-    if(gen.addrSpace()->getAddressWidth() == 4)
-    {
-        assert(shift < 32);
-        insn.clear();
-        MFORM_OP_SET(insn, RLINMxop);
-        MFORM_RS_SET(insn, rs);
-        MFORM_RA_SET(insn, ra);
-        MFORM_SH_SET(insn, shift);
-        MFORM_MB_SET(insn, 0);
-        MFORM_ME_SET(insn, 31 - shift);
-        MFORM_RC_SET(insn, 0);
-        insnCodeGen::generate(gen, insn);
-    }
-    else /* gen.addrSpace()->getAddressWidth() == 8 */
-    {
-        insnCodeGen::generateLShift64(gen, rs, shift, ra);
+    if (gen.addrSpace()->getAddressWidth() == 4) {
+	assert(shift<32);
+	insn.clear();
+	MFORM_OP_SET(insn, RLINMxop);
+	MFORM_RS_SET(insn, rs);
+	MFORM_RA_SET(insn, ra);
+	MFORM_SH_SET(insn, shift);
+	MFORM_MB_SET(insn, 0);
+	MFORM_ME_SET(insn, 31-shift);
+	MFORM_RC_SET(insn, 0);
+	insnCodeGen::generate(gen,insn);
+
+    } else /* gen.addrSpace()->getAddressWidth() == 8 */ {
+	insnCodeGen::generateLShift64(gen, rs, shift, ra);
     }
 }
 
@@ -953,22 +867,20 @@ void insnCodeGen::generateRShift(codeGen &gen, Dyninst::Register rs, int shift, 
 {
     instruction insn;
 
-    if(gen.addrSpace()->getAddressWidth() == 4)
-    {
-        assert(shift < 32);
-        insn.clear();
-        MFORM_OP_SET(insn, RLINMxop);
-        MFORM_RS_SET(insn, rs);
-        MFORM_RA_SET(insn, ra);
-        MFORM_SH_SET(insn, 32 - shift);
-        MFORM_MB_SET(insn, shift);
-        MFORM_ME_SET(insn, 31);
-        MFORM_RC_SET(insn, 0);
-        insnCodeGen::generate(gen, insn);
-    }
-    else /* gen.addrSpace()->getAddressWidth() == 8 */
-    {
-        insnCodeGen::generateRShift64(gen, rs, shift, ra, s);
+    if (gen.addrSpace()->getAddressWidth() == 4) {
+	assert(shift<32);
+	insn.clear();
+	MFORM_OP_SET(insn, RLINMxop);
+	MFORM_RS_SET(insn, rs);
+	MFORM_RA_SET(insn, ra);
+	MFORM_SH_SET(insn, 32-shift);
+	MFORM_MB_SET(insn, shift);
+	MFORM_ME_SET(insn, 31);
+	MFORM_RC_SET(insn, 0);
+	insnCodeGen::generate(gen,insn);
+
+    } else /* gen.addrSpace()->getAddressWidth() == 8 */ {
+	insnCodeGen::generateRShift64(gen, rs, shift, ra, s);
     }
 }
 
@@ -977,19 +889,19 @@ void insnCodeGen::generateLShift64(codeGen &gen, Dyninst::Register rs, int shift
 {
     instruction insn;
 
-    assert(shift < 64);
+    assert(shift<64);
     insn.clear();
-    MDFORM_OP_SET(insn, RLDop);
-    MDFORM_RS_SET(insn, rs);
-    MDFORM_RA_SET(insn, ra);
-    MDFORM_SH_SET(insn, shift % 32);
-    MDFORM_MB_SET(insn, (63 - shift) % 32);
-    MDFORM_MB2_SET(insn, (63 - shift) / 32);
-    MDFORM_XO_SET(insn, ICRxop);
+    MDFORM_OP_SET( insn, RLDop);
+    MDFORM_RS_SET( insn, rs);
+    MDFORM_RA_SET( insn, ra);
+    MDFORM_SH_SET( insn, shift % 32);
+    MDFORM_MB_SET( insn, (63-shift) % 32);
+    MDFORM_MB2_SET(insn, (63-shift) / 32);
+    MDFORM_XO_SET( insn, ICRxop);
     MDFORM_SH2_SET(insn, shift / 32);
-    MDFORM_RC_SET(insn, 0);
+    MDFORM_RC_SET( insn, 0);
 
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate(gen,insn);
 }
 
 // srd ra, rs, rb
@@ -1001,33 +913,31 @@ void insnCodeGen::generateRShift64(codeGen &gen, Dyninst::Register rs, int shift
     // So, this piece of code is wrong...
     instruction insn;
 
-    assert(shift < 64);
+    assert(shift<64);
     insn.clear();
-    MDFORM_OP_SET(insn, RLDop);
-    MDFORM_RS_SET(insn, rs);
-    MDFORM_RA_SET(insn, ra);
-    MDFORM_SH_SET(insn, (64 - shift) % 32);
-    MDFORM_MB_SET(insn, shift % 32);
+    MDFORM_OP_SET( insn, RLDop);
+    MDFORM_RS_SET( insn, rs);
+    MDFORM_RA_SET( insn, ra);
+    MDFORM_SH_SET( insn, (64 - shift) % 32);
+    MDFORM_MB_SET( insn, shift % 32);
     MDFORM_MB2_SET(insn, shift / 32);
-    MDFORM_XO_SET(insn, ICLxop);
+    MDFORM_XO_SET( insn, ICLxop);
     MDFORM_SH2_SET(insn, (64 - shift) / 32);
-    MDFORM_RC_SET(insn, 0);
+    MDFORM_RC_SET( insn, 0);
 
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate(gen,insn);
 }
 
 //
 // generate an instruction that does nothing and has to side affect except to
 //   advance the program counter.
 //
-void
-insnCodeGen::generateNOOP(codeGen& gen, unsigned size)
+void insnCodeGen::generateNOOP(codeGen &gen, unsigned size)
 {
-    assert((size % instruction::size()) == 0);
-    while(size)
-    {
+    assert ((size % instruction::size()) == 0);
+    while (size) {
         instruction insn(NOOPraw);
-        insnCodeGen::generate(gen, insn);
+        insnCodeGen::generate(gen,insn);
         size -= instruction::size();
     }
 }
@@ -1040,15 +950,14 @@ void insnCodeGen::generateRelOp(codeGen &gen, int cond, int mode, Dyninst::Regis
     // cmpd rs1, rs2
     insn.clear();
     XFORM_OP_SET(insn, CMPop);
-    XFORM_RT_SET(insn, 0x1);  // really bf & l sub fields of rt we care about. Set l = 1
-                              // for 64 bit operation
+    XFORM_RT_SET(insn, 0x1);    // really bf & l sub fields of rt we care about. Set l = 1 for 64 bit operation
     XFORM_RA_SET(insn, rs1);
     XFORM_RB_SET(insn, rs2);
-    if(s)
+    if (s)
         XFORM_XO_SET(insn, CMPxop);
     else
         XFORM_XO_SET(insn, CMPLxop);
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate(gen,insn);
 
     // li rd, 1
     insnCodeGen::generateImm(gen, CALop, rd, 0, 1);
@@ -1058,10 +967,10 @@ void insnCodeGen::generateRelOp(codeGen &gen, int cond, int mode, Dyninst::Regis
     BFORM_OP_SET(insn, BCop);
     BFORM_BI_SET(insn, cond);
     BFORM_BO_SET(insn, mode);
-    BFORM_BD_SET(insn, 2);  // + two instructions */
+    BFORM_BD_SET(insn, 2);		// + two instructions */
     BFORM_AA_SET(insn, 0);
     BFORM_LK_SET(insn, 0);
-    insnCodeGen::generate(gen, insn);
+    insnCodeGen::generate(gen,insn);
 
     // clr rd
     insnCodeGen::generateImm(gen, CALop, rd, 0, 0);
@@ -1070,38 +979,34 @@ void insnCodeGen::generateRelOp(codeGen &gen, int cond, int mode, Dyninst::Regis
 // Given a value, load it into a register.
 void insnCodeGen::loadImmIntoReg(codeGen &gen, Dyninst::Register rt, long value)
 {
-    // Writing a full 64 bits takes 5 instructions in the worst case.
-    // Let's see if we use sign-extention to cheat.
-    if(MIN_IMM16 <= value && value <= MAX_IMM16)
-    {
-        insnCodeGen::generateImm(gen, CALop, rt, 0, BOT_LO(value));
-    }
-    else if(MIN_IMM32 <= value && value <= MAX_IMM32)
-    {
-        insnCodeGen::generateImm(gen, CAUop, rt, 0, BOT_HI(value));
-        insnCodeGen::generateImm(gen, ORILop, rt, rt, BOT_LO(value));
-    }
+   // Writing a full 64 bits takes 5 instructions in the worst case.
+   // Let's see if we use sign-extention to cheat.
+   if (MIN_IMM16 <= value && value <= MAX_IMM16) {
+      insnCodeGen::generateImm(gen, CALop,  rt, 0,  BOT_LO(value));      
+   } else if (MIN_IMM32 <= value && value <= MAX_IMM32) {
+      insnCodeGen::generateImm(gen, CAUop,  rt, 0,  BOT_HI(value));
+      insnCodeGen::generateImm(gen, ORILop, rt, rt, BOT_LO(value));
+   } 
 #if defined(arch_64bit)
-    else if(MIN_IMM48 <= value && value <= MAX_IMM48)
-    {
-        insnCodeGen::generateImm(gen, CALop, rt, 0, TOP_LO(value));
-        insnCodeGen::generateLShift64(gen, rt, 32, rt);
-        if(BOT_HI(value))
-            insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
-        if(BOT_LO(value))
-            insnCodeGen::generateImm(gen, ORILop, rt, rt, BOT_LO(value));
-    }
-    else
-    {
-        insnCodeGen::generateImm(gen, CAUop, rt, 0, TOP_HI(value));
-        if(TOP_LO(value))
-            insnCodeGen::generateImm(gen, ORILop, rt, rt, TOP_LO(value));
-        insnCodeGen::generateLShift64(gen, rt, 32, rt);
-        if(BOT_HI(value))
-            insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
-        if(BOT_LO(value))
-            insnCodeGen::generateImm(gen, ORILop, rt, rt, BOT_LO(value));
-    }
+   else if (MIN_IMM48 <= value && value <= MAX_IMM48) {
+      insnCodeGen::generateImm(gen, CALop,  rt, 0,  TOP_LO(value));
+      insnCodeGen::generateLShift64(gen, rt, 32, rt);
+      if (BOT_HI(value))
+         insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
+      if (BOT_LO(value))
+         insnCodeGen::generateImm(gen, ORILop, rt, rt, BOT_LO(value));
+      
+   } else {
+
+      insnCodeGen::generateImm(gen, CAUop,  rt,  0, TOP_HI(value));
+      if (TOP_LO(value))
+         insnCodeGen::generateImm(gen, ORILop, rt, rt, TOP_LO(value));
+      insnCodeGen::generateLShift64(gen, rt, 32, rt);
+      if (BOT_HI(value))
+         insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
+      if (BOT_LO(value))
+         insnCodeGen::generateImm(gen, ORILop, rt, rt, BOT_LO(value));
+   }
 #endif
 }
 
@@ -1124,22 +1029,20 @@ void insnCodeGen::loadPartialImmIntoReg(codeGen &gen, Dyninst::Register rt, long
       insnCodeGen::generateImm(gen, CAUop,  rt, 0,  BOT_HI(value));       
    } 
 #if defined(arch_64bit)
-    else if(MIN_IMM48 <= value && value <= MAX_IMM48)
-    {
-        insnCodeGen::generateImm(gen, CALop, rt, 0, TOP_LO(value));
-        insnCodeGen::generateLShift64(gen, rt, 32, rt);
-        if(BOT_HI(value))
-            insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
-    }
-    else
-    {
-        insnCodeGen::generateImm(gen, CAUop, rt, 0, TOP_HI(value));
-        if(TOP_LO(value))
-            insnCodeGen::generateImm(gen, ORILop, rt, rt, TOP_LO(value));
-        insnCodeGen::generateLShift64(gen, rt, 32, rt);
-        if(BOT_HI(value))
-            insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
-    }
+   else if (MIN_IMM48 <= value && value <= MAX_IMM48) {
+      insnCodeGen::generateImm(gen, CALop,  rt, 0,  TOP_LO(value));
+      insnCodeGen::generateLShift64(gen, rt, 32, rt);
+      if (BOT_HI(value))
+         insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
+      
+   } else {
+      insnCodeGen::generateImm(gen, CAUop,  rt,  0, TOP_HI(value));
+      if (TOP_LO(value))
+         insnCodeGen::generateImm(gen, ORILop, rt, rt, TOP_LO(value));
+      insnCodeGen::generateLShift64(gen, rt, 32, rt);
+      if (BOT_HI(value))
+         insnCodeGen::generateImm(gen, ORIUop, rt, rt, BOT_HI(value));
+   }
 #endif
 }
 
@@ -1160,12 +1063,10 @@ int insnCodeGen::createStackFrame(codeGen &gen, int numRegs, std::vector<Dyninst
 		return freeReg.size();
 }
 
-void
-insnCodeGen::removeStackFrame(codeGen& gen)
-{
-    int gpr_off = TRAMP_GPR_OFFSET_32;
-    restoreGPRegisters(gen, gen.rs(), gpr_off);
-    popStack(gen);
+void insnCodeGen::removeStackFrame(codeGen &gen) {
+                int gpr_off = TRAMP_GPR_OFFSET_32;
+                restoreGPRegisters(gen, gen.rs(), gpr_off);
+                popStack(gen);
 }
 
                 // {insn_ = {byte = {0xa6, 0x3, 0x8, 0x7c}, raw = 0x7c0803a6}}    
@@ -1185,7 +1086,7 @@ void insnCodeGen::generateMoveFromLR(codeGen &gen, Dyninst::Register rt) {
     XFORM_RA_SET(insn, SPR_LR & 0x1f);
     XFORM_RB_SET(insn, (SPR_LR >> 5) & 0x1f);
     XFORM_XO_SET(insn, MFSPRxop);
-    generate(gen, insn);
+    generate(gen,insn);
 }
 
 void insnCodeGen::generateMoveToLR(codeGen &gen, Dyninst::Register rs) {
@@ -1196,7 +1097,7 @@ void insnCodeGen::generateMoveToLR(codeGen &gen, Dyninst::Register rs) {
     XFORM_RA_SET(insn, SPR_LR & 0x1f);
     XFORM_RB_SET(insn, (SPR_LR >> 5) & 0x1f);
     XFORM_XO_SET(insn, MTSPRxop);
-    generate(gen, insn);
+    generate(gen,insn);
 }
 void insnCodeGen::generateMoveToCR(codeGen &gen, Dyninst::Register rs) {
     instruction insn;
@@ -1327,7 +1228,19 @@ bool insnCodeGen::modifyJcc(Dyninst::Address target,
 				  link);
       return true;
     }
+  } else {
+    instruction newInsn(insn);
+
+    // Reset the opcode to 16 (BCop, branch conditional)
+    BFORM_OP_SET(newInsn, BCop);
+
+    BFORM_BD_SET(newInsn, disp >> 2);
+    BFORM_AA_SET(newInsn, 0);
+    
+    generate(gen,newInsn);
     return true;
+  }
+  return false;
 }
 
 bool insnCodeGen::modifyCall(Dyninst::Address target,
@@ -1351,25 +1264,3 @@ bool insnCodeGen::modifyData(Dyninst::Address /*target*/,
   return true;
 }
 
-bool
-insnCodeGen::modifyCall(Address target, NS_power::instruction& insn, codeGen& gen)
-{
-    // This is actually a mashup of conditional/unconditional handling
-    if(insn.isUncondBranch())
-        return modifyJumpCall(target, insn, gen);
-    else
-        return modifyJcc(target, insn, gen);
-}
-
-// FIXME
-// This function is used for PC-relative and hence may not be required for PPC. Consider
-// for update/removal.
-bool
-insnCodeGen::modifyData(Address /*target*/, NS_power::instruction& insn, codeGen& gen)
-{
-    // Only know how to "modify" syscall...
-    if(insn.opcode() != SVCop)
-        return false;
-    gen.copy(insn.ptr(), insn.size());
-    return true;
-}

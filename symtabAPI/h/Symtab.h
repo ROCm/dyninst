@@ -1,28 +1,28 @@
 /*
  * See the dyninst/COPYRIGHT file for copyright information.
- *
+ * 
  * We provide the Paradyn Tools (below described as "Paradyn")
  * on an AS IS basis, and do not warrant its validity or performance.
  * We reserve the right to update, modify, or discontinue this
  * software at any time.  We shall have no obligation to supply such
  * updates or modifications or any other form of support to you.
- *
+ * 
  * By your use of Paradyn, you understand and agree that we (or any
  * other person or entity with proprietary rights in Paradyn) are
  * under no obligation to provide either maintenance services,
  * update services, notices of latent defects, or correction of
  * defects for Paradyn.
- *
+ * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
+ * 
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
@@ -58,14 +58,14 @@ class MappedFile;
 
 #define SYM_MAJOR DYNINST_MAJOR_VERSION
 #define SYM_MINOR DYNINST_MINOR_VERSION
-#define SYM_BETA DYNINST_PATCH_VERSION
+#define SYM_BETA  DYNINST_PATCH_VERSION
+ 
+namespace Dyninst {
 
-namespace Dyninst
-{
-struct SymSegment;
+   struct SymSegment;
 
-namespace SymtabAPI
-{
+namespace SymtabAPI {
+
 class Archive;
 class builtInTypeCollection;
 
@@ -76,9 +76,8 @@ struct symtab_impl;
 
 typedef Dyninst::ProcessReader MemRegReader;
 
-class SYMTAB_EXPORT Symtab
-: public LookupInterface
-, public AnnotatableSparse
+class SYMTAB_EXPORT Symtab : public LookupInterface,
+               public AnnotatableSparse
 {
    friend class Archive;
    friend class Symbol;
@@ -355,38 +354,37 @@ class SYMTAB_EXPORT Symtab
    Offset getInitOffset();
    Offset getFiniOffset();
 
-    const char* getInterpreterName() const;
+   const char*  getInterpreterName() const;
 
-    unsigned getAddressWidth() const;
-    bool     isBigEndianDataEncoding() const;
-    bool     getABIVersion(int& major, int& minor) const;
+   unsigned getAddressWidth() const;
+   bool isBigEndianDataEncoding() const;
+   bool getABIVersion(int &major, int &minor) const;
 
-    Offset  getLoadOffset() const;
-    Offset  getEntryOffset() const;
-    Offset  getBaseOffset() const;
-    Offset  getTOCoffset(Function* func = NULL) const;
-    Offset  getTOCoffset(Offset off) const;
-    Address getLoadAddress();
-    bool    isDefensiveBinary() const;
-    Offset  fileToDiskOffset(Dyninst::Offset) const;
-    Offset  fileToMemOffset(Dyninst::Offset) const;
+   Offset getLoadOffset() const;
+   Offset getEntryOffset() const;
+   Offset getBaseOffset() const;
+   Offset getTOCoffset(Function *func = NULL) const;
+   Offset getTOCoffset(Offset off) const;
+   Address getLoadAddress();
+   bool isDefensiveBinary() const; 
+   Offset fileToDiskOffset(Dyninst::Offset) const;
+   Offset fileToMemOffset(Dyninst::Offset) const;
 
-    std::string getDefaultNamespacePrefix() const;
 
-    unsigned getNumberOfRegions() const;
-    unsigned getNumberOfSymbols() const;
+   std::string getDefaultNamespacePrefix() const;
 
-    std::vector<std::string>& getDependencies();
-    bool                      removeLibraryDependency(std::string lib);
+   unsigned getNumberOfRegions() const;
+   unsigned getNumberOfSymbols() const;
 
-    Archive* getParentArchive() const;
+   std::vector<std::string> &getDependencies();
+   bool removeLibraryDependency(std::string lib);
 
-    /***** Error Handling *****/
-    static SymtabError getLastSymtabError();
-    static void        setSymtabError(SymtabError new_err);
-    static std::string printError(SymtabError serr);
+   Archive *getParentArchive() const;
 
-    ~Symtab();
+   /***** Error Handling *****/
+   static SymtabError getLastSymtabError();
+   static void setSymtabError(SymtabError new_err);
+   static std::string printError(SymtabError serr);
 
    bool delSymbol(Symbol *sym) { return deleteSymbol(sym); }
    bool deleteSymbol(Symbol *sym); 
@@ -394,47 +392,37 @@ class SYMTAB_EXPORT Symtab
    /***** Private Member Functions *****/
    private:
 
-    // Parsing code
+   Symtab(std::string filename, bool defensive_bin, bool &err);
 
-    bool extractSymbolsFromFile(Object* linkedFile, std::vector<Symbol*>& raw_syms);
+   bool extractInfo(Object *linkedFile);
 
-    bool fixSymRegion(Symbol* sym);
+   // Parsing code
 
-    bool fixSymModules(std::vector<Symbol*>& raw_syms);
-    bool createIndices(std::vector<Symbol*>& raw_syms, bool undefined);
-    bool createAggregates();
+   bool extractSymbolsFromFile(Object *linkedFile, std::vector<Symbol *> &raw_syms);
 
-    bool fixSymModule(Symbol*& sym);
-    bool addSymbolToIndices(Symbol*& sym, bool undefined);
-    bool addSymbolToAggregates(const Symbol* sym);
-    bool doNotAggregate(const Symbol* sym);
-    bool updateIndices(Symbol* sym, std::string newName, NameType nameType);
+   bool fixSymRegion(Symbol *sym);
 
-    void setModuleLanguages(dyn_hash_map<std::string, supportedLanguages>* mod_langs);
+   bool fixSymModules(std::vector<Symbol *> &raw_syms);
+   bool createIndices(std::vector<Symbol *> &raw_syms, bool undefined);
+   bool createAggregates();
 
    bool fixSymModule(Symbol *&sym);
    bool addSymbolToIndices(Symbol *&sym, bool undefined);
    bool addSymbolToAggregates(const Symbol *sym);
    bool doNotAggregate(const Symbol *sym);
 
-    bool changeSymbolOffset(Symbol* sym, Offset newOffset);
-    bool deleteSymbolFromIndices(Symbol* sym);
 
-    bool changeAggregateOffset(Aggregate* agg, Offset oldOffset, Offset newOffset);
-    bool deleteAggregate(Aggregate* agg);
+   void setModuleLanguages(dyn_hash_map<std::string, supportedLanguages> *mod_langs);
 
-    bool addFunctionRange(FunctionBase* fbase, Dyninst::Offset next_start);
+   // Change the type of a symbol after the fact
+   bool changeType(Symbol *sym, Symbol::SymbolType oldType);
 
    bool deleteSymbolFromIndices(Symbol *sym);
 
-    // Only valid on ELF formats
-    Offset getElfDynamicOffset();
-    // SymReader interface
-    void getSegmentsSymReader(std::vector<SymSegment>& segs);
-    void rebase(Offset offset);
+   bool changeAggregateOffset(Aggregate *agg, Offset oldOffset, Offset newOffset);
+   bool deleteAggregate(Aggregate *agg);
 
-private:
-    void createDefaultModule();
+   bool addFunctionRange(FunctionBase *fbase, Dyninst::Offset next_start);
 
    // Used by binaryEdit.C...
  public:
@@ -573,7 +561,7 @@ private:
     unsigned _ref_cnt{1};
 };
 
-}  // namespace SymtabAPI
+}//namespace SymtabAPI
 
-}  // namespace Dyninst
+}//namespace Dyninst
 #endif

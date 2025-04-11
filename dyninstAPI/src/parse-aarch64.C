@@ -72,31 +72,31 @@ namespace {
 By parsing the function that actually sets up the parameters for the OMP
 region we discover informations such as what type of parallel region we're
 dealing with */
-bool
-parse_func::parseOMPParent(image_parRegion* /*iPar*/, int /*desiredNum*/,
-                           int& /*currentSectionNum*/)
+bool parse_func::parseOMPParent(image_parRegion * /*iPar*/, int /*desiredNum*/, int & /*currentSectionNum*/ )
 {
 	assert(0);
 	return false;
 }
 
-std::string
-parse_func::calcParentFunc(const parse_func*, std::vector<image_parRegion*>& /*pR*/)
+
+
+
+std::string parse_func::calcParentFunc(const parse_func *,
+                                    std::vector<image_parRegion *> &/*pR*/)
 {
 	assert(0);
 	return {};
 }
 
-void
-parse_func::parseOMP(image_parRegion*, parse_func*, int&)
+
+void parse_func::parseOMP(image_parRegion *, parse_func *, int &)
 {
-    assert(0);
+	assert(0);
 }
 
-void
-parse_func::parseOMPFunc(bool /*hasLoop*/)
+void parse_func::parseOMPFunc(bool /*hasLoop*/)
 {
-    assert(0);
+	assert(0);
 }
 
 /* This does a linear scan to find out which registers are used in the function,
@@ -104,22 +104,22 @@ parse_func::parseOMPFunc(bool /*hasLoop*/)
    It returns true or false based on whether the function is a leaf function,
    since if it is not the function could call out to another function that
    clobbers more registers so more analysis would be needed */
-void
-parse_func::calcUsedRegs()
+void parse_func::calcUsedRegs()
 {
-    if(!usedRegisters)
+    if (!usedRegisters)
     {
         usedRegisters = new parse_func_registers();
         using namespace Dyninst::InstructionAPI;
         std::set<RegisterAST::Ptr> writtenRegs;
 
-        auto bl       = blocks();
+        auto bl = blocks();
         auto curBlock = bl.begin();
-        for(; curBlock != bl.end(); ++curBlock)
+        for( ; curBlock != bl.end(); ++curBlock)
         {
             InstructionDecoder d(getPtrToInstruction((*curBlock)->start()),
-                                 (*curBlock)->size(), isrc()->getArch());
-            Instruction        i;
+                    (*curBlock)->size(),
+                    isrc()->getArch());
+            Instruction i;
             i = d.decode();
             while(i.isValid())
             {
@@ -127,9 +127,10 @@ parse_func::calcUsedRegs()
                 i = d.decode();
             }
         }
-
+        
         for(std::set<RegisterAST::Ptr>::const_iterator curReg = writtenRegs.begin();
-            curReg != writtenRegs.end(); ++curReg)
+                curReg != writtenRegs.end();
+                ++curReg)
         {
             MachRegister r = (*curReg)->getID();
             if((r & aarch64::GPR) && (r <= aarch64::w30))
@@ -145,14 +146,13 @@ parse_func::calcUsedRegs()
     return;
 }
 
-static void
-add_handler(instPoint* pt, func_instance* add_me)
+static void add_handler(instPoint* pt, func_instance* add_me)
 {
-    vector<AstNodePtr> args;
-    // no args, just add
-    AstNodePtr snip            = AstNode::funcCallNode(add_me, args);
-    auto       instrumentation = pt->pushFront(snip);
-    instrumentation->disableRecursiveGuard();
+  vector<AstNodePtr> args;
+  // no args, just add
+  AstNodePtr snip = AstNode::funcCallNode(add_me, args);
+  auto instrumentation = pt->pushFront(snip);
+  instrumentation->disableRecursiveGuard();
 }
 
 #include "binaryEdit.h"
@@ -235,6 +235,8 @@ bool BinaryEdit::doStaticBinarySpecialCases() {
 
     AddressSpace::patch(this);
 
+
+
     /*
      * Special Case 2: Issue a warning if attempting to link pthreads into a binary
      * that originally did not support it or into a binary that is stripped. This
@@ -245,7 +247,7 @@ bool BinaryEdit::doStaticBinarySpecialCases() {
      * support, pthreads needs to be loaded.
      */
 
-    bool isMTCapable   = isMultiThreadCapable();
+    bool isMTCapable = isMultiThreadCapable();
     bool foundPthreads = false;
 
     vector<Archive *> libs;
@@ -262,19 +264,18 @@ bool BinaryEdit::doStaticBinarySpecialCases() {
         }
     }
 
-    if(foundPthreads && (!isMTCapable || origBinary->isStripped()))
-    {
-        fprintf(stderr, "\nWARNING: the pthreads library has been loaded and\n"
-                        "the original binary is not multithread-capable or\n"
-                        "it is stripped. Currently, the combination of these two\n"
-                        "scenarios is unsupported and unexpected behavior may occur.\n");
-    }
-    else if(!foundPthreads && isMTCapable)
-    {
-        fprintf(stderr, "\nWARNING: the pthreads library has not been loaded and\n"
-                        "the original binary is multithread-capable. Unexpected\n"
-                        "behavior may occur because some pthreads routines are\n"
-                        "unavailable in the original binary\n");
+    if( foundPthreads && (!isMTCapable || origBinary->isStripped()) ) {
+        fprintf(stderr,
+            "\nWARNING: the pthreads library has been loaded and\n"
+            "the original binary is not multithread-capable or\n"
+            "it is stripped. Currently, the combination of these two\n"
+            "scenarios is unsupported and unexpected behavior may occur.\n");
+    }else if( !foundPthreads && isMTCapable ) {
+        fprintf(stderr,
+            "\nWARNING: the pthreads library has not been loaded and\n"
+            "the original binary is multithread-capable. Unexpected\n"
+            "behavior may occur because some pthreads routines are\n"
+            "unavailable in the original binary\n");
     }
 
     /*
@@ -284,51 +285,38 @@ bool BinaryEdit::doStaticBinarySpecialCases() {
      * loaded, load them.
      */
 
-    vector<Archive*>           libs1;
-    vector<Archive*>::iterator libIter1;
-    bool                       loadLibc = true;
-    if(origBinary->getLinkingResources(libs1))
-    {
-        for(libIter1 = libs1.begin(); libIter1 != libs1.end(); ++libIter1)
-        {
-            if((*libIter1)->name().find("libc.a") != std::string::npos)
-            {
+    vector<Archive *> libs1;
+    vector<Archive *>::iterator libIter1;
+    bool loadLibc = true;
+    if( origBinary->getLinkingResources(libs1) ) {
+        for(libIter1 = libs1.begin(); libIter1 != libs1.end(); ++libIter1) {
+            if( (*libIter1)->name().find("libc.a") != std::string::npos ) {
                 loadLibc = false;
             }
         }
     }
 
-    if(loadLibc)
-    {
-        std::map<std::string, BinaryEdit*> res;
+    if( loadLibc ) {
+        std::map<std::string, BinaryEdit *> res;
         openResolvedLibraryName("libc.a", res);
-        if(res.empty())
-        {
-            cerr
-                << "Fatal error: failed to load DyninstAPI_RT library dependency (libc.a)"
-                << endl;
+        if (res.empty()) {
+            cerr << "Fatal error: failed to load DyninstAPI_RT library dependency (libc.a)" << endl;
             return false;
         }
 
-        std::map<std::string, BinaryEdit*>::iterator bedit_it;
-        for(bedit_it = res.begin(); bedit_it != res.end(); ++bedit_it)
-        {
-            if(bedit_it->second == NULL)
-            {
+        std::map<std::string, BinaryEdit *>::iterator bedit_it;
+        for(bedit_it = res.begin(); bedit_it != res.end(); ++bedit_it) {
+            if( bedit_it->second == NULL ) {
                 logLine("Failed to load DyninstAPI_RT library dependency (libc.a)");
-                fprintf(stderr,
-                        "Failed to load DyninstAPI_RT library dependency (libc.a)");
+                fprintf (stderr,"Failed to load DyninstAPI_RT library dependency (libc.a)");
                 return false;
             }
         }
 
         // libc.a may be depending on libgcc.a
         res.clear();
-        if(!openResolvedLibraryName("libgcc.a", res))
-        {
-            cerr << "Failed to find libgcc.a, which can be needed by libc.a on certain "
-                    "platforms"
-                 << endl;
+        if (!openResolvedLibraryName("libgcc.a", res)) {
+            cerr << "Failed to find libgcc.a, which can be needed by libc.a on certain platforms" << endl;
             cerr << "Set LD_LIBRARY_PATH to the directory containing libgcc.a" << endl;
         }
     }
@@ -336,28 +324,23 @@ bool BinaryEdit::doStaticBinarySpecialCases() {
     return true;
 }
 
-func_instance*
-mapped_object::findGlobalConstructorFunc(const std::string& ctorHandler)
-{
+func_instance *mapped_object::findGlobalConstructorFunc(const std::string &ctorHandler) {
     using namespace Dyninst::InstructionAPI;
 
-    const std::vector<func_instance*>* ctorFuncs = findFuncVectorByMangled(ctorHandler);
-    if(ctorFuncs != NULL)
-    {
+    const std::vector<func_instance *> *ctorFuncs = findFuncVectorByMangled(ctorHandler);
+    if( ctorFuncs != NULL ) {
         return ctorFuncs->at(0);
     }
     return NULL;
 }
 
-func_instance*
-mapped_object::findGlobalDestructorFunc(const std::string& dtorHandler)
-{
+func_instance *mapped_object::findGlobalDestructorFunc(const std::string &dtorHandler) {
     using namespace Dyninst::InstructionAPI;
 
-    const std::vector<func_instance*>* ctorFuncs = findFuncVectorByMangled(dtorHandler);
-    if(ctorFuncs != NULL)
-    {
+    const std::vector<func_instance *> *ctorFuncs = findFuncVectorByMangled(dtorHandler);
+    if( ctorFuncs != NULL ) {
         return ctorFuncs->at(0);
     }
     return NULL;
 }
+
