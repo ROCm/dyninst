@@ -3628,13 +3628,6 @@ LineInformation* Object::parseLineInfoForObject(StringTablePtr strings)
             continue;
         }
 
-        // Only attempt to parse inlining context and inline function name
-        // when there is a .debug_str section.
-        if (debug_str != nullptr) {
-            current_statement.context = dwarf_linecontext(lineBuffer, line);
-            current_statement.funcname = dwarf_linefunctionname(dbg, line);
-        }
-
         if (!isZeroAddress && saved_statement.uninitialized()) {
             saved_statement = current_statement;
         } else if (!isZeroAddress) {
