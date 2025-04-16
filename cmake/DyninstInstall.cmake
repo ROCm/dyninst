@@ -3,10 +3,6 @@ include(CMakePackageConfigHelpers)
 # Export the Find modules for thirdy-party libraries provided by us
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/cmake
         DESTINATION ${DYNINST_INSTALL_CMAKEDIR})
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/cmake/Modules
-        DESTINATION ${DYNINST_INSTALL_CMAKEDIR})
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/cmake/tpls
-        DESTINATION ${DYNINST_INSTALL_CMAKEDIR})
 
 configure_package_config_file(
   ${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in
