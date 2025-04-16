@@ -14,6 +14,8 @@ include(${CMAKE_CURRENT_LIST_DIR}/DyninstConfigVersion.cmake)
 
 @PACKAGE_INIT@
 
+include("${CMAKE_CURRENT_LIST_DIR}/DyninstTargets.cmake")
+
 set_and_check(Dyninst_ROOT_DIR ${PACKAGE_PREFIX_DIR})
 set_and_check(Dyninst_INCLUDE_DIR ${PACKAGE_PREFIX_DIR}/@INSTALL_INCLUDE_DIR@)
 set(Dyninst_LIBRARIES)
