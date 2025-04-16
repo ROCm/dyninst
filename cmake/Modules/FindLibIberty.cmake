@@ -35,8 +35,6 @@ if(NOT "${IBERTY_LIBRARIES}" STREQUAL "")
     set(LibIberty_LIBRARIES ${IBERTY_LIBRARIES})
 endif()
 
-include(DyninstSystemPaths)
-
 # Non-standard subdirectories to search
 set(_path_suffixes libiberty iberty)
 
