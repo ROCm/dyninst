@@ -20,13 +20,42 @@ include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindElfutils.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindTBB.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindLibIberty.cmake")
 
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/DyninstUtilities.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/tpls/DyninstBoost.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/tpls/DyninstTBB.cmake")
-
 @PACKAGE_INIT@
 
 include("${CMAKE_CURRENT_LIST_DIR}/DyninstTargets.cmake")
+
+# After find_package(Dyninst)
+message(STATUS "TBB_FOUND: ${TBB_FOUND}")
+message(STATUS "Boost_FOUND: ${Boost_FOUND}")
+message(STATUS "ELFUTILS_FOUND: ${ELFUTILS_FOUND}")
+
+message(STATUS "TBB_INCLUDE_DIRS: ${TBB_INCLUDE_DIRS}")
+message(STATUS "TBB_LIBRARIES: ${TBB_LIBRARIES}")
+
+if(NOT TARGET Dyninst::TBB AND TBB_FOUND)
+  add_library(Dyninst::TBB INTERFACE IMPORTED)
+  set_target_properties(Dyninst::TBB PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${TBB_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${TBB_LIBRARIES}"
+  )
+endif()
+
+if(NOT TARGET Dyninst::Boost AND Boost_FOUND)
+  add_library(Dyninst::Boost INTERFACE IMPORTED)
+  set_target_properties(Dyninst::Boost PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${Boost_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${Boost_LIBRARIES}"
+  )
+  add_library(Dyninst::Boost_headers INTERFACE IMPORTED)
+endif()
+
+if(NOT TARGET Dyninst::ElfUtils AND ELFUTILS_FOUND)
+  add_library(Dyninst::ElfUtils INTERFACE IMPORTED)
+  set_target_properties(Dyninst::ElfUtils PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${ELFUTILS_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${ELFUTILS_LIBRARIES}"
+  )
+endif()
 
 set_and_check(Dyninst_ROOT_DIR ${PACKAGE_PREFIX_DIR})
 set_and_check(Dyninst_INCLUDE_DIR ${PACKAGE_PREFIX_DIR}/@INSTALL_INCLUDE_DIR@)
@@ -66,6 +95,7 @@ endif()
 
 # Library dependencies
 foreach(TARG @ALL_DYNINST_TARGETS@)
+    include("${DYNINST_CMAKE_DIR}/${TARG}Targets.cmake" OPTIONAL)
     if(NOT Dyninst_FIND_COMPONENTS)
         list(APPEND Dyninst_LIBRARIES Dyninst::${TARG}${_Dyninst_TARGET_SUFFIX})
         target_link_libraries(Dyninst::Dyninst
