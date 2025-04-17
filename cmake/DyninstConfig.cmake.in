@@ -14,6 +14,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/DyninstConfigVersion.cmake)
 
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/DyninstSystemPaths.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindBoost.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindLibDW.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindLibELF.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindElfutils.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindTBB.cmake")

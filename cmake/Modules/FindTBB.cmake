@@ -260,31 +260,6 @@ find_package_handle_standard_args(
     HANDLE_COMPONENTS
     VERSION_VAR TBB_VERSION)
 
-#
-# Create targets
-#
-if(NOT CMAKE_VERSION VERSION_LESS 3.0 AND TBB_FOUND)
-    add_library(TBB::TBB SHARED IMPORTED)
-    set_target_properties(
-        TBB::TBB PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${TBB_INCLUDE_DIRS}
-                            IMPORTED_LOCATION ${TBB_LIBRARIES})
-    if(TBB_LIBRARIES_RELEASE AND TBB_LIBRARIES_DEBUG)
-        set_target_properties(
-            TBB::TBB
-            PROPERTIES INTERFACE_COMPILE_DEFINITIONS "$<$<CONFIG:Debug>:TBB_USE_DEBUG=1>"
-                       IMPORTED_LOCATION_DEBUG ${TBB_LIBRARIES_DEBUG}
-                       IMPORTED_LOCATION_RELWITHDEBINFO ${TBB_LIBRARIES_DEBUG}
-                       IMPORTED_LOCATION_RELEASE ${TBB_LIBRARIES_RELEASE}
-                       IMPORTED_LOCATION_MINSIZEREL ${TBB_LIBRARIES_RELEASE})
-    elseif(TBB_LIBRARIES_RELEASE)
-        set_target_properties(TBB::TBB PROPERTIES IMPORTED_LOCATION
-                                                  ${TBB_LIBRARIES_RELEASE})
-    else()
-        set_target_properties(TBB::TBB PROPERTIES IMPORTED_LOCATION
-                                                  ${TBB_LIBRARIES_DEBUG})
-    endif()
-endif()
-
 mark_as_advanced(TBB_INCLUDE_DIRS TBB_LIBRARIES TBB_LIBRARY_DIRS)
 
 unset(TBB_ARCHITECTURE)
