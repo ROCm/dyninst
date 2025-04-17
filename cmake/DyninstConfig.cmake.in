@@ -20,6 +20,10 @@ include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindElfutils.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindTBB.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/FindLibIberty.cmake")
 
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/DyninstUtilities.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/tpls/DyninstBoost.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/tpls/DyninstTBB.cmake")
+
 @PACKAGE_INIT@
 
 include("${CMAKE_CURRENT_LIST_DIR}/DyninstTargets.cmake")
