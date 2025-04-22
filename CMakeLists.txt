@@ -59,13 +59,53 @@ include(DyninstOptimization)
 
 # Locate third-party libraries
 include(DyninstThreads)
-include(DyninstBoost)
-include(DyninstTBB)
-include(DyninstElfUtils)
-include(DyninstLibIberty)
 include(DyninstThread_DB)
 include(DyninstValgrind)
 include(DyninstOpenMP)
+
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW) # DOWNLOAD_EXTRACT_TIMESTAMP
+endif()
+
+# Setup custom job pools to control parallelism
+set_property(GLOBAL PROPERTY JOB_POOLS external_deps_pool=1) # serial pool for external deps
+
+# Add external dependencies to be built
+include(DyninstBoost)
+if(TARGET Boost-External)
+    # Make Boost build serially
+    set_target_properties(Boost-External PROPERTIES
+        JOB_POOL_COMPILE external_deps_pool
+        JOB_POOL_LINK external_deps_pool)
+    # Create a prebuild target that depends on Boost
+    add_custom_target(external-prebuild)
+    add_dependencies(external-prebuild Boost-External)
+endif()
+
+include(DyninstTBB)
+if(TARGET TBB-External AND TARGET external-prebuild)
+    # Make TBB build serially and wait for Boost
+    set_target_properties(TBB-External PROPERTIES
+        JOB_POOL_COMPILE external_deps_pool
+        JOB_POOL_LINK external_deps_pool)
+    add_dependencies(external-prebuild TBB-External)
+endif()
+
+include(DyninstElfUtils)
+if(TARGET ElfUtils-External AND TARGET external-prebuild)
+    set_target_properties(ElfUtils-External PROPERTIES
+        JOB_POOL_COMPILE external_deps_pool
+        JOB_POOL_LINK external_deps_pool)
+    add_dependencies(external-prebuild ElfUtils-External)
+endif()
+
+include(DyninstLibIberty)
+if(TARGET LibIberty-External AND TARGET external-prebuild)
+    set_target_properties(LibIberty-External PROPERTIES
+        JOB_POOL_COMPILE external_deps_pool
+        JOB_POOL_LINK external_deps_pool)
+    add_dependencies(external-prebuild LibIberty-External)
+endif()
 
 # for packaging
 if(_DYNINST_BUILDING_TPLS)
@@ -105,22 +145,77 @@ endif()
 
 include(DyninstLibrary)
 
-if(USE_OpenMP)
-    find_package(OpenMP REQUIRED)
+# Create a dummy target to ensure external dependencies are fully built
+add_custom_target(external-deps-complete)
+if(TARGET external-prebuild)
+    add_dependencies(external-deps-complete external-prebuild)
 endif()
+
+# Add subdirectories with dependencies on external libraries
 add_subdirectory(common)
+if(TARGET common AND TARGET external-deps-complete)
+    add_dependencies(common external-deps-complete)
+endif()
+
 add_subdirectory(elf)
+if(TARGET elf AND TARGET external-deps-complete)
+    add_dependencies(elf external-deps-complete)
+endif()
+
 add_subdirectory(dwarf)
+if(TARGET dwarf AND TARGET external-deps-complete)
+    add_dependencies(dwarf external-deps-complete)
+endif()
+
 add_subdirectory(symlite)
+if(TARGET symlite AND TARGET external-deps-complete)
+    add_dependencies(symlite external-deps-complete)
+endif()
+
 add_subdirectory(instructionAPI)
+if(TARGET instructionAPI AND TARGET external-deps-complete)
+    add_dependencies(instructionAPI external-deps-complete)
+endif()
+
 add_subdirectory(symtabAPI)
+if(TARGET symtabAPI AND TARGET external-deps-complete)
+    add_dependencies(symtabAPI external-deps-complete)
+endif()
+
 add_subdirectory(parseAPI)
+if(TARGET parseAPI AND TARGET external-deps-complete)
+    add_dependencies(parseAPI external-deps-complete)
+endif()
+
 add_subdirectory(proccontrol)
+if(TARGET pcontrol AND TARGET external-deps-complete)
+    add_dependencies(pcontrol external-deps-complete)
+endif()
+
 add_subdirectory(stackwalk)
+if(TARGET stackwalk AND TARGET external-deps-complete)
+    add_dependencies(stackwalk external-deps-complete)
+endif()
+
 add_subdirectory(patchAPI)
+if(TARGET patchAPI AND TARGET external-deps-complete)
+    add_dependencies(patchAPI external-deps-complete)
+endif()
+
 add_subdirectory(dyninstAPI)
+if(TARGET dyninstAPI AND TARGET external-deps-complete)
+    add_dependencies(dyninstAPI external-deps-complete)
+endif()
+
 add_subdirectory(dynC_API)
+if(TARGET dynC_API AND TARGET external-deps-complete)
+    add_dependencies(dynC_API external-deps-complete)
+endif()
+
 add_subdirectory(parseThat)
+if(TARGET parseThat AND TARGET external-deps-complete)
+    add_dependencies(parseThat external-deps-complete)
+endif()
 
 if(BUILD_RTLIB)
     add_subdirectory(dyninstAPI_RT)
