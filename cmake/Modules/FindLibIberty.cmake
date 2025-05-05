@@ -71,9 +71,11 @@ if(LibIberty_FOUND)
         endif()
     endforeach()
 
-    add_library(LibIberty::LibIberty INTERFACE IMPORTED)
-    target_include_directories(LibIberty::LibIberty INTERFACE ${LibIberty_INCLUDE_DIRS})
-    target_link_libraries(LibIberty::LibIberty INTERFACE ${LibIberty_LIBRARIES})
+    if(NOT TARGET LibIberty::LibIberty)
+        add_library(LibIberty::LibIberty INTERFACE IMPORTED)
+        target_include_directories(LibIberty::LibIberty INTERFACE ${LibIberty_INCLUDE_DIRS})
+        target_link_libraries(LibIberty::LibIberty INTERFACE ${LibIberty_LIBRARIES})
+    endif()
 
     # For backwards compatibility only
     set(IBERTY_LIBRARIES ${LibIberty_LIBRARIES})

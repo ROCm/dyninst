@@ -121,7 +121,7 @@ elseif(NOT BUILD_ELFUTILS)
         )
 else()
     # If we didn't find a suitable version on the system, then download one from the web
-    dyninst_add_cache_option(ELFUTILS_DOWNLOAD_VERSION "0.182"
+    dyninst_add_cache_option(ELFUTILS_DOWNLOAD_VERSION "0.188"
                              CACHE STRING "Version of elfutils to download and install")
 
     # make sure we are not downloading a version less than minimum
