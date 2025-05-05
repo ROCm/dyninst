@@ -70,6 +70,12 @@ endif()
 # Setup custom job pools to control parallelism
 set_property(GLOBAL PROPERTY JOB_POOLS external_deps_pool=1) # serial pool for external deps
 
+set(TPL_STAGING_PREFIX
+    "${PROJECT_BINARY_DIR}/tpls"
+    CACHE PATH "Third-party library build-tree install prefix")
+file(MAKE_DIRECTORY "${TPL_STAGING_PREFIX}")
+file(MAKE_DIRECTORY "${TPL_STAGING_PREFIX}/include")
+
 # Add external dependencies to be built
 include(DyninstBoost)
 if(TARGET Boost-External)

@@ -48,7 +48,7 @@ set(TBB_USE_DEBUG_BUILD
     CACHE BOOL "Use debug versions of TBB libraries")
 
 # Minimum version of TBB (assumes a dotted-decimal format: YYYY.XX)
-set(_tbb_min_version 2020.1)
+set(_tbb_min_version 2019.9)
 
 set(TBB_MIN_VERSION
     ${_tbb_min_version}
@@ -207,8 +207,7 @@ else()
     externalproject_add(
         TBB-External
         PREFIX ${_tbb_prefix_dir}
-        GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB.git
-        GIT_TAG v${TBB_MIN_VERSION}
+        URL https://github.com/uxlfoundation/oneTBB/archive/refs/tags/2019_U9.tar.gz
         BUILD_IN_SOURCE 1
         CONFIGURE_COMMAND ""
         BUILD_COMMAND
