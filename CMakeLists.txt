@@ -5,6 +5,11 @@ if(CMAKE_VERSION VERSION_EQUAL "3.19.0")
   message(FATAL_ERROR "Dyninst cannot use CMake version 3.19.0")
 endif()
 
+# find_package() uses upper-case <PACKAGENAME>_ROOT variables.
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR AND CMAKE_CURRENT_SOURCE_DIR STREQUAL
                                                   CMAKE_SOURCE_DIR)
     message(STATUS "Warning! Building from the source directory is not recommended.")
