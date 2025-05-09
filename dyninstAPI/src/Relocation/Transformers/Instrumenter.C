@@ -370,6 +370,14 @@ bool Instrumenter::handleCondDirExits(RelocBlock *trace, RelocGraph *cfg, instPo
 
    RelocEdge *cond = trace->outs()->find(ParseAPI::COND_TAKEN);
 
+   if(!cond || !cond->trg)
+   {
+      relocation_cerr << __FILE__ << ":" << __LINE__ << " :: " << __FUNCTION__
+                     << " failed due to nullptr. Dyninst could not redirect to"
+                     << " the instrumentation block\n";
+      return false;
+   }
+
    cfg->makeEdge(new Target<RelocBlock *>(instRelocBlock),
 		 cond->trg->copy(),
          NULL, 
