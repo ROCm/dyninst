@@ -104,13 +104,17 @@ else()
         COMMENT "Installing LibIberty...")
 
     # target for re-executing the installation
-    add_custom_target(
-        install-libiberty-external
-        COMMAND
-            install -C
+    add_custom_command(
+        TARGET LibIberty-External
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TPL_STAGING_PREFIX}/lib
+        COMMAND install ARGS -C
             ${PROJECT_BINARY_DIR}/binutils/src/LibIberty-External/libiberty/libiberty.a
             ${TPL_STAGING_PREFIX}/lib
-        WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/binutils/src/LibIberty-External
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TPL_STAGING_PREFIX}/include
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_BINARY_DIR}/binutils/src/LibIberty-External/include/libiberty.h
+            ${TPL_STAGING_PREFIX}/include
         COMMENT "Installing LibIberty...")
 
     # For backward compatibility
