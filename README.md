@@ -2,7 +2,7 @@
 
 ## Disclaimer
 
-This is a fork of https://github.com/dyninst/dyninst that is used for maintaining development branches and long term support branches. It is not a released ROCm repository. Please visit the upstream project for general use.
+This is a fork of [dyninst/dyninst](https://github.com/dyninst/dyninst) that is used for maintaining development branches and long term support branches. It is not a released ROCm repository. Please visit the upstream project for general use.
 
 ## Branch states
 
