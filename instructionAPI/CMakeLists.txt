@@ -1,6 +1,7 @@
 include_guard(GLOBAL)
 
 include(DyninstLibrary)
+include(DyninstBoost)
 
 set(_sources
     src/debug.C

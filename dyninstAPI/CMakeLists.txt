@@ -7,6 +7,7 @@ if(LIGHTWEIGHT_SYMTAB)
 endif()
 
 include(DyninstLibrary)
+include(DyninstBoost)
 
 set(_public_headers
     h/BPatch_addressSpace.h

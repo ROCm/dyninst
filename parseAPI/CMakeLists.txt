@@ -1,6 +1,7 @@
 include_guard(GLOBAL)
 
 include(DyninstLibrary)
+include(DyninstBoost)
 
 set(SRC_LIST
     src/ParserDetails.C

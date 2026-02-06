@@ -1,6 +1,7 @@
 include_guard(GLOBAL)
 
 include(DyninstLibrary)
+include(DyninstBoost)
 
 if(NOT DYNINST_OS_UNIX)
   if(NOT TARGET dynElf)
