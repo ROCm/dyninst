@@ -42,6 +42,7 @@
 #include "Handler.h"
 #include "ProcessSet.h"
 #include "PlatFeatures.h"
+#include <algorithm>
 
 #if defined(os_windows)
 #include "windows_process.h"

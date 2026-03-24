@@ -35,6 +35,7 @@
 
 #include <dyncompat/assign/list_of.hpp>
 #include <mutex>
+#include <algorithm>
 
 namespace Dyninst { namespace InstructionAPI {
   typedef void (InstructionDecoder_power::*operandFactory)();
