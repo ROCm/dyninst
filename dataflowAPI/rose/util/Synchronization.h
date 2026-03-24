@@ -10,6 +10,7 @@
 
 #include "Sawyer.h"
 #include <stddef.h>
+#include <stdexcept>
 
 #if SAWYER_MULTI_THREADED
     // It appears as though a certain version of GNU libc interacts badly with C++03 GCC and LLVM compilers. Some system header
