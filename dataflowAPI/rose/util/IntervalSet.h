@@ -71,7 +71,7 @@ public:
     public:
         ConstIntervalIterator() {}
     private:
-        friend class dyncompat::iterator_core_access;
+        friend struct dyncompat::iterator_core_access;
         friend class IntervalSet;
         explicit ConstIntervalIterator(MapNodeIterator iter): iter_(iter) {}
         const Interval& dereference() const { return iter_->key(); }
@@ -97,7 +97,7 @@ public:
         ConstScalarIterator(): offset_(0) {}
         ConstScalarIterator(ConstIntervalIterator iter): iter_(iter), offset_(0) {}
     private:
-        friend class dyncompat::iterator_core_access;
+        friend struct dyncompat::iterator_core_access;
         friend class IntervalSet;
         const typename Interval::Value& dereference() const {
             ASSERT_require2(iter_->least() <= iter_->greatest(), "stored interval cannot be empty");
