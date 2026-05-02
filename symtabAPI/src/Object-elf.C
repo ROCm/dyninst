@@ -1015,7 +1015,7 @@ void Object::parseDynamic(Elf_X_Shdr *&dyn_scnp, Elf_X_Shdr *&dynsym_scnp,
  * the dynamic section. This section is encoded as RELR entries, which
  * decode to relocation addresses
  */
- bool ObjectELF::get_relocationRelr_entries(unsigned relr_scnp_index) {
+bool Object::get_relocationRelr_entries(unsigned relr_scnp_index) {
     Elf_X_Shdr *relr_scnp = getRegionHdrByIndex(relr_scnp_index);
     if (!relr_scnp) return false;
 
