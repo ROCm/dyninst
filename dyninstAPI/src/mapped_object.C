@@ -47,6 +47,7 @@
 #include "Parsing.h"
 #include "instPoint.h"
 #include <dyncompat/tuple/tuple.hpp>
+#include "BPatch.h"
 #include "BPatch_image.h"
 #include "PatchCFG.h"
 #include "PCProcess.h"
@@ -151,7 +152,9 @@ mapped_object *mapped_object::createMappedObject(fileDescriptor &desc,
    startup_printf("%s[%d]:  about to parseImage\n", FILE__, __LINE__);
    startup_printf("%s[%d]: name %s, codeBase 0x%lx, dataBase 0x%lx\n",
                   FILE__, __LINE__, desc.file().c_str(), desc.code(), desc.data());
-   image *img = image::parseImage( desc, analysisMode, parseGaps);
+   const bool delayedParse =
+       BPatch::bpatch != NULL && BPatch::bpatch->delayedParsingOn();
+   image *img = image::parseImage( desc, analysisMode, parseGaps, delayedParse);
    if (!img)  {
       startup_printf("%s[%d]:  failed to parseImage\n", FILE__, __LINE__);
       return NULL;
@@ -648,6 +651,9 @@ func_instance *mapped_object::findFuncByEntry(const Address addr) {
    return NULL;
 }
 
+void mapped_object::analyzeIfDeferred() { parse_img()->analyzeIfDeferred(); }
+
+void mapped_object::ensureParsed() { analyzeIfDeferred(); }
 
 const std::vector<mapped_module *> &mapped_object::getModules() {
     // everyModule may be out of date...
