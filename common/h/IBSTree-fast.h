@@ -32,6 +32,7 @@
 #define IBSTREE_FAST_H
 #include "IBSTree.h"
 #include <assert.h>
+#include <iterator>
 #include <set>
 #include <iostream>
 
