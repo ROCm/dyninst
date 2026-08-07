@@ -32,15 +32,18 @@
 #define _CONCURRENT_H_
 
 #include "util.h"
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <stddef.h>
+#include <utility>
 #include <vector>
 #include <dyncompat/atomic.hpp>
 #include <dyncompat/thread/mutex.hpp>
 #include <dyncompat/thread/condition_variable.hpp>
 #include <dyncompat/thread/locks.hpp>
+#include <tbb/version.h>
 #include <tbb/concurrent_hash_map.h>
-#include <tbb/concurrent_vector.h>
 #include <dyncompat/functional/hash.hpp>
 
 namespace Dyninst {
@@ -195,8 +198,69 @@ public:
     using base::end;
 };
 
+// Thread-safe, growable sequence container backed by std::deque.
+//
+// Replaces tbb::concurrent_vector, preserving the two properties Dyninst relies
+// on: (1) push_back/emplace_back may be called concurrently (serialized here by
+// an internal mutex), and (2) pointers and references to existing elements stay
+// valid as the container grows (std::deque never relocates its elements).
+//
+// Element access (operator[], iteration, size, ...) is inherited from std::deque
+// and is NOT internally locked: callers append during a parallel phase and read
+// afterwards, matching the original concurrent_vector usage. Only the concurrent
+// mutation entry points take the lock.
 template<typename T>
-using dyn_c_vector = tbb::concurrent_vector<T, std::allocator<T>>;
+class dyn_c_vector : public std::deque<T> {
+    using base = std::deque<T>;
+    mutable dyncompat::mutex _mutex;
+
+public:
+    using base::base;
+
+    dyn_c_vector() = default;
+
+    dyn_c_vector(const dyn_c_vector& other) : base() {
+        dyncompat::lock_guard<dyncompat::mutex> lock(other._mutex);
+        base::operator=(static_cast<const base&>(other));
+    }
+
+    dyn_c_vector(dyn_c_vector&& other) : base() {
+        dyncompat::lock_guard<dyncompat::mutex> lock(other._mutex);
+        base::operator=(std::move(static_cast<base&>(other)));
+    }
+
+    dyn_c_vector& operator=(const dyn_c_vector& other) {
+        if(this != &other) {
+            std::scoped_lock locks(_mutex, other._mutex);
+            base::operator=(static_cast<const base&>(other));
+        }
+        return *this;
+    }
+
+    dyn_c_vector& operator=(dyn_c_vector&& other) {
+        if(this != &other) {
+            std::scoped_lock locks(_mutex, other._mutex);
+            base::operator=(std::move(static_cast<base&>(other)));
+        }
+        return *this;
+    }
+
+    void push_back(const T& value) {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        base::push_back(value);
+    }
+
+    void push_back(T&& value) {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        base::push_back(std::move(value));
+    }
+
+    template<typename... Args>
+    typename base::reference emplace_back(Args&&... args) {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::emplace_back(std::forward<Args>(args)...);
+    }
+};
 
 class dyn_mutex : public dyncompat::mutex {
 public:
