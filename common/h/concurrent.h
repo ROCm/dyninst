@@ -41,7 +41,6 @@
 #include <dyncompat/thread/locks.hpp>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
-#include <tbb/concurrent_queue.h>
 #include <dyncompat/functional/hash.hpp>
 
 namespace Dyninst {
@@ -198,9 +197,6 @@ public:
 
 template<typename T>
 using dyn_c_vector = tbb::concurrent_vector<T, std::allocator<T>>;
-
-template<typename T>
-using dyn_c_queue = tbb::concurrent_queue<T, std::allocator<T>>;
 
 class dyn_mutex : public dyncompat::mutex {
 public:
