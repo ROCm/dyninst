@@ -34,6 +34,7 @@
 #include "util.h"
 #include <cstddef>
 #include <deque>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <stddef.h>
@@ -277,13 +278,6 @@ public:
         return true;
     }
 
-    bool erase(const_accessor& ca) {
-        if(!ca.valid_) return false;
-        K key = ca->first;
-        ca.release();
-        return erase(key);
-    }
-
     bool erase(const K& k) {
         shard& s = shard_for(k);
         dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
@@ -324,9 +318,15 @@ public:
         using shard_ptr = std::conditional_t<IsConst, const shard*, shard*>;
         using inner = std::conditional_t<IsConst, typename map_type::const_iterator,
                                          typename map_type::iterator>;
-        using ref = std::conditional_t<IsConst, const value_type&, value_type&>;
-        using ptr = std::conditional_t<IsConst, const value_type*, value_type*>;
 
+    public:
+        using iterator_category = typename std::iterator_traits<inner>::iterator_category;
+        using value_type = typename map_type::value_type;
+        using difference_type = typename std::iterator_traits<inner>::difference_type;
+        using reference = std::conditional_t<IsConst, const value_type&, value_type&>;
+        using pointer = std::conditional_t<IsConst, const value_type*, value_type*>;
+
+    private:
         shard_ptr shards_ = nullptr;
         std::size_t idx_ = num_shards;
         inner cur_{};
@@ -347,8 +347,8 @@ public:
     public:
         iter_impl() = default;
 
-        ref operator*() const { return *cur_; }
-        ptr operator->() const { return &*cur_; }
+        reference operator*() const { return *cur_; }
+        pointer operator->() const { return &*cur_; }
 
         iter_impl& operator++() {
             ++cur_;
