@@ -38,6 +38,7 @@
 #include <memory>
 #include <mutex>
 #include <stddef.h>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -69,15 +70,26 @@ namespace concurrent {
   };
 }
 
-// Thread-safe hash map backed by sharded std::unordered_map instances.
+// Thread-safe hash map backed by sharded std::unordered_map instances with
+// per-element locking.
 //
 // Replaces tbb::concurrent_hash_map while preserving the accessor/const_accessor
 // interface Dyninst relies on. Keys are partitioned across a fixed number of
 // shards; each shard is an independent std::unordered_map guarded by its own
-// shared_mutex. An `accessor` holds its key's shard locked exclusively for the
-// accessor's lifetime; a `const_accessor` holds it shared. Dyninst never holds
-// two accessors into the same map instance simultaneously, so per-shard locking
-// cannot self-deadlock.
+// shared_mutex that protects only the map *structure*. In addition, every stored
+// element owns its own shared_mutex, and an accessor holds *that element's* lock
+// (exclusive for `accessor`, shared for `const_accessor`) for its lifetime --
+// matching tbb::concurrent_hash_map's per-element locking contract.
+//
+// Per-element (rather than per-shard) locking is required because several call
+// sites -- e.g. Parser::set_edge_parsing_status -- hold multiple accessors into
+// the same map instance at once. Per-shard locking self-deadlocks as soon as two
+// of those keys hash to the same shard.
+//
+// Elements are held through shared_ptr so a concurrent erase cannot destroy a
+// node (and its mutex) out from under a thread that is acquiring or holding it.
+// The shard lock is always released before an element lock is taken, so the two
+// lock levels cannot form a cycle.
 //
 // std::shared_mutex is understood natively by Valgrind's DRD/Helgrind tools, so
 // the explicit lock annotations of the old TBB-based wrapper are unnecessary.
@@ -87,11 +99,22 @@ namespace concurrent {
 // original concurrent_hash_map usage.
 template<typename K, typename V>
 class dyn_c_hash_map {
-    using map_type = std::unordered_map<K, V, concurrent::hasher<K>>;
+    struct node {
+        std::pair<const K, V> kv;
+        mutable dyncompat::shared_mutex mtx;
+
+        template<typename... Args>
+        explicit node(const K& k, Args&&... args)
+            : kv(std::piecewise_construct, std::forward_as_tuple(k),
+                 std::forward_as_tuple(std::forward<Args>(args)...)) {}
+    };
+
+    using node_ptr = std::shared_ptr<node>;
+    using map_type = std::unordered_map<K, node_ptr, concurrent::hasher<K>>;
 
     struct shard {
         map_type map;
-        mutable dyncompat::shared_mutex mtx;
+        mutable dyncompat::shared_mutex mtx;  // guards map structure only
     };
 
     static constexpr std::size_t num_shards = 64;
@@ -104,9 +127,9 @@ class dyn_c_hash_map {
     const shard& shard_for(const K& k) const { return shards_[shard_of(k)]; }
 
 public:
-    using value_type = typename map_type::value_type;
-    using mapped_type = typename map_type::mapped_type;
-    using key_type = typename map_type::key_type;
+    using value_type = std::pair<const K, V>;
+    using mapped_type = V;
+    using key_type = K;
 
     dyn_c_hash_map() = default;
     ~dyn_c_hash_map() = default;
@@ -114,7 +137,12 @@ public:
     dyn_c_hash_map(const dyn_c_hash_map& other) {
         for(std::size_t i = 0; i < num_shards; ++i) {
             dyncompat::shared_lock<dyncompat::shared_mutex> lock(other.shards_[i].mtx);
-            shards_[i].map = other.shards_[i].map;
+            for(const auto& entry : other.shards_[i].map) {
+                dyncompat::shared_lock<dyncompat::shared_mutex> nlock(entry.second->mtx);
+                shards_[i].map.emplace(
+                    entry.first,
+                    std::make_shared<node>(entry.first, entry.second->kv.second));
+            }
         }
     }
 
@@ -125,10 +153,8 @@ public:
 
     dyn_c_hash_map& operator=(const dyn_c_hash_map& other) {
         if(this != &other) {
-            for(std::size_t i = 0; i < num_shards; ++i) {
-                std::scoped_lock locks(shards_[i].mtx, other.shards_[i].mtx);
-                shards_[i].map = other.shards_[i].map;
-            }
+            dyn_c_hash_map tmp(other);
+            shards_ = std::move(tmp.shards_);
         }
         return *this;
     }
@@ -141,13 +167,12 @@ public:
         return *this;
     }
 
-    // Holds a shared (read) lock on the target key's shard while alive.
+    // Holds a shared (read) lock on the target element while alive.
     class const_accessor {
         friend class dyn_c_hash_map<K,V>;
     protected:
-        dyncompat::shared_lock<dyncompat::shared_mutex> rlock_;
-        dyncompat::unique_lock<dyncompat::shared_mutex> wlock_;
-        typename map_type::const_iterator it_{};
+        node_ptr node_;
+        dyncompat::shared_lock<dyncompat::shared_mutex> lock_;
         bool valid_ = false;
     public:
         const_accessor() = default;
@@ -156,22 +181,23 @@ public:
         ~const_accessor() { release(); }
 
         bool empty() const { return !valid_; }
-        const value_type* operator->() const { return &*it_; }
-        const value_type& operator*() const { return *it_; }
+        const value_type* operator->() const { return &node_->kv; }
+        const value_type& operator*() const { return node_->kv; }
 
         void release() {
             valid_ = false;
-            if(rlock_.owns_lock()) rlock_.unlock();
-            if(wlock_.owns_lock()) wlock_.unlock();
+            if(lock_.owns_lock()) lock_.unlock();
+            lock_ = {};
+            node_.reset();
         }
     };
 
-    // Holds an exclusive (write) lock on the target key's shard while alive.
+    // Holds an exclusive (write) lock on the target element while alive.
     class accessor {
         friend class dyn_c_hash_map<K,V>;
     protected:
-        dyncompat::unique_lock<dyncompat::shared_mutex> wlock_;
-        typename map_type::iterator it_{};
+        node_ptr node_;
+        dyncompat::unique_lock<dyncompat::shared_mutex> lock_;
         bool valid_ = false;
     public:
         accessor() = default;
@@ -180,85 +206,113 @@ public:
         ~accessor() { release(); }
 
         bool empty() const { return !valid_; }
-        value_type* operator->() const { return &*it_; }
-        value_type& operator*() const { return *it_; }
+        value_type* operator->() const { return &node_->kv; }
+        value_type& operator*() const { return node_->kv; }
 
         void release() {
             valid_ = false;
-            if(wlock_.owns_lock()) wlock_.unlock();
+            if(lock_.owns_lock()) lock_.unlock();
+            lock_ = {};
+            node_.reset();
         }
     };
 
-    bool find(const_accessor& ca, const K& k) const {
-        ca.release();
+private:
+    // Look up k under the shard's shared lock and return its node (or null). The
+    // shard lock is released on return, before the caller takes the element lock.
+    node_ptr find_node(const K& k) const {
         const shard& s = shard_for(k);
         dyncompat::shared_lock<dyncompat::shared_mutex> lock(s.mtx);
         auto it = s.map.find(k);
-        if(it == s.map.end()) return false;
-        ca.it_ = it;
-        ca.rlock_ = std::move(lock);
+        return (it == s.map.end()) ? node_ptr{} : it->second;
+    }
+
+    // Find-or-create the node for k under the shard's exclusive lock. Returns the
+    // node and whether it was newly inserted.
+    //
+    // When a node is newly created it is locked (into out_lock) *before* the shard
+    // lock is dropped. The node is not yet reachable by any other thread, so this
+    // is uncontended (cannot deadlock) and it guarantees that no other thread can
+    // observe the element before the inserting caller has initialized it -- this
+    // matches tbb::concurrent_hash_map's atomic insert-and-lock semantics.
+    //
+    // Existing nodes are returned unlocked; the caller takes their lock only after
+    // the shard lock is released, so shard and element locks never nest.
+    template<typename LockT, typename... Args>
+    std::pair<node_ptr, bool> emplace_locked(LockT& out_lock, const K& k, Args&&... args) {
+        shard& s = shard_for(k);
+        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
+        auto it = s.map.find(k);
+        if(it != s.map.end()) return {it->second, false};
+        auto np = std::make_shared<node>(k, std::forward<Args>(args)...);
+        s.map.emplace(k, np);
+        out_lock = LockT(np->mtx);
+        return {np, true};
+    }
+
+public:
+    bool find(const_accessor& ca, const K& k) const {
+        ca.release();
+        node_ptr np = find_node(k);
+        if(!np) return false;
+        ca.lock_ = dyncompat::shared_lock<dyncompat::shared_mutex>(np->mtx);
+        ca.node_ = std::move(np);
         ca.valid_ = true;
         return true;
     }
 
     bool find(accessor& a, const K& k) {
         a.release();
-        shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        auto it = s.map.find(k);
-        if(it == s.map.end()) return false;
-        a.it_ = it;
-        a.wlock_ = std::move(lock);
+        node_ptr np = find_node(k);
+        if(!np) return false;
+        a.lock_ = dyncompat::unique_lock<dyncompat::shared_mutex>(np->mtx);
+        a.node_ = std::move(np);
         a.valid_ = true;
         return true;
     }
 
-    int contains(const K& k) const {
-        const shard& s = shard_for(k);
-        dyncompat::shared_lock<dyncompat::shared_mutex> lock(s.mtx);
-        return s.map.count(k) == 1;
-    }
+    int contains(const K& k) const { return find_node(k) != nullptr; }
 
     bool insert(accessor& a, const K& k) {
         a.release();
-        shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        auto res = s.map.try_emplace(k);
-        a.it_ = res.first;
-        a.wlock_ = std::move(lock);
+        dyncompat::unique_lock<dyncompat::shared_mutex> new_lock;
+        auto res = emplace_locked(new_lock, k);
+        if(res.second) a.lock_ = std::move(new_lock);
+        else a.lock_ = dyncompat::unique_lock<dyncompat::shared_mutex>(res.first->mtx);
+        a.node_ = std::move(res.first);
         a.valid_ = true;
         return res.second;
     }
 
     bool insert(accessor& a, const value_type& e) {
         a.release();
-        shard& s = shard_for(e.first);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        auto res = s.map.insert(e);
-        a.it_ = res.first;
-        a.wlock_ = std::move(lock);
+        dyncompat::unique_lock<dyncompat::shared_mutex> new_lock;
+        auto res = emplace_locked(new_lock, e.first, e.second);
+        if(res.second) a.lock_ = std::move(new_lock);
+        else a.lock_ = dyncompat::unique_lock<dyncompat::shared_mutex>(res.first->mtx);
+        a.node_ = std::move(res.first);
         a.valid_ = true;
         return res.second;
     }
 
     bool insert(const_accessor& ca, const K& k) {
         ca.release();
-        shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        auto res = s.map.try_emplace(k);
-        ca.it_ = res.first;
-        ca.wlock_ = std::move(lock);
+        dyncompat::shared_lock<dyncompat::shared_mutex> new_lock;
+        auto res = emplace_locked(new_lock, k);
+        if(res.second) ca.lock_ = std::move(new_lock);
+        else ca.lock_ = dyncompat::shared_lock<dyncompat::shared_mutex>(res.first->mtx);
+        ca.node_ = std::move(res.first);
         ca.valid_ = true;
         return res.second;
     }
 
     bool insert(const_accessor& ca, const value_type& e) {
         ca.release();
-        shard& s = shard_for(e.first);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        auto res = s.map.insert(e);
-        ca.it_ = res.first;
-        ca.wlock_ = std::move(lock);
+        dyncompat::shared_lock<dyncompat::shared_mutex> new_lock;
+        auto res = emplace_locked(new_lock, e.first, e.second);
+        if(res.second) ca.lock_ = std::move(new_lock);
+        else ca.lock_ = dyncompat::shared_lock<dyncompat::shared_mutex>(res.first->mtx);
+        ca.node_ = std::move(res.first);
         ca.valid_ = true;
         return res.second;
     }
@@ -266,16 +320,19 @@ public:
     bool insert(const value_type& e) {
         shard& s = shard_for(e.first);
         dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        return s.map.insert(e).second;
+        auto it = s.map.find(e.first);
+        if(it != s.map.end()) return false;
+        s.map.emplace(e.first, std::make_shared<node>(e.first, e.second));
+        return true;
     }
 
     bool erase(accessor& a) {
         if(!a.valid_) return false;
-        shard& s = shard_for(a.it_->first);
-        s.map.erase(a.it_);
-        a.valid_ = false;
-        if(a.wlock_.owns_lock()) a.wlock_.unlock();
-        return true;
+        K k = a.node_->kv.first;
+        a.release();
+        shard& s = shard_for(k);
+        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
+        return s.map.erase(k) != 0;
     }
 
     bool erase(const K& k) {
@@ -320,9 +377,9 @@ public:
                                          typename map_type::iterator>;
 
     public:
-        using iterator_category = typename std::iterator_traits<inner>::iterator_category;
-        using value_type = typename map_type::value_type;
-        using difference_type = typename std::iterator_traits<inner>::difference_type;
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = std::pair<const K, V>;
+        using difference_type = std::ptrdiff_t;
         using reference = std::conditional_t<IsConst, const value_type&, value_type&>;
         using pointer = std::conditional_t<IsConst, const value_type*, value_type*>;
 
@@ -347,8 +404,8 @@ public:
     public:
         iter_impl() = default;
 
-        reference operator*() const { return *cur_; }
-        pointer operator->() const { return &*cur_; }
+        reference operator*() const { return cur_->second->kv; }
+        pointer operator->() const { return &cur_->second->kv; }
 
         iter_impl& operator++() {
             ++cur_;
