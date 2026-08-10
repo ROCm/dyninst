@@ -250,71 +250,91 @@ private:
         return {np, true};
     }
 
+    // True iff k still maps to exactly this node. Confirms that a node obtained
+    // after the shard lock was released was not erased or replaced before its
+    // element lock was taken -- restoring the atomic find/insert-and-lock
+    // guarantee of tbb::concurrent_hash_map. Takes only the shard lock (shared),
+    // while the caller holds the element lock, so it never holds a shard lock
+    // while waiting for a contended element lock.
+    bool still_current(const K& k, const node_ptr& np) const {
+        const shard& s = shard_for(k);
+        dyncompat::shared_lock<dyncompat::shared_mutex> lock(s.mtx);
+        auto it = s.map.find(k);
+        return it != s.map.end() && it->second == np;
+    }
+
+    // Shared implementation of the accessor/const_accessor insert overloads.
+    // A freshly created node is already locked under the shard lock (no gap). An
+    // existing node is locked after the shard lock is dropped, then validated
+    // with still_current(); if it was erased/replaced in between, retry.
+    template<typename Acc, typename LockT, typename... Args>
+    bool do_insert(Acc& acc, const K& k, Args&&... args) {
+        acc.release();
+        for(;;) {
+            LockT new_lock;
+            auto res = emplace_locked<LockT>(new_lock, k, std::forward<Args>(args)...);
+            if(res.second) {
+                acc.lock_ = std::move(new_lock);
+                acc.node_ = std::move(res.first);
+                acc.valid_ = true;
+                return true;
+            }
+            LockT lk(res.first->mtx);
+            if(!still_current(k, res.first)) continue;
+            acc.lock_ = std::move(lk);
+            acc.node_ = std::move(res.first);
+            acc.valid_ = true;
+            return false;
+        }
+    }
+
 public:
     bool find(const_accessor& ca, const K& k) const {
         ca.release();
-        node_ptr np = find_node(k);
-        if(!np) return false;
-        ca.lock_ = dyncompat::shared_lock<dyncompat::shared_mutex>(np->mtx);
-        ca.node_ = std::move(np);
-        ca.valid_ = true;
-        return true;
+        for(;;) {
+            node_ptr np = find_node(k);
+            if(!np) return false;
+            dyncompat::shared_lock<dyncompat::shared_mutex> lk(np->mtx);
+            if(!still_current(k, np)) continue;  // erased/replaced after lookup; retry
+            ca.lock_ = std::move(lk);
+            ca.node_ = std::move(np);
+            ca.valid_ = true;
+            return true;
+        }
     }
 
     bool find(accessor& a, const K& k) {
         a.release();
-        node_ptr np = find_node(k);
-        if(!np) return false;
-        a.lock_ = dyncompat::unique_lock<dyncompat::shared_mutex>(np->mtx);
-        a.node_ = std::move(np);
-        a.valid_ = true;
-        return true;
+        for(;;) {
+            node_ptr np = find_node(k);
+            if(!np) return false;
+            dyncompat::unique_lock<dyncompat::shared_mutex> lk(np->mtx);
+            if(!still_current(k, np)) continue;  // erased/replaced after lookup; retry
+            a.lock_ = std::move(lk);
+            a.node_ = std::move(np);
+            a.valid_ = true;
+            return true;
+        }
     }
 
     int contains(const K& k) const { return find_node(k) != nullptr; }
 
     bool insert(accessor& a, const K& k) {
-        a.release();
-        dyncompat::unique_lock<dyncompat::shared_mutex> new_lock;
-        auto res = emplace_locked(new_lock, k);
-        if(res.second) a.lock_ = std::move(new_lock);
-        else a.lock_ = dyncompat::unique_lock<dyncompat::shared_mutex>(res.first->mtx);
-        a.node_ = std::move(res.first);
-        a.valid_ = true;
-        return res.second;
+        return do_insert<accessor, dyncompat::unique_lock<dyncompat::shared_mutex>>(a, k);
     }
 
     bool insert(accessor& a, const value_type& e) {
-        a.release();
-        dyncompat::unique_lock<dyncompat::shared_mutex> new_lock;
-        auto res = emplace_locked(new_lock, e.first, e.second);
-        if(res.second) a.lock_ = std::move(new_lock);
-        else a.lock_ = dyncompat::unique_lock<dyncompat::shared_mutex>(res.first->mtx);
-        a.node_ = std::move(res.first);
-        a.valid_ = true;
-        return res.second;
+        return do_insert<accessor, dyncompat::unique_lock<dyncompat::shared_mutex>>(
+            a, e.first, e.second);
     }
 
     bool insert(const_accessor& ca, const K& k) {
-        ca.release();
-        dyncompat::shared_lock<dyncompat::shared_mutex> new_lock;
-        auto res = emplace_locked(new_lock, k);
-        if(res.second) ca.lock_ = std::move(new_lock);
-        else ca.lock_ = dyncompat::shared_lock<dyncompat::shared_mutex>(res.first->mtx);
-        ca.node_ = std::move(res.first);
-        ca.valid_ = true;
-        return res.second;
+        return do_insert<const_accessor, dyncompat::shared_lock<dyncompat::shared_mutex>>(ca, k);
     }
 
     bool insert(const_accessor& ca, const value_type& e) {
-        ca.release();
-        dyncompat::shared_lock<dyncompat::shared_mutex> new_lock;
-        auto res = emplace_locked(new_lock, e.first, e.second);
-        if(res.second) ca.lock_ = std::move(new_lock);
-        else ca.lock_ = dyncompat::shared_lock<dyncompat::shared_mutex>(res.first->mtx);
-        ca.node_ = std::move(res.first);
-        ca.valid_ = true;
-        return res.second;
+        return do_insert<const_accessor, dyncompat::shared_lock<dyncompat::shared_mutex>>(
+            ca, e.first, e.second);
     }
 
     bool insert(const value_type& e) {
@@ -326,19 +346,42 @@ public:
         return true;
     }
 
+    // Erase the exact element the accessor holds. The accessor already owns the
+    // element lock, so taking the shard lock here is node -> shard ordering and
+    // never nests a shard lock while waiting for a contended element lock.
     bool erase(accessor& a) {
         if(!a.valid_) return false;
-        K k = a.node_->kv.first;
-        a.release();
+        const K k = a.node_->kv.first;
+        node_ptr np = a.node_;
         shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        return s.map.erase(k) != 0;
+        dyncompat::unique_lock<dyncompat::shared_mutex> slock(s.mtx);
+        bool removed = false;
+        auto it = s.map.find(k);
+        if(it != s.map.end() && it->second == np) {  // erase by identity, not by key
+            s.map.erase(it);
+            removed = true;
+        }
+        a.release();
+        return removed;
     }
 
     bool erase(const K& k) {
-        shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
-        return s.map.erase(k) != 0;
+        for(;;) {
+            node_ptr np = find_node(k);
+            if(!np) return false;
+            // Acquire the element lock first, so erase waits for outstanding
+            // accessors (as tbb::concurrent_hash_map does), then remove under the
+            // shard lock. node -> shard ordering; no shard lock is held while
+            // waiting for the element lock.
+            dyncompat::unique_lock<dyncompat::shared_mutex> elock(np->mtx);
+            shard& s = shard_for(k);
+            dyncompat::unique_lock<dyncompat::shared_mutex> slock(s.mtx);
+            auto it = s.map.find(k);
+            if(it == s.map.end()) return false;
+            if(it->second != np) continue;  // replaced after lookup; retry
+            s.map.erase(it);
+            return true;
+        }
     }
 
     int size() const {
@@ -435,23 +478,44 @@ public:
     const_iterator end() const { return const_iterator(shards_.get(), num_shards); }
 };
 
-// Thread-safe, growable sequence container backed by std::deque.
+// Thread-safe, append-during-parallel-phase sequence container backed by
+// std::deque.
 //
 // Replaces tbb::concurrent_vector, preserving the two properties Dyninst relies
 // on: (1) push_back/emplace_back may be called concurrently (serialized here by
 // an internal mutex), and (2) pointers and references to existing elements stay
 // valid as the container grows (std::deque never relocates its elements).
 //
-// Element access (operator[], iteration, size, ...) is inherited from std::deque
-// and is NOT internally locked: callers append during a parallel phase and read
-// afterwards, matching the original concurrent_vector usage. Only the concurrent
-// mutation entry points take the lock.
+// CONCURRENCY CONTRACT: only concurrent *append* (push_back/emplace_back) is
+// synchronized. Element access (operator[], iteration, size, front/back) and the
+// non-append mutators (clear, insert, erase, resize, ...) are NOT internally
+// synchronized and must not run concurrently with an append to the same
+// instance. Dyninst satisfies this by appending during the parallel phase and
+// reading/modifying afterwards. NOTE: unlike tbb::concurrent_vector this type
+// does not support simultaneous read + append; a segmented design would be
+// required for that.
+//
+// std::deque is inherited privately so a dyn_c_vector cannot be sliced to, or
+// bound as, a std::deque& -- which would silently bypass the append lock. The
+// subset of the std::deque API that Dyninst uses is re-exported below.
 template<typename T>
-class dyn_c_vector : public std::deque<T> {
+class dyn_c_vector : private std::deque<T> {
     using base = std::deque<T>;
     mutable dyncompat::mutex _mutex;
 
 public:
+    using typename base::value_type;
+    using typename base::size_type;
+    using typename base::difference_type;
+    using typename base::reference;
+    using typename base::const_reference;
+    using typename base::pointer;
+    using typename base::const_pointer;
+    using typename base::iterator;
+    using typename base::const_iterator;
+    using typename base::reverse_iterator;
+    using typename base::const_reverse_iterator;
+
     using base::base;
 
     dyn_c_vector() = default;
@@ -497,6 +561,30 @@ public:
         dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
         return base::emplace_back(std::forward<Args>(args)...);
     }
+
+    // Unsynchronized element access, iteration, and non-append mutation. Per the
+    // concurrency contract above, these must not run concurrently with an append
+    // to the same instance.
+    using base::operator[];
+    using base::at;
+    using base::front;
+    using base::back;
+    using base::begin;
+    using base::end;
+    using base::cbegin;
+    using base::cend;
+    using base::rbegin;
+    using base::rend;
+    using base::size;
+    using base::max_size;
+    using base::empty;
+    using base::clear;
+    using base::resize;
+    using base::assign;
+    using base::insert;
+    using base::erase;
+    using base::pop_back;
+    using base::swap;
 };
 
 class dyn_mutex : public dyncompat::mutex {
