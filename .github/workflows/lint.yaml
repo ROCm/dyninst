@@ -1,0 +1,61 @@
+name: Lint
+
+# Runs the repository's pre-commit hooks: cmake-format, shellcheck and
+# actionlint. Contributors who ran `pre-commit install` can never fail this
+# check, because it executes the same pinned hooks they do.
+#
+# Deliberately has no paths filter. The hooks already select their own files,
+# and a filter here would only create ways for a change to skip the check.
+
+on:
+  pull_request:
+    branches: [dyninst_13]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: pre-commit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # Tool versions are pinned in .pre-commit-config.yaml, not here. An
+      # unpinned formatter or linter can change its output and turn every PR red
+      # without any change to this repository.
+      - name: Install pre-commit
+        run: python3 -m pip install pre-commit==4.6.2
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3.12-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit
+        id: check
+        run: pre-commit run --all-files --show-diff-on-failure --color=always
+
+      - name: How to fix
+        if: failure() && steps.check.outcome == 'failure'
+        run: |
+          echo "pre-commit reported problems. Anything printed as a diff above is"
+          echo "an automatic fix; shellcheck and actionlint findings need editing."
+          echo
+          echo "Reproduce locally with:"
+          echo "    pip install pre-commit"
+          echo "    pre-commit run --all-files"
+          echo
+          echo "Or run the hooks automatically on every commit:"
+          echo "    pre-commit install"

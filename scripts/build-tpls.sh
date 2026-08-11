@@ -24,7 +24,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=tpl-versions.env
+# shellcheck source-path=SCRIPTDIR source=tpl-versions.env
 source "${script_dir}/tpl-versions.env"
 
 prefix=""

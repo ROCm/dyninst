@@ -158,32 +158,26 @@ jobs:
       - name: Install
         run: cmake --install build
 
-      # Proves the install can parse, instrument and rewrite a real binary, and
-      # that the rewritten binary still runs. A link-only check would not.
-      - name: Smoke test (parseThat binary rewrite)
+      # Rewrites a binary with parseThat and instruments a live process with
+      # BPatch::processCreate. A link-only check would prove neither, and the
+      # runtime half is the only one that exercises ProcControlAPI and the
+      # injection of libdyninstAPI_RT.
+      #
+      # --retries applies only to a timeout, never to a failed assertion, so a
+      # genuine regression still fails on the first attempt. It is here because
+      # ProcControl startup was seen to hang rather than fail; the step timeout
+      # is the outer backstop if even the retries wedge.
+      - name: Smoke test
+        timeout-minutes: 10
         run: |
-          set -x
-          export DYNINSTAPI_RT_LIB="${INSTALL_PREFIX}/lib/libdyninstAPI_RT.so"
-          export LD_LIBRARY_PATH="${INSTALL_PREFIX}/lib:${TPL_PREFIX}/elfutils/lib:${TPL_PREFIX}/tbb/lib:${LD_LIBRARY_PATH:-}"
-          test -f "${DYNINSTAPI_RT_LIB}"
-
-          mkdir -p /tmp/smoke && cd /tmp/smoke
-          cat > hello.c <<'EOF'
-          #include <stdio.h>
-          int work(int x) { return x * 2; }
-          int main(void) { printf("dyninst-smoke-ok %d\n", work(21)); return 0; }
-          EOF
-          ${{ inputs.cc }} -g -O0 -o hello hello.c
-          ./hello | tee baseline.txt
-          grep -q 'dyninst-smoke-ok 42' baseline.txt
-
-          # -i 1 instruments function entries, so this exercises instrumentation
-          # rather than only parse-and-write-back.
-          "${INSTALL_PREFIX}/bin/parseThat" -i 1 --binary-edit=./hello.rewritten ./hello
-
-          test -x ./hello.rewritten
-          ./hello.rewritten | tee rewritten.txt
-          grep -q 'dyninst-smoke-ok 42' rewritten.txt
+          bash scripts/smoke/run-smoke.sh \
+            --prefix "${INSTALL_PREFIX}" \
+            --tpl-prefix "${TPL_PREFIX}" \
+            --cc ${{ inputs.cc }} \
+            --cxx ${{ inputs.cxx }} \
+            --workdir "${{ github.workspace }}/.smoke" \
+            --timeout 120 \
+            --retries 1
 
       - name: ccache stats
         if: always()
@@ -198,4 +192,14 @@ jobs:
             build/CMakeCache.txt
             build/CMakeFiles/CMakeConfigureLog.yaml
             build/CMakeFiles/*.log
+          if-no-files-found: ignore
+
+      # The captured stdout of each stage is what distinguishes "instrumentation
+      # did not run" from "the mutatee itself failed".
+      - name: Upload smoke test output
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-${{ inputs.name }}-${{ matrix.build-type }}
+          path: .smoke/*.txt
           if-no-files-found: ignore
