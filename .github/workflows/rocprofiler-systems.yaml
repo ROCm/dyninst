@@ -116,7 +116,8 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: rocm-systems/projects/rocprofiler-systems
+        # Not under GITHUB_WORKSPACE; see "Move the checkout off the dyninst path".
+        working-directory: /rocm-systems/projects/rocprofiler-systems
 
     env:
       CDASH_NAME: dyninst-${{ github.event.number || github.ref_name }}-${{ matrix.cdash_suffix }}
@@ -149,6 +150,27 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: rocm-systems/projects/rocprofiler-systems/external/dyninst
+
+      # rocprof-sys-instrument discards any module whose path matches the regex
+      # "dyninst" (is_module_constrained in module_function.cpp), and the module
+      # name is the full source path. GITHUB_WORKSPACE is /__w/dyninst/dyninst
+      # because this repository is named dyninst, so a build left there produces
+      # test binaries with zero functions instrumented: the rewrite succeeds, the
+      # tests run, and every trace assertion fails for a reason unrelated to
+      # Dyninst. No command-line flag overrides it, as the module check precedes
+      # the --min-instructions and --include filters.
+      - name: Move the checkout off the "dyninst" path
+        working-directory: ${{ github.workspace }}
+        run: |
+          rm -rf /rocm-systems
+          mv rocm-systems /rocm-systems
+          # -P because the compiler records the resolved path, not the logical one.
+          build_root=$(cd /rocm-systems/projects/rocprofiler-systems && pwd -P)
+          echo "building in ${build_root}"
+          if echo "${build_root}" | grep -qi dyninst; then
+            echo "Path still matches 'dyninst'; every test binary would be built uninstrumented."
+            exit 1
+          fi
 
       - name: Record the versions under test
         run: |
@@ -334,7 +356,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: junit-${{ matrix.kind }}-${{ strategy.job-index }}
-          path: rocm-systems/projects/rocprofiler-systems/build/test-results.xml
+          path: /rocm-systems/projects/rocprofiler-systems/build/test-results.xml
           if-no-files-found: ignore
 
       - name: Upload ctest logs
@@ -343,7 +365,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ctest-${{ matrix.kind }}-${{ strategy.job-index }}-log
-          path: rocm-systems/projects/rocprofiler-systems/build/*.log
+          path: /rocm-systems/projects/rocprofiler-systems/build/*.log
           if-no-files-found: ignore
 
       - name: Upload test output
@@ -353,7 +375,7 @@ jobs:
         with:
           name: data-${{ matrix.kind }}-${{ strategy.job-index }}-files
           path: |
-            rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-config/*.cfg
-            rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*.txt
-            rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*-instr*.json
+            /rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-config/*.cfg
+            /rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*.txt
+            /rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*-instr*.json
           if-no-files-found: ignore
