@@ -541,14 +541,14 @@ public:
 // an internal mutex), and (2) pointers and references to existing elements stay
 // valid as the container grows (std::deque never relocates its elements).
 //
-// CONCURRENCY CONTRACT: only concurrent *append* (push_back/emplace_back) is
-// synchronized. Element access (operator[], iteration, size, front/back) and the
-// non-append mutators (clear, insert, erase, resize, ...) are NOT internally
-// synchronized and must not run concurrently with an append to the same
-// instance. Dyninst satisfies this by appending during the parallel phase and
-// reading/modifying afterwards. NOTE: unlike tbb::concurrent_vector this type
-// does not support simultaneous read + append; a segmented design would be
-// required for that.
+// CONCURRENCY CONTRACT: appends (push_back/emplace_back) and indexed reads
+// (operator[], at, front, back, size, empty) are synchronized, so a reader that
+// addresses elements by index may run alongside an appender, as it could with
+// tbb::concurrent_vector. Iteration (begin/end/rbegin/rend) and the non-append
+// mutators (clear, insert, erase, resize, ...) are NOT synchronized and must not
+// run concurrently with an append, because push_back invalidates every deque
+// iterator. Dyninst satisfies that restriction by appending during the parallel
+// phase and iterating afterwards.
 //
 // std::deque is inherited privately so a dyn_c_vector cannot be sliced to, or
 // bound as, a std::deque& -- which would silently bypass the append lock. The
@@ -617,22 +617,68 @@ public:
         return base::emplace_back(std::forward<Args>(args)...);
     }
 
-    // Unsynchronized element access, iteration, and non-append mutation. Per the
-    // concurrency contract above, these must not run concurrently with an append
-    // to the same instance.
-    using base::operator[];
-    using base::at;
-    using base::front;
-    using base::back;
+    // Synchronized element access. tbb::concurrent_vector let one thread read
+    // while another appended; std::deque does not, because push_back can
+    // reallocate the internal map array out from under a reader that is walking
+    // it to locate an element. Dyninst depends on that guarantee in
+    // fieldListType::operator==, which compares a type's fields while another
+    // OpenMP worker may still be adding fields to it (a type is published into
+    // typesByID before its members are parsed).
+    //
+    // Releasing the lock before the caller uses the returned reference is safe:
+    // std::deque never relocates existing elements, so only the traversal that
+    // locates the element needs protecting, not the element itself.
+    reference operator[](size_type n) {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::operator[](n);
+    }
+    const_reference operator[](size_type n) const {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::operator[](n);
+    }
+    reference at(size_type n) {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::at(n);
+    }
+    const_reference at(size_type n) const {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::at(n);
+    }
+    reference front() {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::front();
+    }
+    const_reference front() const {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::front();
+    }
+    reference back() {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::back();
+    }
+    const_reference back() const {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::back();
+    }
+    size_type size() const {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::size();
+    }
+    bool empty() const {
+        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
+        return base::empty();
+    }
+
+    // Unsynchronized iteration and non-append mutation. Per the concurrency
+    // contract above, these must not run concurrently with an append to the same
+    // instance: push_back invalidates all deque iterators.
     using base::begin;
     using base::end;
     using base::cbegin;
     using base::cend;
     using base::rbegin;
     using base::rend;
-    using base::size;
     using base::max_size;
-    using base::empty;
     using base::clear;
     using base::resize;
     using base::assign;
