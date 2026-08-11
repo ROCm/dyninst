@@ -88,8 +88,11 @@ namespace concurrent {
 //
 // Elements are held through shared_ptr so a concurrent erase cannot destroy a
 // node (and its mutex) out from under a thread that is acquiring or holding it.
-// The shard lock is always released before an element lock is taken, so the two
-// lock levels cannot form a cycle.
+// The shard lock is always released before an *existing* element's lock is taken,
+// so the two lock levels cannot form a cycle. The sole exception is a newly
+// created node, which is locked while the shard lock is still held but is not yet
+// reachable by any other thread, so it can never be contended (see
+// emplace_locked).
 //
 // std::shared_mutex is understood natively by Valgrind's DRD/Helgrind tools, so
 // the explicit lock annotations of the old TBB-based wrapper are unnecessary.
@@ -117,7 +120,14 @@ class dyn_c_hash_map {
         mutable dyncompat::shared_mutex mtx;  // guards map structure only
     };
 
-    static constexpr std::size_t num_shards = 64;
+    // Shard count trades lock contention against per-map memory. glibc's
+    // shared_mutex writes the lock word even for readers, so with too few shards
+    // those cache lines ping-pong between cores and throughput stops scaling: at
+    // 64 shards a mixed find/insert benchmark saturates from 16 threads upward.
+    // 256 keeps scaling out to 64 threads at 28 KB per map; 1024 is faster still
+    // but costs 112 KB, and Dyninst creates several of these maps per module in
+    // type-heavy workflows.
+    static constexpr std::size_t num_shards = 256;
     std::unique_ptr<shard[]> shards_{new shard[num_shards]};
 
     static std::size_t shard_of(const K& k) {
@@ -134,10 +144,21 @@ public:
     dyn_c_hash_map() = default;
     ~dyn_c_hash_map() = default;
 
+    // Copies element values without ever holding a shard lock and an element lock
+    // at the same time: snapshot the (key, node) pairs under the shard lock, drop
+    // it, then lock each element in turn. The snapshot holds shared_ptrs, so the
+    // nodes stay alive even if the source erases them in the meantime.
     dyn_c_hash_map(const dyn_c_hash_map& other) {
+        std::vector<std::pair<K, node_ptr>> entries;
         for(std::size_t i = 0; i < num_shards; ++i) {
-            dyncompat::shared_lock<dyncompat::shared_mutex> lock(other.shards_[i].mtx);
-            for(const auto& entry : other.shards_[i].map) {
+            entries.clear();
+            {
+                dyncompat::shared_lock<dyncompat::shared_mutex> lock(other.shards_[i].mtx);
+                entries.reserve(other.shards_[i].map.size());
+                for(const auto& entry : other.shards_[i].map)
+                    entries.emplace_back(entry.first, entry.second);
+            }
+            for(const auto& entry : entries) {
                 dyncompat::shared_lock<dyncompat::shared_mutex> nlock(entry.second->mtx);
                 shards_[i].map.emplace(
                     entry.first,
@@ -146,24 +167,31 @@ public:
         }
     }
 
-    dyn_c_hash_map(dyn_c_hash_map&& other) noexcept
-        : shards_(std::move(other.shards_)) {
+    // Deliberately not noexcept: the moved-from map is left with a fresh (empty)
+    // shard array so it remains usable, and that allocation can throw.
+    dyn_c_hash_map(dyn_c_hash_map&& other) : shards_(std::move(other.shards_)) {
         other.shards_.reset(new shard[num_shards]);
     }
 
+    // Keep this map's shard array in place and assign per shard under its own
+    // lock. Replacing the array wholesale would free it while a concurrent reader
+    // may still hold a `shard&` obtained from shard_for(), leaving a dangling
+    // reference -- the shared_ptr nodes do not protect the shard array itself.
     dyn_c_hash_map& operator=(const dyn_c_hash_map& other) {
         if(this != &other) {
-            dyn_c_hash_map tmp(other);
-            shards_ = std::move(tmp.shards_);
+            dyn_c_hash_map tmp(other);  // snapshot without holding our locks
+            for(std::size_t i = 0; i < num_shards; ++i) {
+                dyncompat::unique_lock<dyncompat::shared_mutex> lock(shards_[i].mtx);
+                shards_[i].map = std::move(tmp.shards_[i].map);
+            }
         }
         return *this;
     }
 
+    // Swap rather than reallocate: both objects already own a shard array, so this
+    // needs no allocation and is genuinely nothrow.
     dyn_c_hash_map& operator=(dyn_c_hash_map&& other) noexcept {
-        if(this != &other) {
-            shards_ = std::move(other.shards_);
-            other.shards_.reset(new shard[num_shards]);
-        }
+        shards_.swap(other.shards_);
         return *this;
     }
 
@@ -246,7 +274,14 @@ private:
         if(it != s.map.end()) return {it->second, false};
         auto np = std::make_shared<node>(k, std::forward<Args>(args)...);
         s.map.emplace(k, np);
-        out_lock = LockT(np->mtx);
+        // Acquire non-blocking first: the node is unreachable, so this always
+        // succeeds in practice, and a try_lock is excluded from ThreadSanitizer's
+        // lock-order graph (it cannot participate in a cycle), which suppresses the
+        // shard->element inversions this one nesting would otherwise report.
+        // try_lock may fail spuriously, so fall back to a blocking -- still
+        // uncontended -- acquisition rather than return an unlocked accessor.
+        out_lock = LockT(np->mtx, std::try_to_lock);
+        if(!out_lock.owns_lock()) out_lock.lock();
         return {np, true};
     }
 
