@@ -130,8 +130,28 @@ class dyn_c_hash_map {
     static constexpr std::size_t num_shards = 256;
     std::unique_ptr<shard[]> shards_{new shard[num_shards]};
 
+    // Avalanche the hash before selecting a shard. std::hash is the identity for
+    // pointers and integers, and Dyninst's keys are dominated by heap pointers and
+    // function entry addresses, which are 16-byte aligned -- so their low bits are
+    // constant. Feeding those straight into `% num_shards` would leave only every
+    // 16th shard reachable (4 of 64, 16 of 256) and funnel the whole parallel
+    // parse through a handful of mutexes. tbb_hash_compare avoided this by
+    // multiplying the key by a hash multiplier; this is the same idea.
+    static std::size_t mix(std::size_t h) {
+        if constexpr(sizeof(std::size_t) == 8) {
+            h ^= h >> 33;
+            h *= 0xff51afd7ed558ccdULL;  // MurmurHash3 64-bit finalizer
+            h ^= h >> 33;
+        } else {
+            h ^= h >> 16;
+            h *= 0x85ebca6bUL;
+            h ^= h >> 13;
+        }
+        return h;
+    }
+
     static std::size_t shard_of(const K& k) {
-        return concurrent::hasher<K>{}(k) % num_shards;
+        return mix(concurrent::hasher<K>{}(k)) % num_shards;
     }
     shard& shard_for(const K& k) { return shards_[shard_of(k)]; }
     const shard& shard_for(const K& k) const { return shards_[shard_of(k)]; }
