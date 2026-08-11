@@ -14,35 +14,11 @@
  */
 
 #include "BPatch.h"
-#include "BPatch_addressSpace.h"
-#include "BPatch_function.h"
-#include "BPatch_image.h"
-#include "BPatch_point.h"
 #include "BPatch_process.h"
-#include "BPatch_snippet.h"
+
+#include "smoke_mutator.h"
 
 #include <cstdio>
-#include <cstdlib>
-
-namespace {
-
-BPatch_function* find_only(BPatch_image* image, const char* name)
-{
-    BPatch_Vector<BPatch_function*> funcs;
-    image->findFunction(name, funcs);
-
-    // Anything other than exactly one match means the mutatee was built
-    // differently than this test assumes, not that Dyninst is broken.
-    if(funcs.size() != 1)
-    {
-        std::fprintf(stderr, "error: expected exactly one '%s', found %lu\n", name,
-                     static_cast<unsigned long>(funcs.size()));
-        return nullptr;
-    }
-    return funcs[0];
-}
-
-}  // namespace
 
 int main(int argc, char* argv[])
 {
@@ -52,43 +28,18 @@ int main(int argc, char* argv[])
         return 2;
     }
 
-    const char* mutatee   = argv[1];
+    const char* mutatee        = argv[1];
     const char* mutatee_argv[] = { mutatee, nullptr };
 
-    BPatch            bpatch;
-    BPatch_process*   proc = bpatch.processCreate(mutatee, mutatee_argv);
+    BPatch          bpatch;
+    BPatch_process* proc = bpatch.processCreate(mutatee, mutatee_argv);
     if(proc == nullptr)
     {
         std::fprintf(stderr, "error: processCreate('%s') failed\n", mutatee);
         return 1;
     }
 
-    BPatch_image* image = proc->getImage();
-    if(image == nullptr)
-    {
-        std::fprintf(stderr, "error: getImage() returned null\n");
-        return 1;
-    }
-
-    BPatch_function* work   = find_only(image, "work");
-    BPatch_function* marker = find_only(image, "dyninst_marker");
-    if(work == nullptr || marker == nullptr) return 1;
-
-    BPatch_Vector<BPatch_point*>* entry = work->findPoint(BPatch_locEntry);
-    if(entry == nullptr || entry->empty())
-    {
-        std::fprintf(stderr, "error: no entry point found for work()\n");
-        return 1;
-    }
-
-    BPatch_Vector<BPatch_snippet*> no_args;
-    BPatch_funcCallExpr            call_marker(*marker, no_args);
-
-    if(proc->insertSnippet(call_marker, *entry) == nullptr)
-    {
-        std::fprintf(stderr, "error: insertSnippet() failed\n");
-        return 1;
-    }
+    if(!smoke::insert_marker(proc)) return 1;
 
     if(!proc->continueExecution())
     {

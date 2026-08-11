@@ -1,0 +1,51 @@
+# Formats and lints the files CI checks, so the lint workflow never asks for a
+# manual fix. Enable it once per clone with:
+#
+#   pip install pre-commit && pre-commit install
+#
+# CI runs these same hooks, so the pins below are the single definition of
+# "correct" for this repository.
+#
+# Every hook is declared locally with a pinned pip package rather than pulled
+# from an upstream hook repository. cheshirekow/cmake_format publishes no
+# .pre-commit-hooks.yaml at all, and doing the same thing for the rest keeps one
+# mechanism instead of three.
+
+repos:
+  - repo: local
+    hooks:
+      # The [YAML] extra is required: cmakelang imports PyYAML lazily and does
+      # not depend on it, so reading .cmake-format.yaml fails with
+      # ModuleNotFoundError without it.
+      - id: cmake-format
+        name: cmake-format
+        entry: cmake-format --in-place
+        language: python
+        additional_dependencies: ['cmake-format[YAML]==0.6.13']
+        files: (^|/)CMakeLists\.txt$|\.cmake$
+
+      # Scoped to scripts/. The inherited docker/ and instructionAPI/ scripts
+      # have dozens of pre-existing findings, and rewriting them would churn
+      # files that still merge from upstream Dyninst for no CI benefit.
+      #
+      # --external-sources lets it follow `source`d files such as
+      # scripts/tpl-versions.env instead of reporting SC1091.
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck --external-sources
+        language: python
+        additional_dependencies: ['shellcheck-py==0.11.0.1']
+        files: ^scripts/
+        types: [shell]
+
+      # actionlint shells out to shellcheck to check inline `run:` blocks, which
+      # is where most of this repository's untested shell lives. It only does so
+      # when shellcheck is on PATH, hence the second dependency.
+      - id: actionlint
+        name: actionlint
+        entry: actionlint
+        language: python
+        additional_dependencies:
+          - 'actionlint-py==1.7.12.24'
+          - 'shellcheck-py==0.11.0.1'
+        files: ^\.github/workflows/.*\.ya?ml$

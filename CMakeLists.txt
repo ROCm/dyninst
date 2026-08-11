@@ -34,6 +34,17 @@ include_directories(SYSTEM "${PROJECT_SOURCE_DIR}")
 include(DyninstLibrarySettings)
 include(DyninstOptions)
 
+# Installed public headers include <dyncompat/...> (concurrent.h and most of the
+# BPatch_* headers do), so the directory has to ship alongside them. Without
+# this, the include_directories above makes the build work while anything
+# compiling against the install tree fails to find the header.
+install(
+  DIRECTORY "${PROJECT_SOURCE_DIR}/dyncompat"
+  DESTINATION "${DYNINST_INSTALL_INCLUDEDIR}"
+  FILES_MATCHING
+  PATTERN "*.h"
+  PATTERN "*.hpp")
+
 # Set up Dyninst internals
 include(DyninstPlatform)
 include(DyninstCapArchDef)

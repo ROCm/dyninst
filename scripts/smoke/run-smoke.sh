@@ -4,14 +4,20 @@
 #
 # Two checks, covering the two halves of Dyninst that a link-only test misses:
 #
-#   binary rewrite      parseThat instruments and writes out a new binary, which
-#                       is then executed
+#   binary rewrite      parseThat writes out a new binary, and a mutator built
+#                       against the install writes out another with a snippet of
+#                       our own in it
 #   runtime instrument  a mutator built against the install uses
 #                       BPatch::processCreate to instrument a live process
 #
 # The runtime check is the only one that exercises ProcControlAPI and the
 # injection of libdyninstAPI_RT, so it fails on a class of breakage that binary
 # rewriting cannot see.
+#
+# Both checks assert that an inserted snippet ran rather than that the tools
+# exited zero and the mutatee still works. A rewriter that selects no functions
+# at all satisfies the weaker condition, and that is the shape of the binary
+# rewriting failures seen downstream in rocprofiler-systems.
 #
 # Every Dyninst invocation is wrapped in a timeout. ProcControl process startup
 # has been observed to hang rather than fail: the mutatee sits in ptrace_stop
@@ -76,22 +82,53 @@ mkdir -p "${workdir}"
 libdir="${prefix}/lib"
 [[ -d "${libdir}" ]] || libdir="${prefix}/lib64"
 
+# Honoured by the ppc, aarch64 and FreeBSD backends. The x86_64 Linux backend
+# ignores it and resolves the runtime library by search instead, which is what
+# DYNINST_REWRITER_PATHS below is for.
 export DYNINSTAPI_RT_LIB="${libdir}/libdyninstAPI_RT.so"
 
-# Two paths, because the runtime check deliberately runs without ${libdir} on
-# it. Measured against a Dyninst 13.0.0 install, BPatch::processCreate hung
-# 10 times out of 10 with ${libdir} on LD_LIBRARY_PATH and roughly 1 in 10
-# without it, so keeping the mutator's Dyninst libraries on the search path
-# turns an occasional hang into a guaranteed one. The mutator is linked with an
-# rpath to ${libdir}, so it resolves them without help; the third-party entries
-# have to stay because libdyninstAPI.so's own dependencies are found through
-# LD_LIBRARY_PATH, not through the mutator's rpath.
+# How PCProcess::setEnvPreload finds the library it LD_PRELOADs into the
+# mutatee. On x86_64 Linux it calls BinaryEdit::getResolvedLibraryPath with the
+# bare name "libdyninstAPI_RT.so" and takes the first hit from, in order, this
+# variable, LD_LIBRARY_PATH, and the compiler's search directories. Naming
+# ${libdir} here pins the runtime library to the install under test and lets the
+# runtime check keep ${libdir} off LD_LIBRARY_PATH: without it the search either
+# finds nothing, and process creation fails during bootstrap with no explanation
+# unless DYNINST_DEBUG_STARTUP is set, or finds some other Dyninst that happens
+# to be on the path and instruments the mutatee with the wrong runtime.
+export DYNINST_REWRITER_PATHS="${libdir}"
+
 tpl_ld_path="${tpl_prefix:+${tpl_prefix}/elfutils/lib:${tpl_prefix}/tbb/lib}"
+
+# Two paths, because the runtime check runs without ${libdir} on it: the mutator
+# reaches its own libraries through the RPATH cmake links it with, and leaving
+# the directory off means nothing on the loader's search path can stand in for
+# the install being tested. The third-party entries have to stay, because
+# libdyninstAPI.so's own dependencies resolve through LD_LIBRARY_PATH rather
+# than through the mutator's RUNPATH, which is not transitive.
+#
+# The inherited value is filtered the same way rather than trusted, since a
+# developer shell or a container image can point it at a different Dyninst.
+strip_dyninst_dirs() {
+    local result="" entry
+    local -a entries=()
+    IFS=':' read -r -a entries <<< "$1"
+    for entry in "${entries[@]}"; do
+        [[ -z "${entry}" ]] && continue
+        if compgen -G "${entry}/libdyninstAPI*.so*" > /dev/null; then
+            echo "note: dropping Dyninst library directory '${entry}' from the runtime search path" >&2
+            continue
+        fi
+        result="${result:+${result}:}${entry}"
+    done
+    printf '%s' "${result}"
+}
 
 runtime_ld_path="${tpl_ld_path}"
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
     runtime_ld_path="${runtime_ld_path:+${runtime_ld_path}:}${LD_LIBRARY_PATH}"
 fi
+runtime_ld_path="$(strip_dyninst_dirs "${runtime_ld_path}")"
 
 if [[ -n "${runtime_ld_path}" ]]; then
     runtime_env=(env "LD_LIBRARY_PATH=${runtime_ld_path}")
@@ -160,6 +197,50 @@ if grep -q 'dyninst-marker-ran' "${workdir}/baseline.txt"; then
 fi
 
 # ---------------------------------------------------------------------------
+# Mutators
+# ---------------------------------------------------------------------------
+
+step "build the mutators"
+# Without this, a prefix missing its headers falls through to whatever Dyninst
+# happens to sit in a default include path, and the failure arrives as a wall of
+# template errors from the wrong version.
+if [[ ! -f "${prefix}/include/BPatch.h" ]]; then
+    echo "error: ${prefix}/include/BPatch.h not found; is --prefix an install tree?" >&2
+    exit 1
+fi
+
+# See scripts/smoke/CMakeLists.txt for why this is a CMake build and not a
+# compiler invocation. The mutators end up with a build-tree RPATH covering the
+# install's libraries, which is what lets the runtime check below drop them from
+# LD_LIBRARY_PATH.
+mutator_build="${workdir}/mutators"
+cmake_args=(
+    -S "${script_dir}"
+    -B "${mutator_build}"
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    -DCMAKE_CXX_COMPILER="${cxx}"
+    -DCMAKE_PREFIX_PATH="${prefix}"
+)
+if [[ -n "${tpl_prefix}" ]]; then
+    cmake_args+=(
+        -DTBB_ROOT_DIR="${tpl_prefix}/tbb"
+        -DElfUtils_ROOT_DIR="${tpl_prefix}/elfutils"
+    )
+fi
+
+run_logged "${workdir}/cmake.txt" cmake "${cmake_args[@]}"
+if [[ "${run_rc}" -ne 0 ]]; then
+    report_failure "configuring the mutators" "${run_rc}" "${workdir}/cmake.txt"
+    exit 1
+fi
+
+run_logged "${workdir}/cmake-build.txt" cmake --build "${mutator_build}" --parallel
+if [[ "${run_rc}" -ne 0 ]]; then
+    report_failure "building the mutators" "${run_rc}" "${workdir}/cmake-build.txt"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Binary rewrite
 # ---------------------------------------------------------------------------
 
@@ -184,29 +265,36 @@ if [[ "${run_rc}" -ne 0 ]]; then
 fi
 grep -q 'mutatee-ok 42' "${workdir}/rewritten.txt"
 
+step "rewrite the mutatee with a snippet of our own"
+# parseThat above shows the rewriter produces a working binary, which it also
+# does when it instruments nothing at all. This inserts a call we can observe so
+# the run below can tell those two outcomes apart.
+run_logged "${workdir}/rewrite-snippet.txt" \
+    "${mutator_build}/binary_rewrite" "${workdir}/mutatee" "${workdir}/mutatee.snippet"
+if [[ "${run_rc}" -ne 0 ]]; then
+    report_failure "binary rewriting" "${run_rc}" "${workdir}/rewrite-snippet.txt"
+    exit 1
+fi
+
+step "run the rewritten mutatee carrying the snippet"
+test -x "${workdir}/mutatee.snippet"
+run_logged "${workdir}/snippet.txt" "${workdir}/mutatee.snippet"
+if [[ "${run_rc}" -ne 0 ]]; then
+    report_failure "the rewritten mutatee" "${run_rc}" "${workdir}/snippet.txt"
+    exit 1
+fi
+# The mutatee never calls dyninst_marker() itself, so this line can only come
+# from the snippet written into the entry of work().
+grep -q 'dyninst-marker-ran' "${workdir}/snippet.txt"
+grep -q 'mutatee-ok 42' "${workdir}/snippet.txt"
+
 # ---------------------------------------------------------------------------
 # Runtime instrumentation
 # ---------------------------------------------------------------------------
 
-step "build the runtime-instrumentation mutator"
-# Without this, a prefix missing its headers falls through to whatever Dyninst
-# happens to sit in a default include path, and the failure arrives as a wall of
-# template errors from the wrong version.
-if [[ ! -f "${prefix}/include/BPatch.h" ]]; then
-    echo "error: ${prefix}/include/BPatch.h not found; is --prefix an install tree?" >&2
-    exit 1
-fi
-"${cxx}" -std=c++17 -g -O0 \
-    -o "${workdir}/runtime_instrument" \
-    "${script_dir}/runtime_instrument.cpp" \
-    -I"${prefix}/include" \
-    -L"${libdir}" -Wl,-rpath,"${libdir}" \
-    -ldyninstAPI
-
 step "instrument a live process with BPatch::processCreate"
-# Logged unconditionally: a Dyninst lib directory reaching this variable is the
-# one known cause of a hang here, and a container that sets LD_LIBRARY_PATH
-# itself can reintroduce it without this script changing.
+# Logged unconditionally, so that a hang here can be read against the search
+# path that produced it without having to reconstruct what was filtered.
 echo "runtime LD_LIBRARY_PATH: ${runtime_ld_path:-(unset)}"
 
 # Only a hang is retried, and only when --retries asks for it. A mutator that
@@ -214,7 +302,7 @@ echo "runtime LD_LIBRARY_PATH: ${runtime_ld_path:-(unset)}"
 attempt=0
 while true; do
     run_logged "${workdir}/runtime.txt" \
-        "${runtime_env[@]}" "${workdir}/runtime_instrument" "${workdir}/mutatee"
+        "${runtime_env[@]}" "${mutator_build}/runtime_instrument" "${workdir}/mutatee"
 
     if [[ "${run_rc}" -eq 0 ]]; then
         break
@@ -228,8 +316,9 @@ while true; do
 
     report_failure "runtime instrumentation" "${run_rc}" "${workdir}/runtime.txt"
     if is_timeout "${run_rc}"; then
-        echo "       check whether a Dyninst lib directory reached LD_LIBRARY_PATH" >&2
-        echo "       (logged above); that reproduces this hang every time" >&2
+        echo "       re-run with DYNINST_DEBUG_STARTUP=1 DYNINST_DEBUG_PROCCONTROL=1" >&2
+        echo "       to see which runtime library was injected and how far" >&2
+        echo "       bootstrap got before it stopped" >&2
     fi
     exit 1
 done

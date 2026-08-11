@@ -175,7 +175,7 @@ jobs:
             --tpl-prefix "${TPL_PREFIX}" \
             --cc ${{ inputs.cc }} \
             --cxx ${{ inputs.cxx }} \
-            --workdir "${{ github.workspace }}/.smoke" \
+            --workdir "${GITHUB_WORKSPACE}/.smoke" \
             --timeout 120 \
             --retries 1
 
@@ -196,10 +196,14 @@ jobs:
 
       # The captured stdout of each stage is what distinguishes "instrumentation
       # did not run" from "the mutatee itself failed".
+      #
+      # include-hidden-files is required because .smoke is a dot directory, and
+      # upload-artifact skips those by default without treating it as an error.
       - name: Upload smoke test output
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ inputs.name }}-${{ matrix.build-type }}
+          include-hidden-files: true
           path: .smoke/*.txt
           if-no-files-found: ignore
