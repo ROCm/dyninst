@@ -2,9 +2,14 @@ name: PR Tests
 
 # Goal 1: Dyninst builds and can instrument and run a program on its own.
 #
-# Currently a single distro while the from-source third-party library approach
-# proves itself; the remaining images in the rocprofiler-systems CI matrix are
-# added once this is green.
+# The images are the ROCm 7.2 primary entries of the rocprofiler-systems CI
+# matrix, which are the environments this fork actually has to work in. They are
+# listed here rather than fetched from ci-build-matrix.json because a standalone
+# Dyninst build needs only the image name, and pinning the list keeps a change
+# to the downstream matrix from silently altering what this workflow builds.
+#
+# Every entry is g++/gcc, which is what the reusable builder defaults to, so
+# adding an amdclang++ row means explicitly passing cc/cxx.
 
 on:
   pull_request:
@@ -19,12 +24,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ubuntu-24-04:
-    name: ubuntu-24.04
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04
+            image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-ubuntu-24.04
+          - name: ubuntu-22.04
+            image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-ubuntu-22.04
+          - name: debian-12
+            image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-debian-12
+          - name: rhel-8.10
+            image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-rhel-8.10
+          - name: rhel-9
+            image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-rhel-9
+          - name: rhel-10
+            image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-rhel-10
     uses: ./.github/workflows/build.yaml
     with:
-      name: ubuntu-24.04
-      image: dgaliffiamd/rocprofiler-systems:ci-rocm-7.2-ubuntu-24.04
-      cc: gcc
-      cxx: g++
-      build-types: '["RELWITHDEBINFO"]'
+      name: ${{ matrix.name }}
+      image: ${{ matrix.image }}

@@ -21,7 +21,7 @@ on:
         description: Which upstream CI entries to run
         type: choice
         options: [single, full]
-        default: single
+        default: full
 
 permissions:
   contents: read
@@ -60,7 +60,9 @@ jobs:
       - name: Select matrix entries
         id: select
         env:
-          SCOPE: ${{ github.event.inputs.scope || 'single' }}
+          # 'single' remains available through workflow_dispatch for bisecting a
+          # failure down to one image without paying for the other seven.
+          SCOPE: ${{ github.event.inputs.scope || 'full' }}
           SHA: ${{ steps.resolve.outputs.sha }}
         run: |
           curl -fsSL -o matrix.json \

@@ -69,17 +69,50 @@ echo "Building third-party libraries into ${prefix}"
 echo "  ${want_stamp}"
 echo "  jobs: ${jobs}"
 
-install_prereqs() {
-    if ! command -v apt-get >/dev/null 2>&1; then
-        echo "error: only apt-based images are supported today." >&2
-        echo "       Re-run with --skip-prereqs after installing the equivalents of:" >&2
-        echo "       bzip2 curl git m4 make pkg-config zlib libzstd libbz2 liblzma (all -dev)" >&2
-        exit 1
-    fi
+install_prereqs_apt() {
     apt-get update -qq
     apt-get install -y -qq --no-install-recommends \
         bzip2 ca-certificates curl git m4 make pkg-config \
         zlib1g-dev libzstd-dev libbz2-dev liblzma-dev
+}
+
+install_prereqs_dnf() {
+    # libzstd-devel ships in CodeReady Builder, which is disabled by default and
+    # named powertools on RHEL 8 but crb from RHEL 9 on. Rather than detect the
+    # name by parsing repolist -- whose output differs between dnf4 and dnf5 --
+    # try the plain install first, so images that already enable it, or that
+    # carry the package in a base repository, are unaffected.
+    local pkgs=(
+        bzip2 ca-certificates curl git m4 make pkgconfig
+        zlib-devel libzstd-devel bzip2-devel xz-devel
+    )
+
+    if dnf install -y "${pkgs[@]}"; then
+        return 0
+    fi
+
+    local repo
+    for repo in crb powertools; do
+        echo "retrying prerequisite install with --enablerepo=${repo}"
+        if dnf install -y "--enablerepo=${repo}" "${pkgs[@]}"; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+install_prereqs() {
+    if command -v apt-get >/dev/null 2>&1; then
+        install_prereqs_apt
+    elif command -v dnf >/dev/null 2>&1; then
+        install_prereqs_dnf
+    else
+        echo "error: no supported package manager (apt-get or dnf) found." >&2
+        echo "       Re-run with --skip-prereqs after installing the equivalents of:" >&2
+        echo "       bzip2 curl git m4 make pkg-config zlib libzstd libbz2 liblzma (all -dev)" >&2
+        exit 1
+    fi
 }
 
 build_tbb() {
