@@ -213,7 +213,7 @@ jobs:
           APT_SYSTEM_DEPS: ${{ matrix.kind == 'system_deps' && matrix.system_deps_apt || '' }}
         run: |
           packages="${APT_COMPILER} ${APT_SYSTEM_DEPS}"
-          if [ -z "${packages// /}" ] && [ "${{ matrix.os_major }}" != "10" ]; then
+          if [ "${{ matrix.is_rhel }}" != "true" ] && [ -z "${packages// /}" ]; then
             echo "No extra packages needed for this entry"
             exit 0
           fi
@@ -226,6 +226,19 @@ jobs:
             return 1
           }
           if [ "${{ matrix.is_rhel }}" = "true" ]; then
+            # RHEL 8 ships glibc 2.28, but the trace_processor_shell that the
+            # perfetto python package downloads on demand needs 2.29, so every
+            # perfetto assertion fails before it reads the trace. The tests read
+            # ROCPROFSYS_TRACE_PROC_SHELL for exactly this case (see
+            # tests/pytest/rocprofsys/validators.py); v47.0 is the build
+            # upstream pins for it.
+            if [ "${{ matrix.os_major }}" = "8" ]; then
+              mkdir -p /opt/trace_processor/bin
+              retry curl -fsSL -o /opt/trace_processor/bin/trace_processor_shell \
+                https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v47.0/linux-amd64/trace_processor_shell
+              chmod +x /opt/trace_processor/bin/trace_processor_shell
+              echo "ROCPROFSYS_TRACE_PROC_SHELL=/opt/trace_processor/bin/trace_processor_shell" >> "${GITHUB_ENV}"
+            fi
             # mpich lives in the crb repository on RHEL 10.
             if [ "${{ matrix.os_major }}" = "10" ]; then
               retry dnf install -y --enablerepo=crb mpich mpich-devel
@@ -342,6 +355,19 @@ jobs:
           python3 ./scripts/run-ci.py --stage test \
             --name "${CDASH_NAME}" \
             -B build
+
+      # trace_processor_shell is a server process the validation script talks to
+      # over HTTP, and upstream carries this same step because on RHEL it has
+      # been seen to outlive the run and hold the job open.
+      - name: Kill Perfetto
+        if: ${{ matrix.is_rhel && (success() || failure()) }}
+        continue-on-error: true
+        run: |
+          procs=$(pgrep trace_processor_shell || true)
+          if [ -n "${procs}" ]; then
+            # shellcheck disable=SC2086
+            kill -9 ${procs}
+          fi
 
       - name: CDash link
         if: always()
