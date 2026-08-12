@@ -292,7 +292,13 @@ jobs:
       # The trailing -L narrows the suite to the tests that actually exercise
       # Dyninst. binary_rewrite and runtime_instrument reach ctest as labels
       # because tests/pytest/conftest.py emits the parametrised `mode` of each
-      # test as a CTest label; -LE matches the upstream exclusion.
+      # test as a CTest label. `instrument` is the marker on
+      # TestRocprofilerSystemsInstrument in tests/pytest/test_binaries.py, which
+      # drives the rocprof-sys-instrument CLI itself rather than a mutatee
+      # (--simulate, --exe-only, --max-library-functions and the like). Both
+      # that marker and the file-wide rocprof_binary appear nowhere else in the
+      # suite, so naming it adds those cases and nothing besides. -LE matches
+      # the upstream exclusion.
       - name: Generate CI scripts
         timeout-minutes: 5
         run: |
@@ -319,7 +325,7 @@ jobs:
             ${{ matrix.cmake_flags }} \
             -DROCPROFSYS_BUILD_NUMBER=${{ github.run_attempt }} \
             -- \
-            -L "binary_rewrite|runtime_instrument" \
+            -L "binary_rewrite|runtime_instrument|instrument" \
             -LE "network|gpu"
 
       - name: Configure
