@@ -1,7 +1,10 @@
 name: Build Dyninst
 
 # Reusable builder. Builds Dyninst's third-party libraries from source (see
-# scripts/build-tpls.sh for why), then builds, installs and smoke-tests Dyninst.
+# scripts/build-tpls.sh for why), then builds and installs Dyninst.
+#
+# Functional coverage lives in the rocprofiler-systems workflow; this job proves
+# only that the tree configures, compiles and installs.
 #
 # The TPLs are built in a separate job because actions/cache skips its save step
 # when a job fails: building them inline would mean a Dyninst build failure
@@ -158,27 +161,6 @@ jobs:
       - name: Install
         run: cmake --install build
 
-      # Rewrites a binary with parseThat and instruments a live process with
-      # BPatch::processCreate. A link-only check would prove neither, and the
-      # runtime half is the only one that exercises ProcControlAPI and the
-      # injection of libdyninstAPI_RT.
-      #
-      # --retries applies only to a timeout, never to a failed assertion, so a
-      # genuine regression still fails on the first attempt. It is here because
-      # ProcControl startup was seen to hang rather than fail; the step timeout
-      # is the outer backstop if even the retries wedge.
-      - name: Smoke test
-        timeout-minutes: 10
-        run: |
-          bash scripts/smoke/run-smoke.sh \
-            --prefix "${INSTALL_PREFIX}" \
-            --tpl-prefix "${TPL_PREFIX}" \
-            --cc ${{ inputs.cc }} \
-            --cxx ${{ inputs.cxx }} \
-            --workdir "${GITHUB_WORKSPACE}/.smoke" \
-            --timeout 120 \
-            --retries 1
-
       - name: ccache stats
         if: always()
         run: ccache -s
@@ -192,18 +174,4 @@ jobs:
             build/CMakeCache.txt
             build/CMakeFiles/CMakeConfigureLog.yaml
             build/CMakeFiles/*.log
-          if-no-files-found: ignore
-
-      # The captured stdout of each stage is what distinguishes "instrumentation
-      # did not run" from "the mutatee itself failed".
-      #
-      # include-hidden-files is required because .smoke is a dot directory, and
-      # upload-artifact skips those by default without treating it as an error.
-      - name: Upload smoke test output
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: smoke-${{ inputs.name }}-${{ matrix.build-type }}
-          include-hidden-files: true
-          path: .smoke/*.txt
           if-no-files-found: ignore

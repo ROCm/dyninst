@@ -123,8 +123,6 @@ build*/
 cmake-build-*/
 # Staging prefix produced by scripts/build-tpls.sh
 .tpls/
-# Scratch directory produced by scripts/smoke/run-smoke.sh
-.smoke/
 .project
 .cproject
 .settings
