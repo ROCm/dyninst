@@ -176,7 +176,7 @@ class COMMON_EXPORT AnnotatableDense
 
 		 if (annotations->data == NULL) 
 		 {
-			annotations->data = (anno_list_t *) calloc(sizeof(anno_list_t), (size));
+			annotations->data = (anno_list_t *) calloc(size, sizeof(anno_list_t));
 			annotations->max = size;
 			for (unsigned i=0; i<size; i++)
 				annotations->data[i] = NULL;
@@ -228,7 +228,7 @@ class COMMON_EXPORT AnnotatableDense
 				  annotations = (aInfo *) malloc(sizeof(aInfo));
 				  unsigned size = rhs.annotations->max;
 				  annotations->max = size;
-				  annotations->data = (anno_list_t *)calloc(sizeof(anno_list_t), (size));
+				  annotations->data = (anno_list_t *)calloc(size, sizeof(anno_list_t));
 				  memcpy(annotations->data, rhs.annotations->data, size * sizeof(anno_list_t));
 			  }  else  {
 				  annotations = NULL;
