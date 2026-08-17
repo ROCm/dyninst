@@ -29,6 +29,10 @@ env:
   # Restrict tests to those that exercise Dyninst
   CI_TEST_LABELS: 'binary_rewrite|runtime_instrument|instrument'
   CI_TEST_EXCLUDE_LABELS: 'network|gpu'
+  # The labels above are matched against a test suite fetched from a moving upstream
+  # branch, and ctest reports an empty selection as success. Raise this once a green
+  # run has reported the real count.
+  CI_MIN_TESTS: '1'
 
 jobs:
   # Reads the upstream matrix definition instead of copying it, so the images cannot
@@ -334,13 +338,37 @@ jobs:
             --name "${CDASH_NAME}" \
             -B build
 
+      # An upstream label rename would otherwise leave this job green having run nothing.
+      - name: Check the label filters matched tests
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          path = "build/test-results.xml"
+          try:
+              root = ET.parse(path).getroot()
+          except (OSError, ET.ParseError) as exc:
+              raise SystemExit(f"cannot read {path}: {exc}")
+
+          count = sum(1 for _ in root.iter("testcase"))
+          minimum = int(os.environ["CI_MIN_TESTS"])
+          print(f"{count} test(s) matched -L {os.environ['CI_TEST_LABELS']}")
+          if count < minimum:
+              raise SystemExit(
+                  f"expected at least {minimum}; upstream may have renamed the labels"
+              )
+          PY
+
       # trace_processor_shell is a server process that on RHEL has been seen to outlive
       # the run and hold the job open. Upstream carries the same step.
       - name: Kill Perfetto
         if: ${{ matrix.is_rhel && (success() || failure()) }}
         continue-on-error: true
         run: |
-          procs=$(pgrep trace_processor_shell || true)
+          # -f is required: the kernel truncates the process name to 15 characters,
+          # so this pattern only ever matches against the full command line.
+          procs=$(pgrep -f trace_processor_shell || true)
           if [ -n "${procs}" ]; then
             # shellcheck disable=SC2086
             kill -9 ${procs}
