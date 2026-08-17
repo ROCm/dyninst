@@ -1,0 +1,369 @@
+name: rocprofiler-systems
+
+# Builds rocprofiler-systems with external/dyninst replaced by this PR's head and runs
+# its Dyninst-facing ctests. Mirrors rocprofiler-systems-build-group.yml upstream, which
+# is not reusable from another repository.
+
+on:
+  pull_request:
+    branches: [dyninst_13]
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Which upstream CI entries to run
+        type: choice
+        options: [single, full]
+        default: full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ROCM_SYSTEMS_REPO: ROCm/rocm-systems
+  ROCM_SYSTEMS_BRANCH: develop
+
+  # Restrict tests to those that exercise Dyninst
+  CI_TEST_LABELS: 'binary_rewrite|runtime_instrument|instrument'
+  CI_TEST_EXCLUDE_LABELS: 'network|gpu'
+
+jobs:
+  # Reads the upstream matrix definition instead of copying it, so the images cannot
+  # drift from what rocprofiler-systems actually tests.
+  matrix:
+    name: resolve upstream matrix
+    runs-on: ubuntu-latest
+    outputs:
+      entries: ${{ steps.select.outputs.entries }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      # Resolved once so every matrix entry tests the same commit.
+      - name: Resolve rocm-systems branch to a commit
+        id: resolve
+        run: |
+          sha=$(git ls-remote "https://github.com/${ROCM_SYSTEMS_REPO}.git" \
+                "refs/heads/${ROCM_SYSTEMS_BRANCH}" | cut -f1)
+          if [ -z "${sha}" ]; then
+            echo "Could not resolve ${ROCM_SYSTEMS_REPO}@${ROCM_SYSTEMS_BRANCH}"
+            exit 1
+          fi
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Select matrix entries
+        id: select
+        env:
+          # 'single' is for bisecting a failure down to one image.
+          SCOPE: ${{ github.event.inputs.scope || 'full' }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          curl -fsSL -o matrix.json \
+            "https://raw.githubusercontent.com/${ROCM_SYSTEMS_REPO}/${SHA}/projects/rocprofiler-systems/.github/ci-build-matrix.json"
+
+          # kind selects whether Dyninst's third-party libraries are built or taken
+          # from the distro.
+          if [ "${SCOPE}" = "full" ]; then
+            jq -c '[
+              (.primary[]
+                 | select(.image | test("ci-rocm-7\\.2-"))
+                 | . + {kind: "primary"}),
+              (.system_deps[]
+                 | select(.image | test("ci-rocm-7\\.2-ubuntu"))
+                 | select(.compiler == "g++")
+                 | . + {kind: "system_deps"})
+            ]' matrix.json > entries.json
+          else
+            jq -c '[
+              .primary[]
+                | select(.image | endswith("ci-rocm-7.2-ubuntu-24.04"))
+                | . + {kind: "primary"}
+            ]' matrix.json > entries.json
+          fi
+
+          # An upstream rename would otherwise produce an empty matrix, which GitHub
+          # reports as a successful job.
+          count=$(jq 'length' entries.json)
+          if [ "${count}" -eq 0 ]; then
+            echo "No matrix entries matched. Upstream ci-build-matrix.json may have changed."
+            jq -r '.primary[].image, .system_deps[].image' matrix.json | sort -u
+            exit 1
+          fi
+          echo "Selected ${count} entry/entries:"
+          jq -r '.[].name' entries.json
+
+          echo "entries=$(jq -c '{include: .}' entries.json)" >> "${GITHUB_OUTPUT}"
+
+  downstream:
+    name: ${{ matrix.name }}
+    needs: matrix
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      options: ${{ matrix.container_opts || '--shm-size=512m' }}
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.entries) }}
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}/rocm-systems/projects/rocprofiler-systems
+
+    env:
+      CDASH_NAME: dyninst-${{ github.event.number || github.ref_name }}-${{ matrix.cdash_suffix }}
+      OMPI_ALLOW_RUN_AS_ROOT: 1
+      OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+      ROCPROFSYS_CI: 'ON'
+      ROCPROFSYS_MAX_THREADS: '64'
+      ROCPROFSYS_KEEP_TEST_OUTPUT: '0'
+      ROCPROFSYS_TMPDIR: "%env{PWD}%/testing-tmp"
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+    steps:
+      - name: Check out rocm-systems
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.ROCM_SYSTEMS_REPO }}
+          ref: ${{ needs.matrix.outputs.sha }}
+          path: rocm-systems
+          sparse-checkout: |
+            projects/rocprofiler-systems/
+            .gitmodules
+
+      # Populating this path first makes rocprofiler_systems_checkout_git_submodule()
+      # return early, so CMake never fetches the pinned Dyninst.
+      - name: Check out this pull request into external/dyninst
+        uses: actions/checkout@v6
+        with:
+          path: rocm-systems/projects/rocprofiler-systems/external/dyninst
+
+      - name: Record the versions under test
+        run: |
+          git config --global --add safe.directory '*'
+          test -f external/dyninst/CMakeLists.txt
+          dyninst_sha=$(git -C external/dyninst rev-parse HEAD)
+          echo "DYNINST_SHA=${dyninst_sha}" >> "${GITHUB_ENV}"
+          {
+            echo "| component | commit |"
+            echo "| --- | --- |"
+            echo "| rocm-systems ${ROCM_SYSTEMS_BRANCH} | \`${{ needs.matrix.outputs.sha }}\` |"
+            echo "| dyninst (this PR) | \`${dyninst_sha}\` |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Configure ROCm environment (Ubuntu / Debian)
+        if: ${{ !matrix.is_rhel }}
+        run: |
+          echo "/opt/rocm/bin" >> "${GITHUB_PATH}"
+          echo "ROCM_PATH=/opt/rocm" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+
+      - name: Configure ROCm environment (RHEL)
+        if: ${{ matrix.is_rhel }}
+        run: |
+          echo "CC=${{ matrix.cc }}" >> "${GITHUB_ENV}"
+          echo "CXX=${{ matrix.compiler }}" >> "${GITHUB_ENV}"
+          echo "/opt/rocm/bin" >> "${GITHUB_PATH}"
+          echo "/opt/rocm/llvm/bin" >> "${GITHUB_PATH}"
+          echo "ROCM_PATH=/opt/rocm" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+
+      # A retry loop rather than nick-fields/retry keeps third-party actions out of
+      # this repository; the package mirrors are the flakiest step in the job.
+      - name: Install distro packages
+        env:
+          APT_COMPILER: ${{ matrix.apt_install_compiler && matrix.compiler || '' }}
+          APT_SYSTEM_DEPS: ${{ matrix.kind == 'system_deps' && matrix.system_deps_apt || '' }}
+        run: |
+          packages="${APT_COMPILER} ${APT_SYSTEM_DEPS}"
+          if [ "${{ matrix.is_rhel }}" != "true" ] && [ -z "${packages// /}" ]; then
+            echo "No extra packages needed for this entry"
+            exit 0
+          fi
+          retry() {
+            for attempt in 1 2 3 4 5; do
+              if "$@"; then return 0; fi
+              echo "attempt ${attempt} failed, retrying in 30s"
+              sleep 30
+            done
+            return 1
+          }
+          if [ "${{ matrix.is_rhel }}" = "true" ]; then
+            # RHEL 8's glibc 2.28 is too old for the trace_processor_shell that the
+            # perfetto python package downloads on demand, so every perfetto assertion
+            # fails before it reads the trace. The tests read ROCPROFSYS_TRACE_PROC_SHELL
+            # for this case; v47.0 is the build upstream pins for it.
+            if [ "${{ matrix.os_major }}" = "8" ]; then
+              mkdir -p /opt/trace_processor/bin
+              retry curl -fsSL -o /opt/trace_processor/bin/trace_processor_shell \
+                https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v47.0/linux-amd64/trace_processor_shell
+              chmod +x /opt/trace_processor/bin/trace_processor_shell
+              echo "ROCPROFSYS_TRACE_PROC_SHELL=/opt/trace_processor/bin/trace_processor_shell" >> "${GITHUB_ENV}"
+            fi
+            # mpich lives in the crb repository on RHEL 10.
+            if [ "${{ matrix.os_major }}" = "10" ]; then
+              retry dnf install -y --enablerepo=crb mpich mpich-devel
+              echo "/usr/lib64/mpich/bin" >> "${GITHUB_PATH}"
+            fi
+          elif [ -n "${packages// /}" ]; then
+            retry apt-get update
+            # shellcheck disable=SC2086
+            retry apt-get install -y ${packages}
+            apt-get autoclean
+          fi
+
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: rps-ccache-${{ matrix.ccache_key_distro }}-${{ matrix.kind }}-${{ github.sha }}
+          restore-keys: |
+            rps-ccache-${{ matrix.ccache_key_distro }}-${{ matrix.kind }}-
+
+      - name: Configure ccache
+        run: |
+          mkdir -p "${CCACHE_DIR}"
+          ccache --max-size=2G
+          ccache --set-config=sloppiness=time_macros,include_file_mtime,include_file_ctime,pch_defines
+          ccache -z
+
+      - name: Install Python test dependencies
+        timeout-minutes: 10
+        run: |
+          for env_dir in /opt/conda/envs/${{ matrix.python_envs_glob }}/; do
+            if [ -d "${env_dir}" ] && [ -x "${env_dir}bin/python3" ]; then
+              echo "Installing requirements into ${env_dir}"
+              "${env_dir}bin/python3" -m pip install -r requirements.txt
+            fi
+          done
+
+      # Mirrors the two upstream CMAKE_COMMON_FLAGS blocks. The system-deps entries
+      # carry no DISABLE_EXAMPLES of their own, so it belongs here.
+      - name: Select dependency flags
+        run: |
+          if [ "${{ matrix.kind }}" = "system_deps" ]; then
+            flags="-DROCPROFSYS_BUILD_TBB=OFF -DROCPROFSYS_BUILD_ELFUTILS=OFF -DROCPROFSYS_BUILD_LIBIBERTY=OFF"
+            flags="${flags} -DROCPROFSYS_BUILD_HIDDEN_VISIBILITY=ON -DROCPROFSYS_STRIP_LIBRARIES=OFF"
+            flags="${flags} -DROCPROFSYS_DISABLE_EXAMPLES=transpose;rccl;openmp-target;openmp-vv;videodecode;jpegdecode;network"
+          else
+            flags="-DROCPROFSYS_BUILD_TBB=ON -DROCPROFSYS_BUILD_ELFUTILS=ON -DROCPROFSYS_BUILD_LIBIBERTY=ON"
+          fi
+          echo "DEP_FLAGS=${flags}" >> "${GITHUB_ENV}"
+
+      - name: Generate CI scripts
+        timeout-minutes: 5
+        run: |
+          echo "CMake: $(cmake --version | head -n 1)"
+          echo "Compiler: $(${{ matrix.compiler }} --version | head -n 1)"
+          # DEP_FLAGS holds several cmake -D arguments and must word-split.
+          # shellcheck disable=SC2086
+          python3 ./scripts/run-ci.py --stage generate \
+            --name "${CDASH_NAME}" \
+            --site GitHub-dyninst \
+            --build-jobs "$(nproc)" \
+            -B build \
+            -- \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DROCPROFSYS_BUILD_TESTING=ON \
+            -DROCPROFSYS_BUILD_EXAMPLES=ON \
+            -DROCPROFSYS_USE_PYTHON=ON \
+            -DROCPROFSYS_BUILD_DYNINST=ON \
+            -DROCPROFSYS_MAX_THREADS=64 \
+            -DROCPROFSYS_PYTHON_PREFIX=/opt/conda/envs \
+            ${DEP_FLAGS} \
+            ${{ matrix.cmake_flags }} \
+            -DROCPROFSYS_BUILD_NUMBER=${{ github.run_attempt }} \
+            -- \
+            -L "${CI_TEST_LABELS}" \
+            -LE "${CI_TEST_EXCLUDE_LABELS}"
+
+      - name: Configure
+        timeout-minutes: 20
+        run: |
+          python3 ./scripts/run-ci.py --stage configure \
+            --name "${CDASH_NAME}" \
+            -B build
+
+      # Guards against the early-return in rocprofiler_systems_checkout_git_submodule()
+      # failing and quietly building the pinned Dyninst instead.
+      - name: Verify the pull request is what got configured
+        run: |
+          now=$(git -C external/dyninst rev-parse HEAD)
+          if [ "${now}" != "${DYNINST_SHA}" ]; then
+            echo "external/dyninst changed during configure: ${DYNINST_SHA} -> ${now}"
+            echo "CMake replaced the injected checkout, so this job is not testing the pull request."
+            exit 1
+          fi
+          echo "ok  external/dyninst is still ${now}"
+
+      - name: Build
+        timeout-minutes: 90
+        run: |
+          python3 ./scripts/run-ci.py --stage build \
+            --name "${CDASH_NAME}" \
+            -B build
+
+      - name: Test
+        timeout-minutes: 60
+        run: |
+          python3 ./scripts/run-ci.py --stage test \
+            --name "${CDASH_NAME}" \
+            -B build
+
+      # trace_processor_shell is a server process that on RHEL has been seen to outlive
+      # the run and hold the job open. Upstream carries the same step.
+      - name: Kill Perfetto
+        if: ${{ matrix.is_rhel && (success() || failure()) }}
+        continue-on-error: true
+        run: |
+          procs=$(pgrep trace_processor_shell || true)
+          if [ -n "${procs}" ]; then
+            # shellcheck disable=SC2086
+            kill -9 ${procs}
+          fi
+
+      - name: CDash link
+        if: always()
+        run: |
+          python3 ./scripts/run-ci.py --stage cdash-link \
+            --name "${CDASH_NAME}"
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+      - name: Upload JUnit test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-${{ matrix.kind }}-${{ strategy.job-index }}
+          path: rocm-systems/projects/rocprofiler-systems/build/test-results.xml
+          if-no-files-found: ignore
+
+      - name: Upload ctest logs
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ctest-${{ matrix.kind }}-${{ strategy.job-index }}-log
+          path: rocm-systems/projects/rocprofiler-systems/build/*.log
+          if-no-files-found: ignore
+
+      - name: Upload test output
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: data-${{ matrix.kind }}-${{ strategy.job-index }}-files
+          path: |
+            rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-config/*.cfg
+            rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*.txt
+            rocm-systems/projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*-instr*.json
+          if-no-files-found: ignore
