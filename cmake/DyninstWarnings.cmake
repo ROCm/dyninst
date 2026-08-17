@@ -156,6 +156,9 @@ if(HAS_CPP_FLAG_Wframe_larger_than AND NOT DYNINST_DISABLE_DIAGNOSTIC_SUPPRESSIO
     set(debugMaxFrameSizeOverridePowerOpcodeTable 358400)
     if(${CMAKE_CXX_COMPILER_VERSION} MATCHES "^[7](\.|$)")
       set(nonDebugMaxFrameSizeOverridePowerOpcodeTable 38912)
+    elseif(${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER_EQUAL 14)
+      # gcc 14 emits a 74560-byte frame for the buildTables() lambda at -O2.
+      set(nonDebugMaxFrameSizeOverridePowerOpcodeTable 76800)
     endif()
     # most gcc's are under the default using -Og, but rhel's requires 30000
     set(debugMaxFrameSizeOverrideFinalizeOperands 30000)
