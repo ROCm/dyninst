@@ -120,14 +120,20 @@ class dyn_c_hash_map {
         mutable dyncompat::shared_mutex mtx;  // guards map structure only
     };
 
-    // Shard count trades lock contention against per-map memory. glibc's
-    // shared_mutex writes the lock word even for readers, so with too few shards
-    // those cache lines ping-pong between cores and throughput stops scaling: at
-    // 64 shards a mixed find/insert benchmark saturates from 16 threads upward.
-    // 256 keeps scaling out to 64 threads at 28 KB per map; 1024 is faster still
-    // but costs 112 KB, and Dyninst creates several of these maps per module in
-    // type-heavy workflows.
-    static constexpr std::size_t num_shards = 256;
+    // Shard count trades lock contention against per-map memory. The array below
+    // is allocated eagerly, so every map instance pays 112 bytes per shard (a 56
+    // byte empty unordered_map plus a 56 byte shared_mutex) whether or not it ever
+    // holds an element -- and Dyninst keeps thousands of these alive at once:
+    // roughly 5500 while instrumenting a 1 MB binary, so the fixed cost dominates
+    // the element data on small and medium targets.
+    //
+    // An earlier revision raised this to 256 because 64 scaled negatively past 16
+    // threads. That was the unmixed hash rather than the shard count: keys are
+    // dominated by 16-byte-aligned addresses, whose low four bits are constant, so
+    // `% 64` reached only 4 distinct shards. With mix() applied (see shard_of)
+    // every shard is reachable, and 64 then measures faster than 256 at every
+    // thread count from 1 to 128 on a full parse while using ~120 MB less.
+    static constexpr std::size_t num_shards = 64;
     std::unique_ptr<shard[]> shards_{new shard[num_shards]};
 
     // Avalanche the hash before selecting a shard. std::hash is the identity for
