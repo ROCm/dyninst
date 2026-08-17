@@ -1,4 +1,4 @@
-name: rocprofiler-systems
+name: rocprofiler-systems Build and Test
 
 # Builds rocprofiler-systems with external/dyninst replaced by this PR's head and runs
 # its Dyninst-facing ctests. Mirrors rocprofiler-systems-build-group.yml upstream, which

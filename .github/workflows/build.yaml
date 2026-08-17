@@ -1,8 +1,8 @@
-name: Build Dyninst
+name: Build and Install Dyninst (reusable)
 
 # Builds Dyninst's third-party libraries from source, then builds and installs Dyninst.
 # This job verifies only that the tree configures, compiles and installs.
-# Functional coverage lives in the rocprofiler-systems workflow
+# Functional coverage lives in the "rocprofiler-systems Build and Test" workflow.
 
 on:
   workflow_call:

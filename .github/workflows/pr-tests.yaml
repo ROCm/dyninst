@@ -1,4 +1,6 @@
-name: PR Tests
+name: Build and Install Dyninst
+
+# Runs the build-and-install check across every supported container image.
 
 on:
   pull_request:
