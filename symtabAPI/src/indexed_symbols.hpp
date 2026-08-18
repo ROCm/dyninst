@@ -3,6 +3,7 @@
 
 #include "Symbol.h"
 #include "concurrent.h"
+#include <algorithm>
 #include <iterator>
 #include <utility>
 #include <vector>
