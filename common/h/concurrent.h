@@ -912,6 +912,13 @@ public:
             embedded_[seg].store(nullptr, dyncompat::memory_order_relaxed);
     }
 
+    // n value-initialized elements. typeStruct::create and typeUnion::create size
+    // a vector up front and then fill it by index.
+    explicit dyn_c_vector(size_type n) : dyn_c_vector() {
+        for(size_type i = 0; i < n; ++i)
+            append_unlocked();
+    }
+
     ~dyn_c_vector() { reset_unlocked(); }
 
     dyn_c_vector(const dyn_c_vector& other) : dyn_c_vector() {
