@@ -33,11 +33,13 @@
 
 #include "util.h"
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <iterator>
 #include <memory>
 #include <mutex>
 #include <stddef.h>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -68,7 +70,152 @@ namespace concurrent {
       return dyncompat::hash<K>{}(k);
     }
   };
+
+  namespace detail {
+    // Tell the CPU this thread is spinning, so the core stops speculating through
+    // iterations it will have to discard and (on SMT) yields its issue slots to
+    // the sibling thread that most likely holds the lock.
+    inline void spin_relax() {
+#if defined(__i386__) || defined(__x86_64__)
+      __asm__ __volatile__("pause" ::: "memory");
+#elif defined(__aarch64__) || defined(__arm__)
+      __asm__ __volatile__("yield" ::: "memory");
+#elif defined(__powerpc__) || defined(__powerpc64__)
+      __asm__ __volatile__("or 27,27,27" ::: "memory");  // lower SMT priority
+#else
+      // No architectural hint on this target; the caller still escalates to yield.
+#endif
+    }
+
+    // Spin for a geometrically growing number of iterations, then hand the core
+    // back to the scheduler. Container locks are held for a few instructions, so
+    // contention almost always resolves during the spin phase; the yield exists
+    // for the case where the holder has itself been preempted.
+    class spin_backoff {
+      static constexpr int max_spins = 16;
+      int spins_ = 1;
+
+    public:
+      void pause() {
+        if(spins_ <= max_spins) {
+          for(int i = 0; i < spins_; ++i)
+            spin_relax();
+          spins_ *= 2;
+        } else {
+          std::this_thread::yield();
+        }
+      }
+
+      // Use after losing a race for an otherwise-free lock: the next attempt is
+      // likely to win, so it should not inherit an already-escalated spin count.
+      void reset() { spins_ = 1; }
+    };
+  }
 }
+
+// Reader/writer spin lock.
+//
+// Dyninst acquires these locks tens of millions of times over a parallel parse,
+// nearly always uncontended, and dyn_c_hash_map embeds one in every element.
+// std::shared_mutex occupies 56 bytes and defers to glibc's pthread rwlock, whose
+// reader path is itself a write to shared state; at Dyninst's element counts that
+// dominates both the container's memory footprint and its uncontended fast path.
+//
+// The whole lock is one 4-byte word: bit 0 is the active writer, bit 1 marks a
+// waiting writer, and the remaining bits count active readers. Uncontended
+// acquisition is a single compare-exchange for a writer, a single fetch-add for a
+// reader.
+//
+// A writer that cannot enter immediately publishes WRITER_PENDING, which stops new
+// readers from joining, so a sustained stream of readers cannot starve it. Beyond
+// that the lock is unfair and grants no FIFO order. It is not recursive, and since
+// waiters spin instead of sleeping it must not be held across a blocking call.
+//
+// Note that this lock is invisible to Valgrind's DRD/Helgrind and to
+// ThreadSanitizer, all of which derive happens-before edges from pthread calls.
+// dyn_c_hash_map therefore reports its element lock transitions explicitly through
+// dyn_c_annotations, as the TBB-based implementation did for TBB's spin locks.
+class dyn_spin_rwlock {
+    using state_type = std::uint32_t;
+
+    static constexpr state_type WRITER = 1;
+    static constexpr state_type WRITER_PENDING = 2;
+    static constexpr state_type ONE_READER = 4;
+    static constexpr state_type READERS = ~(WRITER | WRITER_PENDING);
+    // Everything that has to drain before a writer may enter.
+    static constexpr state_type BUSY = WRITER | READERS;
+
+    dyncompat::atomic<state_type> state_{0};
+
+public:
+    dyn_spin_rwlock() = default;
+    dyn_spin_rwlock(dyn_spin_rwlock const&) = delete;
+    dyn_spin_rwlock& operator=(dyn_spin_rwlock const&) = delete;
+
+    void lock() {
+        for(concurrent::detail::spin_backoff backoff;;) {
+            state_type s = state_.load(dyncompat::memory_order_relaxed);
+            if(!(s & BUSY)) {
+                // Storing WRITER also clears WRITER_PENDING, which this thread may
+                // have set on an earlier iteration.
+                if(state_.compare_exchange_weak(s, WRITER,
+                                                dyncompat::memory_order_acquire,
+                                                dyncompat::memory_order_relaxed))
+                    return;
+                backoff.reset();
+            } else if(!(s & WRITER_PENDING)) {
+                state_.fetch_or(WRITER_PENDING, dyncompat::memory_order_relaxed);
+            }
+            backoff.pause();
+        }
+    }
+
+    bool try_lock() {
+        state_type s = state_.load(dyncompat::memory_order_relaxed);
+        return !(s & BUSY) &&
+               state_.compare_exchange_strong(s, WRITER,
+                                              dyncompat::memory_order_acquire,
+                                              dyncompat::memory_order_relaxed);
+    }
+
+    void unlock() {
+        // Leaves WRITER_PENDING alone so a writer already queued behind this one
+        // continues to hold readers off instead of re-announcing itself.
+        state_.fetch_and(static_cast<state_type>(~WRITER),
+                         dyncompat::memory_order_release);
+    }
+
+    void lock_shared() {
+        for(concurrent::detail::spin_backoff backoff;;) {
+            state_type s = state_.load(dyncompat::memory_order_relaxed);
+            if(!(s & (WRITER | WRITER_PENDING))) {
+                state_type prev =
+                    state_.fetch_add(ONE_READER, dyncompat::memory_order_acquire);
+                if(!(prev & WRITER))
+                    return;
+                // A writer claimed the lock between the load and the increment.
+                state_.fetch_sub(ONE_READER, dyncompat::memory_order_relaxed);
+            }
+            backoff.pause();
+        }
+    }
+
+    bool try_lock_shared() {
+        state_type s = state_.load(dyncompat::memory_order_relaxed);
+        if(s & (WRITER | WRITER_PENDING))
+            return false;
+        state_type prev =
+            state_.fetch_add(ONE_READER, dyncompat::memory_order_acquire);
+        if(!(prev & WRITER))
+            return true;
+        state_.fetch_sub(ONE_READER, dyncompat::memory_order_relaxed);
+        return false;
+    }
+
+    void unlock_shared() {
+        state_.fetch_sub(ONE_READER, dyncompat::memory_order_release);
+    }
+};
 
 // Thread-safe hash map backed by sharded std::unordered_map instances with
 // per-element locking.
@@ -76,8 +223,8 @@ namespace concurrent {
 // Replaces tbb::concurrent_hash_map while preserving the accessor/const_accessor
 // interface Dyninst relies on. Keys are partitioned across a fixed number of
 // shards; each shard is an independent std::unordered_map guarded by its own
-// shared_mutex that protects only the map *structure*. In addition, every stored
-// element owns its own shared_mutex, and an accessor holds *that element's* lock
+// dyn_spin_rwlock that protects only the map *structure*. In addition, every stored
+// element owns its own dyn_spin_rwlock, and an accessor holds *that element's* lock
 // (exclusive for `accessor`, shared for `const_accessor`) for its lifetime --
 // matching tbb::concurrent_hash_map's per-element locking contract.
 //
@@ -94,8 +241,9 @@ namespace concurrent {
 // reachable by any other thread, so it can never be contended (see
 // emplace_locked).
 //
-// std::shared_mutex is understood natively by Valgrind's DRD/Helgrind tools, so
-// the explicit lock annotations of the old TBB-based wrapper are unnecessary.
+// Element locks are reported to Valgrind's DRD/Helgrind through dyn_c_annotations,
+// because dyn_spin_rwlock is built from plain atomics that those tools cannot
+// recognize as a lock on their own.
 //
 // Element access via begin()/end() is not internally synchronized: callers
 // populate the map during a parallel phase and iterate afterwards, matching the
@@ -104,7 +252,7 @@ template<typename K, typename V>
 class dyn_c_hash_map {
     struct node {
         std::pair<const K, V> kv;
-        mutable dyncompat::shared_mutex mtx;
+        mutable dyn_spin_rwlock mtx;
 
         template<typename... Args>
         explicit node(const K& k, Args&&... args)
@@ -115,17 +263,23 @@ class dyn_c_hash_map {
     using node_ptr = std::shared_ptr<node>;
     using map_type = std::unordered_map<K, node_ptr, concurrent::hasher<K>>;
 
+    // Shard and element locks are the same type; the aliases keep which level is
+    // being taken, and in which mode, legible at each acquisition site.
+    using read_lock = dyncompat::shared_lock<dyn_spin_rwlock>;
+    using write_lock = dyncompat::unique_lock<dyn_spin_rwlock>;
+
     struct shard {
         map_type map;
-        mutable dyncompat::shared_mutex mtx;  // guards map structure only
+        mutable dyn_spin_rwlock mtx;  // guards map structure only
     };
 
     // Shard count trades lock contention against per-map memory. The array below
-    // is allocated eagerly, so every map instance pays 112 bytes per shard (a 56
-    // byte empty unordered_map plus a 56 byte shared_mutex) whether or not it ever
+    // is allocated eagerly, so every map instance pays 64 bytes per shard (a 56
+    // byte empty unordered_map plus the 4 byte lock, padded) whether or not it ever
     // holds an element -- and Dyninst keeps thousands of these alive at once:
     // roughly 5500 while instrumenting a 1 MB binary, so the fixed cost dominates
-    // the element data on small and medium targets.
+    // the element data on small and medium targets. Making the buckets lazy, as
+    // tbb::concurrent_hash_map does, is the remaining win here.
     //
     // An earlier revision raised this to 256 because 64 scaled negatively past 16
     // threads. That was the unmixed hash rather than the shard count: keys are
@@ -179,16 +333,17 @@ public:
         for(std::size_t i = 0; i < num_shards; ++i) {
             entries.clear();
             {
-                dyncompat::shared_lock<dyncompat::shared_mutex> lock(other.shards_[i].mtx);
+                read_lock lock(other.shards_[i].mtx);
                 entries.reserve(other.shards_[i].map.size());
                 for(const auto& entry : other.shards_[i].map)
                     entries.emplace_back(entry.first, entry.second);
             }
             for(const auto& entry : entries) {
-                dyncompat::shared_lock<dyncompat::shared_mutex> nlock(entry.second->mtx);
-                shards_[i].map.emplace(
-                    entry.first,
-                    std::make_shared<node>(entry.first, entry.second->kv.second));
+                read_lock nlock(entry.second->mtx);
+                auto np =
+                    std::make_shared<node>(entry.first, entry.second->kv.second);
+                dyn_c_annotations::rwinit(&np->mtx);
+                shards_[i].map.emplace(entry.first, std::move(np));
             }
         }
     }
@@ -207,7 +362,7 @@ public:
         if(this != &other) {
             dyn_c_hash_map tmp(other);  // snapshot without holding our locks
             for(std::size_t i = 0; i < num_shards; ++i) {
-                dyncompat::unique_lock<dyncompat::shared_mutex> lock(shards_[i].mtx);
+                write_lock lock(shards_[i].mtx);
                 shards_[i].map = std::move(tmp.shards_[i].map);
             }
         }
@@ -226,8 +381,18 @@ public:
         friend class dyn_c_hash_map<K,V>;
     protected:
         node_ptr node_;
-        dyncompat::shared_lock<dyncompat::shared_mutex> lock_;
+        read_lock lock_;
         bool valid_ = false;
+
+        // Take ownership of an already-acquired element lock and tell Valgrind
+        // about it. Every acquisition goes through here so the annotation cannot
+        // drift out of step with the lock it describes.
+        void adopt(node_ptr np, read_lock lk) {
+            node_ = std::move(np);
+            lock_ = std::move(lk);
+            valid_ = true;
+            dyn_c_annotations::rlock(&node_->mtx);
+        }
     public:
         const_accessor() = default;
         const_accessor(const const_accessor&) = delete;
@@ -239,6 +404,7 @@ public:
         const value_type& operator*() const { return node_->kv; }
 
         void release() {
+            if(valid_) dyn_c_annotations::runlock(&node_->mtx);
             valid_ = false;
             if(lock_.owns_lock()) lock_.unlock();
             lock_ = {};
@@ -251,8 +417,15 @@ public:
         friend class dyn_c_hash_map<K,V>;
     protected:
         node_ptr node_;
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock_;
+        write_lock lock_;
         bool valid_ = false;
+
+        void adopt(node_ptr np, write_lock lk) {
+            node_ = std::move(np);
+            lock_ = std::move(lk);
+            valid_ = true;
+            dyn_c_annotations::wlock(&node_->mtx);
+        }
     public:
         accessor() = default;
         accessor(const accessor&) = delete;
@@ -264,6 +437,7 @@ public:
         value_type& operator*() const { return node_->kv; }
 
         void release() {
+            if(valid_) dyn_c_annotations::wunlock(&node_->mtx);
             valid_ = false;
             if(lock_.owns_lock()) lock_.unlock();
             lock_ = {};
@@ -276,7 +450,7 @@ private:
     // shard lock is released on return, before the caller takes the element lock.
     node_ptr find_node(const K& k) const {
         const shard& s = shard_for(k);
-        dyncompat::shared_lock<dyncompat::shared_mutex> lock(s.mtx);
+        read_lock lock(s.mtx);
         auto it = s.map.find(k);
         return (it == s.map.end()) ? node_ptr{} : it->second;
     }
@@ -295,19 +469,18 @@ private:
     template<typename LockT, typename... Args>
     std::pair<node_ptr, bool> emplace_locked(LockT& out_lock, const K& k, Args&&... args) {
         shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
+        write_lock lock(s.mtx);
         auto it = s.map.find(k);
         if(it != s.map.end()) return {it->second, false};
         auto np = std::make_shared<node>(k, std::forward<Args>(args)...);
+        dyn_c_annotations::rwinit(&np->mtx);
         s.map.emplace(k, np);
-        // Acquire non-blocking first: the node is unreachable, so this always
-        // succeeds in practice, and a try_lock is excluded from ThreadSanitizer's
-        // lock-order graph (it cannot participate in a cycle), which suppresses the
-        // shard->element inversions this one nesting would otherwise report.
-        // try_lock may fail spuriously, so fall back to a blocking -- still
-        // uncontended -- acquisition rather than return an unlocked accessor.
-        out_lock = LockT(np->mtx, std::try_to_lock);
-        if(!out_lock.owns_lock()) out_lock.lock();
+        // Uncontended by construction: no other thread can reach the node yet, so
+        // this resolves in a single atomic operation and cannot deadlock despite
+        // being the one place a shard lock is held across an element acquisition.
+        // The nesting is invisible to ThreadSanitizer, which cannot see
+        // dyn_spin_rwlock, so it is not reported as a lock-order inversion either.
+        out_lock = LockT(np->mtx);
         return {np, true};
     }
 
@@ -319,7 +492,7 @@ private:
     // while waiting for a contended element lock.
     bool still_current(const K& k, const node_ptr& np) const {
         const shard& s = shard_for(k);
-        dyncompat::shared_lock<dyncompat::shared_mutex> lock(s.mtx);
+        read_lock lock(s.mtx);
         auto it = s.map.find(k);
         return it != s.map.end() && it->second == np;
     }
@@ -335,16 +508,12 @@ private:
             LockT new_lock;
             auto res = emplace_locked<LockT>(new_lock, k, std::forward<Args>(args)...);
             if(res.second) {
-                acc.lock_ = std::move(new_lock);
-                acc.node_ = std::move(res.first);
-                acc.valid_ = true;
+                acc.adopt(std::move(res.first), std::move(new_lock));
                 return true;
             }
             LockT lk(res.first->mtx);
             if(!still_current(k, res.first)) continue;
-            acc.lock_ = std::move(lk);
-            acc.node_ = std::move(res.first);
-            acc.valid_ = true;
+            acc.adopt(std::move(res.first), std::move(lk));
             return false;
         }
     }
@@ -355,11 +524,9 @@ public:
         for(;;) {
             node_ptr np = find_node(k);
             if(!np) return false;
-            dyncompat::shared_lock<dyncompat::shared_mutex> lk(np->mtx);
+            read_lock lk(np->mtx);
             if(!still_current(k, np)) continue;  // erased/replaced after lookup; retry
-            ca.lock_ = std::move(lk);
-            ca.node_ = std::move(np);
-            ca.valid_ = true;
+            ca.adopt(std::move(np), std::move(lk));
             return true;
         }
     }
@@ -369,11 +536,9 @@ public:
         for(;;) {
             node_ptr np = find_node(k);
             if(!np) return false;
-            dyncompat::unique_lock<dyncompat::shared_mutex> lk(np->mtx);
+            write_lock lk(np->mtx);
             if(!still_current(k, np)) continue;  // erased/replaced after lookup; retry
-            a.lock_ = std::move(lk);
-            a.node_ = std::move(np);
-            a.valid_ = true;
+            a.adopt(std::move(np), std::move(lk));
             return true;
         }
     }
@@ -381,29 +546,31 @@ public:
     int contains(const K& k) const { return find_node(k) != nullptr; }
 
     bool insert(accessor& a, const K& k) {
-        return do_insert<accessor, dyncompat::unique_lock<dyncompat::shared_mutex>>(a, k);
+        return do_insert<accessor, write_lock>(a, k);
     }
 
     bool insert(accessor& a, const value_type& e) {
-        return do_insert<accessor, dyncompat::unique_lock<dyncompat::shared_mutex>>(
+        return do_insert<accessor, write_lock>(
             a, e.first, e.second);
     }
 
     bool insert(const_accessor& ca, const K& k) {
-        return do_insert<const_accessor, dyncompat::shared_lock<dyncompat::shared_mutex>>(ca, k);
+        return do_insert<const_accessor, read_lock>(ca, k);
     }
 
     bool insert(const_accessor& ca, const value_type& e) {
-        return do_insert<const_accessor, dyncompat::shared_lock<dyncompat::shared_mutex>>(
+        return do_insert<const_accessor, read_lock>(
             ca, e.first, e.second);
     }
 
     bool insert(const value_type& e) {
         shard& s = shard_for(e.first);
-        dyncompat::unique_lock<dyncompat::shared_mutex> lock(s.mtx);
+        write_lock lock(s.mtx);
         auto it = s.map.find(e.first);
         if(it != s.map.end()) return false;
-        s.map.emplace(e.first, std::make_shared<node>(e.first, e.second));
+        auto np = std::make_shared<node>(e.first, e.second);
+        dyn_c_annotations::rwinit(&np->mtx);
+        s.map.emplace(e.first, std::move(np));
         return true;
     }
 
@@ -415,14 +582,15 @@ public:
         const K k = a.node_->kv.first;
         node_ptr np = a.node_;
         shard& s = shard_for(k);
-        dyncompat::unique_lock<dyncompat::shared_mutex> slock(s.mtx);
+        write_lock slock(s.mtx);
         bool removed = false;
         auto it = s.map.find(k);
         if(it != s.map.end() && it->second == np) {  // erase by identity, not by key
             s.map.erase(it);
             removed = true;
         }
-        a.release();
+        a.release();  // reports the element lock release to Valgrind
+        if(removed) dyn_c_annotations::rwdeinit(&np->mtx);
         return removed;
     }
 
@@ -434,13 +602,18 @@ public:
             // accessors (as tbb::concurrent_hash_map does), then remove under the
             // shard lock. node -> shard ordering; no shard lock is held while
             // waiting for the element lock.
-            dyncompat::unique_lock<dyncompat::shared_mutex> elock(np->mtx);
-            shard& s = shard_for(k);
-            dyncompat::unique_lock<dyncompat::shared_mutex> slock(s.mtx);
-            auto it = s.map.find(k);
-            if(it == s.map.end()) return false;
-            if(it->second != np) continue;  // replaced after lookup; retry
-            s.map.erase(it);
+            {
+                write_lock elock(np->mtx);
+                shard& s = shard_for(k);
+                write_lock slock(s.mtx);
+                auto it = s.map.find(k);
+                if(it == s.map.end()) return false;
+                if(it->second != np) continue;  // replaced after lookup; retry
+                s.map.erase(it);
+            }
+            // Only once the element lock is dropped, so Valgrind never sees a lock
+            // destroyed while it is still held.
+            dyn_c_annotations::rwdeinit(&np->mtx);
             return true;
         }
     }
@@ -448,7 +621,7 @@ public:
     int size() const {
         std::size_t n = 0;
         for(std::size_t i = 0; i < num_shards; ++i) {
-            dyncompat::shared_lock<dyncompat::shared_mutex> lock(shards_[i].mtx);
+            read_lock lock(shards_[i].mtx);
             n += shards_[i].map.size();
         }
         return static_cast<int>(n);
@@ -458,14 +631,14 @@ public:
         const std::size_t per =
             (n > 0) ? static_cast<std::size_t>(n) / num_shards + 1 : 0;
         for(std::size_t i = 0; i < num_shards; ++i) {
-            dyncompat::unique_lock<dyncompat::shared_mutex> lock(shards_[i].mtx);
+            write_lock lock(shards_[i].mtx);
             shards_[i].map.rehash(per);
         }
     }
 
     void clear() {
         for(std::size_t i = 0; i < num_shards; ++i) {
-            dyncompat::unique_lock<dyncompat::shared_mutex> lock(shards_[i].mtx);
+            write_lock lock(shards_[i].mtx);
             shards_[i].map.clear();
         }
     }
