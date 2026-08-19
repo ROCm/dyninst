@@ -34,11 +34,12 @@
 #include "util.h"
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <stddef.h>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -110,6 +111,20 @@ namespace concurrent {
       // likely to win, so it should not inherit an already-escalated spin count.
       void reset() { spins_ = 1; }
     };
+
+    // floor(log2(x)), for x >= 1. Used to map an element index onto its segment.
+    inline unsigned log2_floor(std::size_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+      return static_cast<unsigned>(
+          8 * sizeof(unsigned long long) - 1 -
+          static_cast<unsigned>(__builtin_clzll(static_cast<unsigned long long>(x))));
+#else
+      unsigned r = 0;
+      while(x >>= 1)
+        ++r;
+      return r;
+#endif
+    }
   }
 }
 
@@ -712,159 +727,396 @@ public:
     const_iterator end() const { return const_iterator(shards_.get(), num_shards); }
 };
 
-// Thread-safe, append-during-parallel-phase sequence container backed by
-// std::deque.
+// Thread-safe, append-during-parallel-phase sequence container.
 //
 // Replaces tbb::concurrent_vector, preserving the two properties Dyninst relies
-// on: (1) push_back/emplace_back may be called concurrently (serialized here by
-// an internal mutex), and (2) pointers and references to existing elements stay
-// valid as the container grows (std::deque never relocates its elements).
+// on: (1) push_back/emplace_back may be called concurrently, and (2) pointers and
+// references to existing elements stay valid as the container grows.
 //
-// CONCURRENCY CONTRACT: appends (push_back/emplace_back) and indexed reads
-// (operator[], at, front, back, size, empty) are synchronized, so a reader that
-// addresses elements by index may run alongside an appender, as it could with
-// tbb::concurrent_vector. Iteration (begin/end/rbegin/rend) and the non-append
-// mutators (clear, insert, erase, resize, ...) are NOT synchronized and must not
-// run concurrently with an append, because push_back invalidates every deque
-// iterator. Dyninst satisfies that restriction by appending during the parallel
-// phase and iterating afterwards.
+// Storage is a table of geometrically growing segments, the same structure
+// tbb::concurrent_vector uses. Segment 0 holds min_segment_size elements and each
+// subsequent segment doubles, so an index maps to (segment, offset) with a single
+// bit scan, growth only ever appends a segment pointer, and existing elements are
+// never relocated. The pointers for the first embedded_segments segments live
+// inside the object; a vector that outgrows them allocates one fixed-size spill
+// table that is likewise never reallocated.
 //
-// std::deque is inherited privately so a dyn_c_vector cannot be sliced to, or
-// bound as, a std::deque& -- which would silently bypass the append lock. The
-// subset of the std::deque API that Dyninst uses is re-exported below.
+// Because no reachable pointer ever moves, reads need no lock at all: locating an
+// element is two acquire loads and some index arithmetic. That is the whole point
+// of the design. Backing this with std::deque instead forces every indexed read
+// to take the append lock, because push_back can reallocate the deque's internal
+// map array out from under a reader walking it -- and Dyninst reads these vectors
+// far more often than it appends to them.
+//
+// CONCURRENCY CONTRACT: appends (push_back/emplace_back) and reads (operator[],
+// at, front, back, size, empty) may run concurrently, as they could with
+// tbb::concurrent_vector. size() only ever reports fully constructed elements, so
+// any index below it is safe to read; this is why appends are serialized against
+// each other rather than reserving indices in parallel. Iteration and the
+// non-append mutators (clear, resize, pop_back, swap, assignment) are NOT
+// synchronized and must not run concurrently with anything else on the same
+// instance. Dyninst satisfies that by appending during the parallel phase and
+// iterating afterwards.
 template<typename T>
-class dyn_c_vector : private std::deque<T> {
-    using base = std::deque<T>;
-    mutable dyncompat::mutex _mutex;
+class dyn_c_vector {
+    using allocator = std::allocator<T>;
+    using cell = dyncompat::atomic<T*>;
 
-public:
-    using typename base::value_type;
-    using typename base::size_type;
-    using typename base::difference_type;
-    using typename base::reference;
-    using typename base::const_reference;
-    using typename base::pointer;
-    using typename base::const_pointer;
-    using typename base::iterator;
-    using typename base::const_iterator;
-    using typename base::reverse_iterator;
-    using typename base::const_reverse_iterator;
+    // Segment 0 holds min_segment_size elements; segment k > 0 holds
+    // min_segment_size << (k-1), so segment k begins at index
+    // min_segment_size << (k-1) and the two halves of the table line up.
+    static constexpr std::size_t min_segment_size = 8;
+    // Segments whose pointers live in the object rather than the spill table.
+    // Four covers the first 64 elements, which is more than nearly every
+    // fieldList or localVars instance ever holds, so most vectors never allocate
+    // a spill table at all.
+    static constexpr std::size_t embedded_segments = 4;
+    // Caps capacity at min_segment_size << (max_segments-1) == 2^42 elements,
+    // which no Dyninst target can approach, and keeps the spill table at 288
+    // bytes so it can be allocated once and never grown.
+    static constexpr std::size_t max_segments = 40;
 
-    using base::base;
+    cell embedded_[embedded_segments];
+    dyncompat::atomic<cell*> spill_{nullptr};
+    // Published with release once an element is fully constructed, so an acquire
+    // load bounds the range of indices that are safe to read.
+    dyncompat::atomic<std::size_t> size_{0};
+    // Serializes appends against each other. Readers never take it.
+    mutable dyn_spin_rwlock append_mutex_;
 
-    dyn_c_vector() = default;
-
-    dyn_c_vector(const dyn_c_vector& other) : base() {
-        dyncompat::lock_guard<dyncompat::mutex> lock(other._mutex);
-        base::operator=(static_cast<const base&>(other));
+    static std::size_t segment_of(std::size_t n) {
+        if(n < min_segment_size)
+            return 0;
+        return concurrent::detail::log2_floor(n / min_segment_size) + 1;
+    }
+    static std::size_t segment_base(std::size_t seg) {
+        return (seg == 0) ? 0 : (min_segment_size << (seg - 1));
+    }
+    static std::size_t segment_size(std::size_t seg) {
+        return (seg == 0) ? min_segment_size : (min_segment_size << (seg - 1));
     }
 
-    dyn_c_vector(dyn_c_vector&& other) : base() {
-        dyncompat::lock_guard<dyncompat::mutex> lock(other._mutex);
-        base::operator=(std::move(static_cast<base&>(other)));
+    // Table slot holding segment `seg`, or null if it cannot exist yet because no
+    // spill table has been allocated.
+    cell* cell_of(std::size_t seg) const {
+        if(seg < embedded_segments)
+            return const_cast<cell*>(&embedded_[seg]);
+        cell* spill = spill_.load(dyncompat::memory_order_acquire);
+        return spill ? (spill + (seg - embedded_segments)) : nullptr;
+    }
+
+    // Address of element n, which the caller must already know exists. Both loads
+    // are acquire, so the element read is ordered after the append that published
+    // it even when the caller did not obtain n from size() on this thread.
+    T* slot(std::size_t n) const {
+        const std::size_t seg = segment_of(n);
+        return cell_of(seg)->load(dyncompat::memory_order_acquire) +
+               (n - segment_base(seg));
+    }
+
+    // Make element n's storage exist and return its address. Only ever called
+    // under append_mutex_, so the table can be mutated without further care.
+    T* reserve_slot(std::size_t n) {
+        const std::size_t seg = segment_of(n);
+        if(seg >= max_segments)
+            throw std::length_error("dyn_c_vector: capacity exceeded");
+
+        cell* c;
+        if(seg < embedded_segments) {
+            c = &embedded_[seg];
+        } else {
+            cell* spill = spill_.load(dyncompat::memory_order_relaxed);
+            if(!spill) {
+                spill = new cell[max_segments - embedded_segments];
+                for(std::size_t i = 0; i < max_segments - embedded_segments; ++i)
+                    spill[i].store(nullptr, dyncompat::memory_order_relaxed);
+                spill_.store(spill, dyncompat::memory_order_release);
+            }
+            c = spill + (seg - embedded_segments);
+        }
+
+        T* base = c->load(dyncompat::memory_order_relaxed);
+        if(!base) {
+            base = allocator{}.allocate(segment_size(seg));
+            c->store(base, dyncompat::memory_order_release);
+        }
+        return base + (n - segment_base(seg));
+    }
+
+    // Append without taking append_mutex_, for callers that already hold it or
+    // that hold the only reference to this object.
+    template<typename... Args>
+    T& append_unlocked(Args&&... args) {
+        const std::size_t n = size_.load(dyncompat::memory_order_relaxed);
+        T* p = reserve_slot(n);
+        new(p) T(std::forward<Args>(args)...);
+        // Release: publishes the element and any table or segment pointer stored
+        // by reserve_slot above.
+        size_.store(n + 1, dyncompat::memory_order_release);
+        return *p;
+    }
+
+    // Destroy every element and release all storage, leaving an empty vector.
+    void reset_unlocked() {
+        const std::size_t n = size_.load(dyncompat::memory_order_relaxed);
+        for(std::size_t i = n; i > 0; --i)
+            slot(i - 1)->~T();
+        size_.store(0, dyncompat::memory_order_relaxed);
+
+        for(std::size_t seg = 0; seg < max_segments; ++seg) {
+            cell* c = cell_of(seg);
+            if(!c)
+                break;
+            T* base = c->load(dyncompat::memory_order_relaxed);
+            if(!base)
+                break;  // segments are filled in order, so nothing follows
+            allocator{}.deallocate(base, segment_size(seg));
+            c->store(nullptr, dyncompat::memory_order_relaxed);
+        }
+
+        if(cell* spill = spill_.load(dyncompat::memory_order_relaxed)) {
+            delete[] spill;
+            spill_.store(nullptr, dyncompat::memory_order_relaxed);
+        }
+    }
+
+    // Move `other`'s storage into this (empty) vector. Element addresses are
+    // preserved, so pointers into the source stay valid.
+    void adopt_unlocked(dyn_c_vector& other) {
+        for(std::size_t seg = 0; seg < embedded_segments; ++seg) {
+            embedded_[seg].store(other.embedded_[seg].load(dyncompat::memory_order_relaxed),
+                                 dyncompat::memory_order_relaxed);
+            other.embedded_[seg].store(nullptr, dyncompat::memory_order_relaxed);
+        }
+        spill_.store(other.spill_.load(dyncompat::memory_order_relaxed),
+                     dyncompat::memory_order_relaxed);
+        other.spill_.store(nullptr, dyncompat::memory_order_relaxed);
+        size_.store(other.size_.load(dyncompat::memory_order_relaxed),
+                    dyncompat::memory_order_relaxed);
+        other.size_.store(0, dyncompat::memory_order_relaxed);
+    }
+
+    using append_guard = std::lock_guard<dyn_spin_rwlock>;
+
+public:
+    using value_type = T;
+    using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
+    using reference = T&;
+    using const_reference = const T&;
+    using pointer = T*;
+    using const_pointer = const T*;
+
+    dyn_c_vector() {
+        for(std::size_t seg = 0; seg < embedded_segments; ++seg)
+            embedded_[seg].store(nullptr, dyncompat::memory_order_relaxed);
+    }
+
+    ~dyn_c_vector() { reset_unlocked(); }
+
+    dyn_c_vector(const dyn_c_vector& other) : dyn_c_vector() {
+        append_guard guard(other.append_mutex_);
+        const std::size_t n = other.size_.load(dyncompat::memory_order_relaxed);
+        for(std::size_t i = 0; i < n; ++i)
+            append_unlocked(*other.slot(i));
+    }
+
+    dyn_c_vector(dyn_c_vector&& other) : dyn_c_vector() {
+        append_guard guard(other.append_mutex_);
+        adopt_unlocked(other);
     }
 
     dyn_c_vector& operator=(const dyn_c_vector& other) {
         if(this != &other) {
-            std::scoped_lock locks(_mutex, other._mutex);
-            base::operator=(static_cast<const base&>(other));
+            dyn_c_vector tmp(other);  // copy without holding our own lock
+            append_guard guard(append_mutex_);
+            reset_unlocked();
+            adopt_unlocked(tmp);
         }
         return *this;
     }
 
     dyn_c_vector& operator=(dyn_c_vector&& other) {
         if(this != &other) {
-            std::scoped_lock locks(_mutex, other._mutex);
-            base::operator=(std::move(static_cast<base&>(other)));
+            std::scoped_lock locks(append_mutex_, other.append_mutex_);
+            reset_unlocked();
+            adopt_unlocked(other);
         }
         return *this;
     }
 
     void push_back(const T& value) {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        base::push_back(value);
+        append_guard guard(append_mutex_);
+        append_unlocked(value);
     }
 
     void push_back(T&& value) {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        base::push_back(std::move(value));
+        append_guard guard(append_mutex_);
+        append_unlocked(std::move(value));
     }
 
     template<typename... Args>
-    typename base::reference emplace_back(Args&&... args) {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::emplace_back(std::forward<Args>(args)...);
+    reference emplace_back(Args&&... args) {
+        append_guard guard(append_mutex_);
+        return append_unlocked(std::forward<Args>(args)...);
     }
 
-    // Synchronized element access. tbb::concurrent_vector let one thread read
-    // while another appended; std::deque does not, because push_back can
-    // reallocate the internal map array out from under a reader that is walking
-    // it to locate an element. Dyninst depends on that guarantee in
-    // fieldListType::operator==, which compares a type's fields while another
-    // OpenMP worker may still be adding fields to it (a type is published into
-    // typesByID before its members are parsed).
-    //
-    // Releasing the lock before the caller uses the returned reference is safe:
-    // std::deque never relocates existing elements, so only the traversal that
-    // locates the element needs protecting, not the element itself.
-    reference operator[](size_type n) {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::operator[](n);
-    }
-    const_reference operator[](size_type n) const {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::operator[](n);
-    }
+    // Lock-free element access, safe to call while another thread appends.
+    // Dyninst depends on that in fieldListType::operator==, which compares a
+    // type's fields while another OpenMP worker may still be adding fields to it
+    // (a type is published into typesByID before its members are parsed).
+    reference operator[](size_type n) { return *slot(n); }
+    const_reference operator[](size_type n) const { return *slot(n); }
+
     reference at(size_type n) {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::at(n);
+        if(n >= size())
+            throw std::out_of_range("dyn_c_vector::at");
+        return *slot(n);
     }
     const_reference at(size_type n) const {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::at(n);
-    }
-    reference front() {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::front();
-    }
-    const_reference front() const {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::front();
-    }
-    reference back() {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::back();
-    }
-    const_reference back() const {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::back();
-    }
-    size_type size() const {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::size();
-    }
-    bool empty() const {
-        dyncompat::lock_guard<dyncompat::mutex> lock(_mutex);
-        return base::empty();
+        if(n >= size())
+            throw std::out_of_range("dyn_c_vector::at");
+        return *slot(n);
     }
 
-    // Unsynchronized iteration and non-append mutation. Per the concurrency
-    // contract above, these must not run concurrently with an append to the same
-    // instance: push_back invalidates all deque iterators.
-    using base::begin;
-    using base::end;
-    using base::cbegin;
-    using base::cend;
-    using base::rbegin;
-    using base::rend;
-    using base::max_size;
-    using base::clear;
-    using base::resize;
-    using base::assign;
-    using base::insert;
-    using base::erase;
-    using base::pop_back;
-    using base::swap;
+    reference front() { return *slot(0); }
+    const_reference front() const { return *slot(0); }
+    reference back() { return *slot(size() - 1); }
+    const_reference back() const { return *slot(size() - 1); }
+
+    size_type size() const { return size_.load(dyncompat::memory_order_acquire); }
+    bool empty() const { return size() == 0; }
+    static constexpr size_type max_size() { return segment_base(max_segments); }
+
+    // Per the concurrency contract, the mutators below must not run concurrently
+    // with anything else on the same instance. They take the append lock only so
+    // that a stray concurrent append cannot corrupt the segment table outright.
+    void clear() {
+        append_guard guard(append_mutex_);
+        reset_unlocked();
+    }
+
+    void pop_back() {
+        append_guard guard(append_mutex_);
+        const std::size_t n = size_.load(dyncompat::memory_order_relaxed);
+        if(n == 0)
+            return;
+        size_.store(n - 1, dyncompat::memory_order_release);
+        slot(n - 1)->~T();
+    }
+
+    void resize(size_type n) {
+        append_guard guard(append_mutex_);
+        std::size_t cur = size_.load(dyncompat::memory_order_relaxed);
+        while(cur > n) {
+            size_.store(--cur, dyncompat::memory_order_release);
+            slot(cur)->~T();
+        }
+        while(cur++ < n)
+            append_unlocked();
+    }
+
+    void swap(dyn_c_vector& other) {
+        if(this == &other)
+            return;
+        std::scoped_lock locks(append_mutex_, other.append_mutex_);
+        dyn_c_vector tmp;
+        tmp.adopt_unlocked(other);
+        other.adopt_unlocked(*this);
+        adopt_unlocked(tmp);
+    }
+
+    // Random-access iterator over indices. symtabAPI/src/Type.C needs
+    // `begin() + n`, so this cannot be a forward iterator.
+    template<bool IsConst>
+    class iter_impl {
+        friend class dyn_c_vector<T>;
+        template<bool> friend class iter_impl;
+
+        using container = std::conditional_t<IsConst, const dyn_c_vector, dyn_c_vector>;
+
+        container* vec_ = nullptr;
+        std::size_t idx_ = 0;
+
+        iter_impl(container* v, std::size_t i) : vec_(v), idx_(i) {}
+
+    public:
+        using iterator_category = std::random_access_iterator_tag;
+        using value_type = T;
+        using difference_type = std::ptrdiff_t;
+        using pointer = std::conditional_t<IsConst, const T*, T*>;
+        using reference = std::conditional_t<IsConst, const T&, T&>;
+
+        iter_impl() = default;
+
+        // iterator converts to const_iterator, but not the other way around.
+        template<bool WasConst = IsConst, typename = std::enable_if_t<WasConst>>
+        iter_impl(const iter_impl<false>& o) : vec_(o.vec_), idx_(o.idx_) {}
+
+        reference operator*() const { return (*vec_)[idx_]; }
+        pointer operator->() const { return &(*vec_)[idx_]; }
+        reference operator[](difference_type n) const {
+            return (*vec_)[idx_ + static_cast<std::size_t>(n)];
+        }
+
+        iter_impl& operator++() { ++idx_; return *this; }
+        iter_impl& operator--() { --idx_; return *this; }
+        iter_impl operator++(int) { iter_impl t = *this; ++idx_; return t; }
+        iter_impl operator--(int) { iter_impl t = *this; --idx_; return t; }
+
+        iter_impl& operator+=(difference_type n) {
+            idx_ += static_cast<std::size_t>(n);
+            return *this;
+        }
+        iter_impl& operator-=(difference_type n) {
+            idx_ -= static_cast<std::size_t>(n);
+            return *this;
+        }
+
+        friend iter_impl operator+(iter_impl it, difference_type n) { return it += n; }
+        friend iter_impl operator+(difference_type n, iter_impl it) { return it += n; }
+        friend iter_impl operator-(iter_impl it, difference_type n) { return it -= n; }
+        friend difference_type operator-(const iter_impl& a, const iter_impl& b) {
+            return static_cast<difference_type>(a.idx_) -
+                   static_cast<difference_type>(b.idx_);
+        }
+
+        friend bool operator==(const iter_impl& a, const iter_impl& b) {
+            return a.idx_ == b.idx_;
+        }
+        friend bool operator!=(const iter_impl& a, const iter_impl& b) {
+            return a.idx_ != b.idx_;
+        }
+        friend bool operator<(const iter_impl& a, const iter_impl& b) {
+            return a.idx_ < b.idx_;
+        }
+        friend bool operator>(const iter_impl& a, const iter_impl& b) {
+            return a.idx_ > b.idx_;
+        }
+        friend bool operator<=(const iter_impl& a, const iter_impl& b) {
+            return a.idx_ <= b.idx_;
+        }
+        friend bool operator>=(const iter_impl& a, const iter_impl& b) {
+            return a.idx_ >= b.idx_;
+        }
+    };
+
+    using iterator = iter_impl<false>;
+    using const_iterator = iter_impl<true>;
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    iterator begin() { return iterator(this, 0); }
+    iterator end() { return iterator(this, size()); }
+    const_iterator begin() const { return const_iterator(this, 0); }
+    const_iterator end() const { return const_iterator(this, size()); }
+    const_iterator cbegin() const { return begin(); }
+    const_iterator cend() const { return end(); }
+
+    reverse_iterator rbegin() { return reverse_iterator(end()); }
+    reverse_iterator rend() { return reverse_iterator(begin()); }
+    const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
 };
 
 class dyn_mutex : public dyncompat::mutex {
