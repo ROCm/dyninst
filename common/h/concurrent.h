@@ -232,29 +232,45 @@ public:
     }
 };
 
-// Thread-safe hash map backed by sharded std::unordered_map instances with
-// per-element locking.
+// Thread-safe hash map with per-element locking.
 //
 // Replaces tbb::concurrent_hash_map while preserving the accessor/const_accessor
 // interface Dyninst relies on. Keys are partitioned across a fixed number of
-// shards; each shard is an independent std::unordered_map guarded by its own
-// dyn_spin_rwlock that protects only the map *structure*. In addition, every stored
-// element owns its own dyn_spin_rwlock, and an accessor holds *that element's* lock
-// (exclusive for `accessor`, shared for `const_accessor`) for its lifetime --
-// matching tbb::concurrent_hash_map's per-element locking contract.
+// shards; each shard owns a lazily allocated array of bucket heads guarded by its
+// own dyn_spin_rwlock, which protects only the *structure* (the bucket array and
+// the chains). In addition, every element owns its own dyn_spin_rwlock, and an
+// accessor holds *that element's* lock (exclusive for `accessor`, shared for
+// `const_accessor`) for its lifetime -- matching concurrent_hash_map's per-element
+// locking contract.
 //
 // Per-element (rather than per-shard) locking is required because several call
 // sites -- e.g. Parser::set_edge_parsing_status -- hold multiple accessors into
 // the same map instance at once. Per-shard locking self-deadlocks as soon as two
 // of those keys hash to the same shard.
 //
-// Elements are held through shared_ptr so a concurrent erase cannot destroy a
-// node (and its mutex) out from under a thread that is acquiring or holding it.
-// The shard lock is always released before an *existing* element's lock is taken,
-// so the two lock levels cannot form a cycle. The sole exception is a newly
-// created node, which is locked while the shard lock is still held but is not yet
-// reachable by any other thread, so it can never be contended (see
-// emplace_locked).
+// Elements are intrusive: each node stores its own chain pointer, its cached hash,
+// its lock and the key/value pair in one allocation, and the key is stored exactly
+// once. The predecessor of this implementation held nodes in a
+// std::unordered_map<K, shared_ptr<node>>, which cost two allocations and two
+// copies of every key per element -- around 125 MB of the ~490 MB peak heap when
+// instrumenting lulesh, and the entire memory gap against the TBB-based build.
+//
+// Nodes are not reference counted, so the lifetime rule is structural: a node
+// pointer is only ever read while its shard lock is held, and the node's own lock
+// is always acquired before that shard lock is released. No thread can therefore
+// hold a node pointer that a concurrent erase could free, and no revalidation
+// after the fact is needed. Erase relies on the same rule from the other side: it
+// unlinks under the shard lock (making the node unreachable), then takes the
+// node's exclusive lock to wait for accessors already holding it to drain, and
+// only then frees it.
+//
+// The one place that would break the rule is blocking on a contended element lock
+// while holding a shard lock, which deadlocks against a thread holding that
+// element and waiting for the shard (which is exactly what erase does). So an
+// existing element's lock is taken with a bounded try; on failure the shard lock
+// is dropped, the now-stale node pointer is discarded *without being
+// dereferenced*, and the operation restarts from the lookup. This is
+// concurrent_hash_map's bounded pause-and-restart.
 //
 // Element locks are reported to Valgrind's DRD/Helgrind through dyn_c_annotations,
 // because dyn_spin_rwlock is built from plain atomics that those tools cannot
@@ -265,18 +281,21 @@ public:
 // original concurrent_hash_map usage.
 template<typename K, typename V>
 class dyn_c_hash_map {
+    // One allocation per element. `hash` is the mixed hash, cached so that chain
+    // walks reject non-matching keys on an integer compare (important when K is
+    // std::string) and so that erase can locate the bucket without rehashing.
     struct node {
-        std::pair<const K, V> kv;
+        node* next = nullptr;
+        std::size_t hash = 0;
         mutable dyn_spin_rwlock mtx;
+        std::pair<const K, V> kv;
 
         template<typename... Args>
-        explicit node(const K& k, Args&&... args)
-            : kv(std::piecewise_construct, std::forward_as_tuple(k),
+        node(const K& k, std::size_t h, Args&&... args)
+            : hash(h),
+              kv(std::piecewise_construct, std::forward_as_tuple(k),
                  std::forward_as_tuple(std::forward<Args>(args)...)) {}
     };
-
-    using node_ptr = std::shared_ptr<node>;
-    using map_type = std::unordered_map<K, node_ptr, concurrent::hasher<K>>;
 
     // Shard and element locks are the same type; the aliases keep which level is
     // being taken, and in which mode, legible at each acquisition site.
@@ -284,34 +303,36 @@ class dyn_c_hash_map {
     using write_lock = dyncompat::unique_lock<dyn_spin_rwlock>;
 
     struct shard {
-        map_type map;
-        mutable dyn_spin_rwlock mtx;  // guards map structure only
+        mutable dyn_spin_rwlock mtx;  // guards buckets/mask/count and the chains
+        node** buckets = nullptr;     // null until this shard's first insert
+        std::size_t mask = 0;         // bucket_count - 1, valid once buckets != null
+        std::size_t count = 0;
     };
 
-    // Shard count trades lock contention against per-map memory. The array below
-    // is allocated eagerly, so every map instance pays 64 bytes per shard (a 56
-    // byte empty unordered_map plus the 4 byte lock, padded) whether or not it ever
-    // holds an element -- and Dyninst keeps thousands of these alive at once:
-    // roughly 5500 while instrumenting a 1 MB binary, so the fixed cost dominates
-    // the element data on small and medium targets. Making the buckets lazy, as
-    // tbb::concurrent_hash_map does, is the remaining win here.
-    //
-    // An earlier revision raised this to 256 because 64 scaled negatively past 16
-    // threads. That was the unmixed hash rather than the shard count: keys are
-    // dominated by 16-byte-aligned addresses, whose low four bits are constant, so
-    // `% 64` reached only 4 distinct shards. With mix() applied (see shard_of)
-    // every shard is reachable, and 64 then measures faster than 256 at every
-    // thread count from 1 to 128 on a full parse while using ~120 MB less.
+    // Shard count trades lock contention against per-map memory. An earlier
+    // revision raised this to 256 because 64 scaled negatively past 16 threads.
+    // That was the unmixed hash rather than the shard count: keys are dominated by
+    // 16-byte-aligned addresses, whose low four bits are constant, so `% 64`
+    // reached only 4 distinct shards. With mix() applied every shard is reachable,
+    // and 64 then measures faster than 256 at every thread count from 1 to 128 on
+    // a full parse while using ~120 MB less.
     static constexpr std::size_t num_shards = 64;
+    static constexpr std::size_t shard_bits = 6;  // num_shards == 1 << shard_bits
+    static constexpr std::size_t initial_buckets = 4;
+    // Bounded attempts on a contended element lock before dropping the shard lock
+    // and restarting. Element locks are held for a few instructions, so a handful
+    // of pauses resolves ordinary contention without stalling shard writers.
+    static constexpr int max_lock_attempts = 8;
+
     std::unique_ptr<shard[]> shards_{new shard[num_shards]};
 
-    // Avalanche the hash before selecting a shard. std::hash is the identity for
-    // pointers and integers, and Dyninst's keys are dominated by heap pointers and
-    // function entry addresses, which are 16-byte aligned -- so their low bits are
-    // constant. Feeding those straight into `% num_shards` would leave only every
-    // 16th shard reachable (4 of 64, 16 of 256) and funnel the whole parallel
-    // parse through a handful of mutexes. tbb_hash_compare avoided this by
-    // multiplying the key by a hash multiplier; this is the same idea.
+    // Avalanche the hash. std::hash is the identity for pointers and integers, and
+    // Dyninst's keys are dominated by heap pointers and function entry addresses,
+    // which are 16-byte aligned -- so their low bits are constant. Feeding those
+    // straight into a shard/bucket index would leave only every 16th slot reachable
+    // and funnel the whole parallel parse through a handful of mutexes.
+    // tbb_hash_compare avoided this by multiplying the key by a hash multiplier;
+    // this is the same idea.
     static std::size_t mix(std::size_t h) {
         if constexpr(sizeof(std::size_t) == 8) {
             h ^= h >> 33;
@@ -325,11 +346,83 @@ class dyn_c_hash_map {
         return h;
     }
 
-    static std::size_t shard_of(const K& k) {
-        return mix(concurrent::hasher<K>{}(k)) % num_shards;
+    static std::size_t hash_of(const K& k) {
+        return mix(concurrent::hasher<K>{}(k));
     }
-    shard& shard_for(const K& k) { return shards_[shard_of(k)]; }
-    const shard& shard_for(const K& k) const { return shards_[shard_of(k)]; }
+
+    // The shard takes the low bits and the bucket the bits above them, so the two
+    // indices are drawn from disjoint parts of the mixed hash and a shard's keys
+    // stay spread across its buckets.
+    shard& shard_for(std::size_t h) { return shards_[h & (num_shards - 1)]; }
+    const shard& shard_for(std::size_t h) const {
+        return shards_[h & (num_shards - 1)];
+    }
+    static std::size_t bucket_of(const shard& s, std::size_t h) {
+        return (h >> shard_bits) & s.mask;
+    }
+
+    // Caller holds the shard lock (either mode).
+    static node* search(const shard& s, std::size_t h, const K& k) {
+        if(!s.buckets)
+            return nullptr;
+        for(node* n = s.buckets[bucket_of(s, h)]; n; n = n->next)
+            if(n->hash == h && n->kv.first == k)
+                return n;
+        return nullptr;
+    }
+
+    // Caller holds the shard lock exclusively. Doubles the bucket array (or makes
+    // the first one) and relinks the chains. Nodes themselves never move, so an
+    // accessor holding one is unaffected -- only bucket heads change.
+    static void grow_locked(shard& s) {
+        const std::size_t new_count = s.buckets ? (s.mask + 1) * 2 : initial_buckets;
+        const std::size_t new_mask = new_count - 1;
+        node** nb = new node*[new_count]();
+        if(s.buckets) {
+            for(std::size_t b = 0; b <= s.mask; ++b) {
+                node* n = s.buckets[b];
+                while(n) {
+                    node* next = n->next;
+                    node** head = &nb[(n->hash >> shard_bits) & new_mask];
+                    n->next = *head;
+                    *head = n;
+                    n = next;
+                }
+            }
+            delete[] s.buckets;
+        }
+        s.buckets = nb;
+        s.mask = new_mask;
+    }
+
+    // Caller holds the shard lock exclusively, or is the destructor.
+    static void destroy_locked(shard& s) {
+        if(s.buckets) {
+            for(std::size_t b = 0; b <= s.mask; ++b) {
+                node* n = s.buckets[b];
+                while(n) {
+                    node* next = n->next;
+                    dyn_c_annotations::rwdeinit(&n->mtx);
+                    delete n;
+                    n = next;
+                }
+            }
+            delete[] s.buckets;
+        }
+        s.buckets = nullptr;
+        s.mask = 0;
+        s.count = 0;
+    }
+
+    // Caller holds the shard lock exclusively. Links an already-built node.
+    static void link_locked(shard& s, node* n) {
+        if(!s.buckets || s.count + 1 > s.mask + 1)
+            grow_locked(s);
+        node** head = &s.buckets[bucket_of(s, n->hash)];
+        n->next = *head;
+        *head = n;
+        ++s.count;
+    }
 
 public:
     using value_type = std::pair<const K, V>;
@@ -337,28 +430,34 @@ public:
     using key_type = K;
 
     dyn_c_hash_map() = default;
-    ~dyn_c_hash_map() = default;
 
-    // Copies element values without ever holding a shard lock and an element lock
-    // at the same time: snapshot the (key, node) pairs under the shard lock, drop
-    // it, then lock each element in turn. The snapshot holds shared_ptrs, so the
-    // nodes stay alive even if the source erases them in the meantime.
+    ~dyn_c_hash_map() {
+        for(std::size_t i = 0; i < num_shards; ++i)
+            destroy_locked(shards_[i]);
+    }
+
+    // Copies without ever holding a shard lock and an element lock at the same
+    // time. Keys are immutable once inserted, so they can be snapshotted under the
+    // shard lock alone; values need the element lock, which is then taken through
+    // the normal accessor protocol after the shard lock is gone. An element erased
+    // between the two passes is simply absent from the copy.
     dyn_c_hash_map(const dyn_c_hash_map& other) {
-        std::vector<std::pair<K, node_ptr>> entries;
+        std::vector<K> keys;
         for(std::size_t i = 0; i < num_shards; ++i) {
-            entries.clear();
+            keys.clear();
             {
-                read_lock lock(other.shards_[i].mtx);
-                entries.reserve(other.shards_[i].map.size());
-                for(const auto& entry : other.shards_[i].map)
-                    entries.emplace_back(entry.first, entry.second);
+                const shard& s = other.shards_[i];
+                read_lock lock(s.mtx);
+                keys.reserve(s.count);
+                if(s.buckets)
+                    for(std::size_t b = 0; b <= s.mask; ++b)
+                        for(node* n = s.buckets[b]; n; n = n->next)
+                            keys.push_back(n->kv.first);
             }
-            for(const auto& entry : entries) {
-                read_lock nlock(entry.second->mtx);
-                auto np =
-                    std::make_shared<node>(entry.first, entry.second->kv.second);
-                dyn_c_annotations::rwinit(&np->mtx);
-                shards_[i].map.emplace(entry.first, std::move(np));
+            for(const K& k : keys) {
+                const_accessor ca;
+                if(other.find(ca, k))
+                    insert(value_type(k, ca->second));
             }
         }
     }
@@ -372,13 +471,21 @@ public:
     // Keep this map's shard array in place and assign per shard under its own
     // lock. Replacing the array wholesale would free it while a concurrent reader
     // may still hold a `shard&` obtained from shard_for(), leaving a dangling
-    // reference -- the shared_ptr nodes do not protect the shard array itself.
+    // reference.
     dyn_c_hash_map& operator=(const dyn_c_hash_map& other) {
         if(this != &other) {
             dyn_c_hash_map tmp(other);  // snapshot without holding our locks
             for(std::size_t i = 0; i < num_shards; ++i) {
                 write_lock lock(shards_[i].mtx);
-                shards_[i].map = std::move(tmp.shards_[i].map);
+                destroy_locked(shards_[i]);
+                // Steal the temporary's chains rather than re-inserting: the nodes
+                // are already built and are not yet visible to any other thread.
+                shards_[i].buckets = tmp.shards_[i].buckets;
+                shards_[i].mask = tmp.shards_[i].mask;
+                shards_[i].count = tmp.shards_[i].count;
+                tmp.shards_[i].buckets = nullptr;
+                tmp.shards_[i].mask = 0;
+                tmp.shards_[i].count = 0;
             }
         }
         return *this;
@@ -391,19 +498,21 @@ public:
         return *this;
     }
 
-    // Holds a shared (read) lock on the target element while alive.
+    // Holds a shared (read) lock on the target element while alive. The node is
+    // borrowed, not owned: holding the lock is what keeps it alive, because erase
+    // waits for the element's exclusive lock before freeing it.
     class const_accessor {
         friend class dyn_c_hash_map<K,V>;
     protected:
-        node_ptr node_;
+        node* node_ = nullptr;
         read_lock lock_;
         bool valid_ = false;
 
         // Take ownership of an already-acquired element lock and tell Valgrind
         // about it. Every acquisition goes through here so the annotation cannot
         // drift out of step with the lock it describes.
-        void adopt(node_ptr np, read_lock lk) {
-            node_ = std::move(np);
+        void adopt(node* np, read_lock lk) {
+            node_ = np;
             lock_ = std::move(lk);
             valid_ = true;
             dyn_c_annotations::rlock(&node_->mtx);
@@ -423,7 +532,7 @@ public:
             valid_ = false;
             if(lock_.owns_lock()) lock_.unlock();
             lock_ = {};
-            node_.reset();
+            node_ = nullptr;
         }
     };
 
@@ -431,12 +540,12 @@ public:
     class accessor {
         friend class dyn_c_hash_map<K,V>;
     protected:
-        node_ptr node_;
+        node* node_ = nullptr;
         write_lock lock_;
         bool valid_ = false;
 
-        void adopt(node_ptr np, write_lock lk) {
-            node_ = std::move(np);
+        void adopt(node* np, write_lock lk) {
+            node_ = np;
             lock_ = std::move(lk);
             valid_ = true;
             dyn_c_annotations::wlock(&node_->mtx);
@@ -456,109 +565,108 @@ public:
             valid_ = false;
             if(lock_.owns_lock()) lock_.unlock();
             lock_ = {};
-            node_.reset();
+            node_ = nullptr;
         }
     };
 
 private:
-    // Look up k under the shard's shared lock and return its node (or null). The
-    // shard lock is released on return, before the caller takes the element lock.
-    node_ptr find_node(const K& k) const {
-        const shard& s = shard_for(k);
-        read_lock lock(s.mtx);
-        auto it = s.map.find(k);
-        return (it == s.map.end()) ? node_ptr{} : it->second;
-    }
-
-    // Find-or-create the node for k under the shard's exclusive lock. Returns the
-    // node and whether it was newly inserted.
+    // Acquire the lock on k's element and return it, or return null if k is absent.
     //
-    // When a node is newly created it is locked (into out_lock) *before* the shard
-    // lock is dropped. The node is not yet reachable by any other thread, so this
-    // is uncontended (cannot deadlock) and it guarantees that no other thread can
-    // observe the element before the inserting caller has initialized it -- this
-    // matches tbb::concurrent_hash_map's atomic insert-and-lock semantics.
+    // The element lock is taken while the shard lock is still held, so the node
+    // cannot be erased between finding it and locking it -- that is the invariant
+    // that makes the non-owning node pointers safe. Because blocking here would
+    // deadlock against a thread that holds this element and wants the shard lock,
+    // acquisition is a bounded try; on failure the shard lock is dropped and the
+    // lookup restarts. The node pointer must not be touched after the shard lock
+    // is released, since an erase may free it at that point.
+    template<typename LockT>
+    node* acquire(const K& k, LockT& out) const {
+        const std::size_t h = hash_of(k);
+        const shard& s = shard_for(h);
+        for(;;) {
+            {
+                read_lock slock(s.mtx);
+                node* n = search(s, h, k);
+                if(!n)
+                    return nullptr;
+                for(int i = 0; i < max_lock_attempts; ++i) {
+                    LockT attempt(n->mtx, std::try_to_lock);
+                    if(attempt.owns_lock()) {
+                        out = std::move(attempt);
+                        return n;
+                    }
+                    concurrent::detail::spin_relax();
+                }
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    // Shared implementation of the accessor/const_accessor insert overloads;
+    // returns true if the element was created.
     //
-    // Existing nodes are returned unlocked; the caller takes their lock only after
-    // the shard lock is released, so shard and element locks never nest.
-    template<typename LockT, typename... Args>
-    std::pair<node_ptr, bool> emplace_locked(LockT& out_lock, const K& k, Args&&... args) {
-        shard& s = shard_for(k);
-        write_lock lock(s.mtx);
-        auto it = s.map.find(k);
-        if(it != s.map.end()) return {it->second, false};
-        auto np = std::make_shared<node>(k, std::forward<Args>(args)...);
-        dyn_c_annotations::rwinit(&np->mtx);
-        s.map.emplace(k, np);
-        // Uncontended by construction: no other thread can reach the node yet, so
-        // this resolves in a single atomic operation and cannot deadlock despite
-        // being the one place a shard lock is held across an element acquisition.
-        // The nesting is invisible to ThreadSanitizer, which cannot see
-        // dyn_spin_rwlock, so it is not reported as a lock-order inversion either.
-        out_lock = LockT(np->mtx);
-        return {np, true};
-    }
-
-    // True iff k still maps to exactly this node. Confirms that a node obtained
-    // after the shard lock was released was not erased or replaced before its
-    // element lock was taken -- restoring the atomic find/insert-and-lock
-    // guarantee of tbb::concurrent_hash_map. Takes only the shard lock (shared),
-    // while the caller holds the element lock, so it never holds a shard lock
-    // while waiting for a contended element lock.
-    bool still_current(const K& k, const node_ptr& np) const {
-        const shard& s = shard_for(k);
-        read_lock lock(s.mtx);
-        auto it = s.map.find(k);
-        return it != s.map.end() && it->second == np;
-    }
-
-    // Shared implementation of the accessor/const_accessor insert overloads.
-    // A freshly created node is already locked under the shard lock (no gap). An
-    // existing node is locked after the shard lock is dropped, then validated
-    // with still_current(); if it was erased/replaced in between, retry.
+    // A new node is locked while the shard lock is still held. That acquisition
+    // cannot be contended, because the node is not yet linked anywhere another
+    // thread can reach, and it provides concurrent_hash_map's atomic
+    // insert-and-lock semantics: no other thread can observe the element before
+    // the inserting caller has initialized it.
     template<typename Acc, typename LockT, typename... Args>
     bool do_insert(Acc& acc, const K& k, Args&&... args) {
         acc.release();
+        const std::size_t h = hash_of(k);
+        shard& s = shard_for(h);
         for(;;) {
-            LockT new_lock;
-            auto res = emplace_locked<LockT>(new_lock, k, std::forward<Args>(args)...);
-            if(res.second) {
-                acc.adopt(std::move(res.first), std::move(new_lock));
-                return true;
+            {
+                write_lock slock(s.mtx);
+                node* n = search(s, h, k);
+                if(!n) {
+                    n = new node(k, h, std::forward<Args>(args)...);
+                    dyn_c_annotations::rwinit(&n->mtx);
+                    link_locked(s, n);
+                    acc.adopt(n, LockT(n->mtx));
+                    return true;
+                }
+                for(int i = 0; i < max_lock_attempts; ++i) {
+                    LockT attempt(n->mtx, std::try_to_lock);
+                    if(attempt.owns_lock()) {
+                        acc.adopt(n, std::move(attempt));
+                        return false;
+                    }
+                    concurrent::detail::spin_relax();
+                }
             }
-            LockT lk(res.first->mtx);
-            if(!still_current(k, res.first)) continue;
-            acc.adopt(std::move(res.first), std::move(lk));
-            return false;
+            std::this_thread::yield();
         }
     }
 
 public:
     bool find(const_accessor& ca, const K& k) const {
         ca.release();
-        for(;;) {
-            node_ptr np = find_node(k);
-            if(!np) return false;
-            read_lock lk(np->mtx);
-            if(!still_current(k, np)) continue;  // erased/replaced after lookup; retry
-            ca.adopt(std::move(np), std::move(lk));
+        read_lock lk;
+        if(node* n = acquire(k, lk)) {
+            ca.adopt(n, std::move(lk));
             return true;
         }
+        return false;
     }
 
     bool find(accessor& a, const K& k) {
         a.release();
-        for(;;) {
-            node_ptr np = find_node(k);
-            if(!np) return false;
-            write_lock lk(np->mtx);
-            if(!still_current(k, np)) continue;  // erased/replaced after lookup; retry
-            a.adopt(std::move(np), std::move(lk));
+        write_lock lk;
+        if(node* n = acquire(k, lk)) {
+            a.adopt(n, std::move(lk));
             return true;
         }
+        return false;
     }
 
-    int contains(const K& k) const { return find_node(k) != nullptr; }
+    // Only reports presence, so unlike find() it needs no element lock at all.
+    int contains(const K& k) const {
+        const std::size_t h = hash_of(k);
+        const shard& s = shard_for(h);
+        read_lock slock(s.mtx);
+        return search(s, h, k) != nullptr;
+    }
 
     bool insert(accessor& a, const K& k) {
         return do_insert<accessor, write_lock>(a, k);
@@ -579,94 +687,114 @@ public:
     }
 
     bool insert(const value_type& e) {
-        shard& s = shard_for(e.first);
-        write_lock lock(s.mtx);
-        auto it = s.map.find(e.first);
-        if(it != s.map.end()) return false;
-        auto np = std::make_shared<node>(e.first, e.second);
-        dyn_c_annotations::rwinit(&np->mtx);
-        s.map.emplace(e.first, std::move(np));
+        const std::size_t h = hash_of(e.first);
+        shard& s = shard_for(h);
+        write_lock slock(s.mtx);
+        if(search(s, h, e.first))
+            return false;
+        node* n = new node(e.first, h, e.second);
+        dyn_c_annotations::rwinit(&n->mtx);
+        link_locked(s, n);
         return true;
     }
 
-    // Erase the exact element the accessor holds. The accessor already owns the
-    // element lock, so taking the shard lock here is node -> shard ordering and
-    // never nests a shard lock while waiting for a contended element lock.
+    // Erase the exact element the accessor holds. The accessor owns the element's
+    // exclusive lock, so no other thread is inside the element; unlinking it under
+    // the shard lock makes it unreachable, after which it can be freed as soon as
+    // the accessor lets go. Erasing by identity (not by key) so a key that was
+    // replaced in the meantime is left alone.
     bool erase(accessor& a) {
         if(!a.valid_) return false;
-        const K k = a.node_->kv.first;
-        node_ptr np = a.node_;
-        shard& s = shard_for(k);
-        write_lock slock(s.mtx);
+        node* n = a.node_;
+        shard& s = shard_for(n->hash);
         bool removed = false;
-        auto it = s.map.find(k);
-        if(it != s.map.end() && it->second == np) {  // erase by identity, not by key
-            s.map.erase(it);
-            removed = true;
+        {
+            write_lock slock(s.mtx);
+            if(s.buckets) {
+                node** p = &s.buckets[bucket_of(s, n->hash)];
+                while(*p && *p != n)
+                    p = &(*p)->next;
+                if(*p == n) {
+                    *p = n->next;
+                    --s.count;
+                    removed = true;
+                }
+            }
         }
         a.release();  // reports the element lock release to Valgrind
-        if(removed) dyn_c_annotations::rwdeinit(&np->mtx);
+        if(removed) {
+            dyn_c_annotations::rwdeinit(&n->mtx);
+            delete n;
+        }
         return removed;
     }
 
     bool erase(const K& k) {
-        for(;;) {
-            node_ptr np = find_node(k);
-            if(!np) return false;
-            // Acquire the element lock first, so erase waits for outstanding
-            // accessors (as tbb::concurrent_hash_map does), then remove under the
-            // shard lock. node -> shard ordering; no shard lock is held while
-            // waiting for the element lock.
-            {
-                write_lock elock(np->mtx);
-                shard& s = shard_for(k);
-                write_lock slock(s.mtx);
-                auto it = s.map.find(k);
-                if(it == s.map.end()) return false;
-                if(it->second != np) continue;  // replaced after lookup; retry
-                s.map.erase(it);
-            }
-            // Only once the element lock is dropped, so Valgrind never sees a lock
-            // destroyed while it is still held.
-            dyn_c_annotations::rwdeinit(&np->mtx);
-            return true;
+        const std::size_t h = hash_of(k);
+        shard& s = shard_for(h);
+        node* n = nullptr;
+        {
+            write_lock slock(s.mtx);
+            if(!s.buckets)
+                return false;
+            node** p = &s.buckets[bucket_of(s, h)];
+            while(*p && !((*p)->hash == h && (*p)->kv.first == k))
+                p = &(*p)->next;
+            if(!*p)
+                return false;
+            n = *p;
+            *p = n->next;  // unlink first, so no new thread can reach it
+            --s.count;
         }
+        // Accessors taken before the unlink may still hold the element. Waiting for
+        // its exclusive lock drains them, as concurrent_hash_map's erase does,
+        // before the node is freed. The lock is released before rwdeinit so
+        // Valgrind never sees a lock destroyed while held.
+        { write_lock drain(n->mtx); }
+        dyn_c_annotations::rwdeinit(&n->mtx);
+        delete n;
+        return true;
     }
 
     int size() const {
         std::size_t n = 0;
         for(std::size_t i = 0; i < num_shards; ++i) {
             read_lock lock(shards_[i].mtx);
-            n += shards_[i].map.size();
+            n += shards_[i].count;
         }
         return static_cast<int>(n);
     }
 
+    // Pre-sizes the bucket arrays; only ever grows them, as
+    // concurrent_hash_map's rehash is likewise just a capacity hint.
     void rehash(int n = 0) {
-        const std::size_t per =
-            (n > 0) ? static_cast<std::size_t>(n) / num_shards + 1 : 0;
+        if(n <= 0)
+            return;
+        const std::size_t per = static_cast<std::size_t>(n) / num_shards + 1;
         for(std::size_t i = 0; i < num_shards; ++i) {
             write_lock lock(shards_[i].mtx);
-            shards_[i].map.rehash(per);
+            while(!shards_[i].buckets || shards_[i].mask + 1 < per)
+                grow_locked(shards_[i]);
         }
     }
 
+    // Frees every element, so it must not run while another thread holds an
+    // accessor or is looking one up -- the same restriction the previous
+    // implementation had.
     void clear() {
         for(std::size_t i = 0; i < num_shards; ++i) {
             write_lock lock(shards_[i].mtx);
-            shards_[i].map.clear();
+            destroy_locked(shards_[i]);
         }
     }
 
-    // Forward iterator that walks every shard in turn. Not synchronized; use
-    // only after the concurrent insertion phase has completed.
+    // Forward iterator that walks every shard, bucket and chain in turn. Not
+    // synchronized; use only after the concurrent insertion phase has completed.
     template<bool IsConst>
     class iter_impl {
         friend class dyn_c_hash_map<K,V>;
 
         using shard_ptr = std::conditional_t<IsConst, const shard*, shard*>;
-        using inner = std::conditional_t<IsConst, typename map_type::const_iterator,
-                                         typename map_type::iterator>;
 
     public:
         using iterator_category = std::forward_iterator_tag;
@@ -677,31 +805,46 @@ public:
 
     private:
         shard_ptr shards_ = nullptr;
-        std::size_t idx_ = num_shards;
-        inner cur_{};
+        std::size_t sidx_ = num_shards;
+        std::size_t bidx_ = 0;
+        node* cur_ = nullptr;
 
-        void advance_to_valid() {
-            while(idx_ < num_shards && cur_ == shards_[idx_].map.end()) {
-                if(++idx_ < num_shards) cur_ = shards_[idx_].map.begin();
+        // Point cur_ at the first element in the next occupied bucket at or after
+        // (sidx_, bidx_), leaving it null once every shard is exhausted.
+        void seek() {
+            for(; sidx_ < num_shards; ++sidx_, bidx_ = 0) {
+                const shard& s = shards_[sidx_];
+                if(!s.buckets)
+                    continue;
+                for(; bidx_ <= s.mask; ++bidx_) {
+                    if(s.buckets[bidx_]) {
+                        cur_ = s.buckets[bidx_];
+                        return;
+                    }
+                }
             }
+            cur_ = nullptr;
         }
 
-        iter_impl(shard_ptr s, std::size_t idx) : shards_(s), idx_(idx) {
-            if(idx_ < num_shards) {
-                cur_ = shards_[idx_].map.begin();
-                advance_to_valid();
-            }
+        iter_impl(shard_ptr s, std::size_t idx) : shards_(s), sidx_(idx) {
+            if(sidx_ < num_shards)
+                seek();
         }
 
     public:
         iter_impl() = default;
 
-        reference operator*() const { return cur_->second->kv; }
-        pointer operator->() const { return &cur_->second->kv; }
+        reference operator*() const { return cur_->kv; }
+        pointer operator->() const { return &cur_->kv; }
 
         iter_impl& operator++() {
-            ++cur_;
-            advance_to_valid();
+            if(cur_ && cur_->next) {
+                cur_ = cur_->next;
+            } else if(cur_) {
+                ++bidx_;
+                cur_ = nullptr;
+                seek();
+            }
             return *this;
         }
         iter_impl operator++(int) {
@@ -710,10 +853,10 @@ public:
             return tmp;
         }
 
+        // Exhausted iterators compare equal because seek() leaves cur_ null and
+        // sidx_ at num_shards, which is exactly how end() is built.
         bool operator==(const iter_impl& o) const {
-            if(idx_ != o.idx_) return false;
-            if(idx_ == num_shards) return true;
-            return cur_ == o.cur_;
+            return cur_ == o.cur_ && sidx_ == o.sidx_;
         }
         bool operator!=(const iter_impl& o) const { return !(*this == o); }
     };
