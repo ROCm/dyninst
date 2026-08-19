@@ -281,17 +281,25 @@ public:
 // original concurrent_hash_map usage.
 template<typename K, typename V>
 class dyn_c_hash_map {
+    // Truncated to 32 bits so that it packs into the padding the 4-byte element
+    // lock would otherwise leave in front of the 8-aligned pair, making the node
+    // the same size it would be with no cached hash at all. For the string-keyed
+    // symbol indices that dominate Dyninst's element counts this takes the node
+    // from 80 to 72 bytes (a 96 to 80 byte allocation).
+    using hash_type = std::uint32_t;
+
     // One allocation per element. `hash` is the mixed hash, cached so that chain
     // walks reject non-matching keys on an integer compare (important when K is
-    // std::string) and so that erase can locate the bucket without rehashing.
+    // std::string), so that erase can locate the bucket without rehashing, and so
+    // that growth relinks the chains without rehashing every key.
     struct node {
         node* next = nullptr;
-        std::size_t hash = 0;
+        hash_type hash = 0;
         mutable dyn_spin_rwlock mtx;
         std::pair<const K, V> kv;
 
         template<typename... Args>
-        node(const K& k, std::size_t h, Args&&... args)
+        node(const K& k, hash_type h, Args&&... args)
             : hash(h),
               kv(std::piecewise_construct, std::forward_as_tuple(k),
                  std::forward_as_tuple(std::forward<Args>(args)...)) {}
@@ -319,6 +327,12 @@ class dyn_c_hash_map {
     static constexpr std::size_t num_shards = 64;
     static constexpr std::size_t shard_bits = 6;  // num_shards == 1 << shard_bits
     static constexpr std::size_t initial_buckets = 4;
+    // A shard indexes its buckets with the bits of the cached hash above the shard
+    // bits, so this is the most buckets one shard can address. Reaching it needs
+    // around 4e9 elements in a single map; growth stops there and chains lengthen
+    // instead, rather than folding distinct hashes onto the same bucket.
+    static constexpr std::size_t max_buckets_per_shard =
+        std::size_t(1) << (32 - shard_bits);
     // Bounded attempts on a contended element lock before dropping the shard lock
     // and restarting. Element locks are held for a few instructions, so a handful
     // of pauses resolves ordinary contention without stalling shard writers.
@@ -346,23 +360,26 @@ class dyn_c_hash_map {
         return h;
     }
 
-    static std::size_t hash_of(const K& k) {
-        return mix(concurrent::hasher<K>{}(k));
+    // Every bit of the finalizer's output is equally well mixed, so keeping only
+    // the low 32 is no worse a hash than the full width; it just bounds how many
+    // buckets a shard can address (see max_buckets_per_shard).
+    static hash_type hash_of(const K& k) {
+        return static_cast<hash_type>(mix(concurrent::hasher<K>{}(k)));
     }
 
     // The shard takes the low bits and the bucket the bits above them, so the two
     // indices are drawn from disjoint parts of the mixed hash and a shard's keys
     // stay spread across its buckets.
-    shard& shard_for(std::size_t h) { return shards_[h & (num_shards - 1)]; }
-    const shard& shard_for(std::size_t h) const {
+    shard& shard_for(hash_type h) { return shards_[h & (num_shards - 1)]; }
+    const shard& shard_for(hash_type h) const {
         return shards_[h & (num_shards - 1)];
     }
-    static std::size_t bucket_of(const shard& s, std::size_t h) {
+    static std::size_t bucket_of(const shard& s, hash_type h) {
         return (h >> shard_bits) & s.mask;
     }
 
     // Caller holds the shard lock (either mode).
-    static node* search(const shard& s, std::size_t h, const K& k) {
+    static node* search(const shard& s, hash_type h, const K& k) {
         if(!s.buckets)
             return nullptr;
         for(node* n = s.buckets[bucket_of(s, h)]; n; n = n->next)
@@ -375,6 +392,8 @@ class dyn_c_hash_map {
     // the first one) and relinks the chains. Nodes themselves never move, so an
     // accessor holding one is unaffected -- only bucket heads change.
     static void grow_locked(shard& s) {
+        if(s.buckets && s.mask + 1 >= max_buckets_per_shard)
+            return;
         const std::size_t new_count = s.buckets ? (s.mask + 1) * 2 : initial_buckets;
         const std::size_t new_mask = new_count - 1;
         node** nb = new node*[new_count]();
@@ -581,7 +600,7 @@ private:
     // is released, since an erase may free it at that point.
     template<typename LockT>
     node* acquire(const K& k, LockT& out) const {
-        const std::size_t h = hash_of(k);
+        const hash_type h = hash_of(k);
         const shard& s = shard_for(h);
         for(;;) {
             {
@@ -613,7 +632,7 @@ private:
     template<typename Acc, typename LockT, typename... Args>
     bool do_insert(Acc& acc, const K& k, Args&&... args) {
         acc.release();
-        const std::size_t h = hash_of(k);
+        const hash_type h = hash_of(k);
         shard& s = shard_for(h);
         for(;;) {
             {
@@ -662,7 +681,7 @@ public:
 
     // Only reports presence, so unlike find() it needs no element lock at all.
     int contains(const K& k) const {
-        const std::size_t h = hash_of(k);
+        const hash_type h = hash_of(k);
         const shard& s = shard_for(h);
         read_lock slock(s.mtx);
         return search(s, h, k) != nullptr;
@@ -687,7 +706,7 @@ public:
     }
 
     bool insert(const value_type& e) {
-        const std::size_t h = hash_of(e.first);
+        const hash_type h = hash_of(e.first);
         shard& s = shard_for(h);
         write_lock slock(s.mtx);
         if(search(s, h, e.first))
@@ -730,7 +749,7 @@ public:
     }
 
     bool erase(const K& k) {
-        const std::size_t h = hash_of(k);
+        const hash_type h = hash_of(k);
         shard& s = shard_for(h);
         node* n = nullptr;
         {
@@ -770,11 +789,17 @@ public:
     void rehash(int n = 0) {
         if(n <= 0)
             return;
-        const std::size_t per = static_cast<std::size_t>(n) / num_shards + 1;
+        std::size_t per = static_cast<std::size_t>(n) / num_shards + 1;
+        if(per > max_buckets_per_shard)
+            per = max_buckets_per_shard;
         for(std::size_t i = 0; i < num_shards; ++i) {
             write_lock lock(shards_[i].mtx);
-            while(!shards_[i].buckets || shards_[i].mask + 1 < per)
+            while(!shards_[i].buckets || shards_[i].mask + 1 < per) {
+                const std::size_t before = shards_[i].mask;
                 grow_locked(shards_[i]);
+                if(shards_[i].mask == before)
+                    break;  // capped out; do not spin under the lock
+            }
         }
     }
 
