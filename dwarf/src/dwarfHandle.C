@@ -323,7 +323,12 @@ DwarfHandle::ptr DwarfHandle::createDwarfHandle(string filename_, Elf_X *file_,
     map<string, DwarfHandle::ptr>::iterator i;
     i = all_dwarf_handles.find(filename_);
     if (i != all_dwarf_handles.end()) {
-        return i->second;
+        if (i->second->origFile() == file_)
+            return i->second;
+        // A different Elf_X for a path we have already seen may mean the image
+        // the cached handle was built from has been closed underneath.
+        // Returning it would make DWARF parsing read an unmapped image.
+        all_dwarf_handles.erase(i);
     }
 
     DwarfHandle::ptr ret = DwarfHandle::ptr(
