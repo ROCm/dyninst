@@ -121,6 +121,7 @@ doxyfiles/*
 .vscode/*
 build*/
 cmake-build-*/
+.tpls/
 .project
 .cproject
 .settings
