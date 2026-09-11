@@ -90,3 +90,49 @@ void dyn_c_annotations::runlock(void* ptr) {
     ANNOTATE_RWLOCK_RELEASED(ptr, 0 /* reader mode */);
 }
 #endif
+
+#if defined(__linux__) && defined(__GLIBC__)
+#include <malloc.h>
+
+#include <cstdlib>
+#include <cstring>
+
+// Parsing a large binary performs on the order of 10^8 small allocations. By
+// default glibc extends the main heap in 128KB brk() increments, which turns
+// into thousands of syscalls plus the page faults that follow them. TBB used to
+// hide this because libtbbmalloc_proxy replaced malloc process-wide and served
+// everything from large mmap'd regions; with TBB gone the parse step regresses
+// roughly 20% in wall time at high thread counts. Asking glibc for larger
+// growth increments recovers it.
+//
+// Only the mutator links libcommon, so this never perturbs the allocator of a
+// process under instrumentation.
+namespace {
+
+bool dyn_malloc_tuning_disabled() {
+    if(const char* v = std::getenv("DYNINST_MALLOC_TUNING"))
+        if(std::strcmp(v, "0") == 0)
+            return true;
+
+    // An explicit setting from the user wins; glibc has already applied it.
+    if(std::getenv("MALLOC_TOP_PAD_"))
+        return true;
+    if(const char* t = std::getenv("GLIBC_TUNABLES"))
+        if(std::strstr(t, "glibc.malloc.top_pad"))
+            return true;
+
+    return false;
+}
+
+struct dyn_malloc_tuner {
+    dyn_malloc_tuner() {
+        if(dyn_malloc_tuning_disabled())
+            return;
+        mallopt(M_TOP_PAD, 32 * 1024 * 1024);
+    }
+};
+
+dyn_malloc_tuner const dyn_malloc_tuner_instance;
+
+} // namespace
+#endif
