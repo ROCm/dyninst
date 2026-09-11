@@ -29,6 +29,7 @@
  */
 
 #include <algorithm>
+#include <climits>
 #include "common/src/vgannotations.h"
 #include "compiler_diagnostics.h"
 #include "dwarfWalker.h"

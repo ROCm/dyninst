@@ -38,6 +38,7 @@
 #include "InstructionDecoder.h"
 #include "Instruction.h"
 
+#include <algorithm>
 #include <string>
 #include <assert.h>
 #include <utility>
