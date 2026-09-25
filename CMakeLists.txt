@@ -50,6 +50,11 @@ include(DyninstThread_DB)
 include(DyninstValgrind)
 include(DyninstOpenMP)
 
+if(DYNINST_BUILD_TESTING)
+  include(DyninstGTest)
+  enable_testing()
+endif()
+
 add_subdirectory(common)
 add_subdirectory(elf)
 add_subdirectory(dwarf)
