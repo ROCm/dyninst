@@ -26,3 +26,7 @@ dyninst_library(
   PRIVATE_DEPS Dyninst::ElfUtils
 )
 # cmake-format: on
+
+if(DYNINST_BUILD_TESTING)
+  add_subdirectory(test)
+endif()
