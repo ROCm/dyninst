@@ -34,7 +34,14 @@
 #include "Module.h"
 
 #include <dyncompat/container_hash/hash.hpp>
-#include <tbb/concurrent_unordered_set.h>
+#include <dyncompat/thread/shared_mutex.hpp>
+#include <dyncompat/thread/locks.hpp>
+
+#include <algorithm>
+#include <iterator>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace Dyninst { namespace SymtabAPI {
 
@@ -56,15 +63,30 @@ namespace Dyninst { namespace SymtabAPI {
     };
   }
 
+  // Thread-safe index of Modules keyed by (file name, offset).
+  //
+  // Replaces tbb::concurrent_unordered_set: mutations take an exclusive lock
+  // and lookups take a shared lock. Modules are inserted during object parsing
+  // and iterated afterwards; the cardinality is small (one entry per module),
+  // so lock contention is negligible.
   class indexed_modules {
-    tbb::concurrent_unordered_set<Module *, detail::hash, detail::equal> index;
+    using set_type = std::unordered_set<Module *, detail::hash, detail::equal>;
+    set_type index;
+    mutable dyncompat::shared_mutex mtx;
 
   public:
-    void insert(Module *m) { index.insert(m); }
+    void insert(Module *m) {
+      dyncompat::unique_lock<dyncompat::shared_mutex> l(mtx);
+      index.insert(m);
+    }
 
-    bool contains(Module *m) const { return index.count(m) != 0UL; }
+    bool contains(Module *m) const {
+      dyncompat::shared_lock<dyncompat::shared_mutex> l(mtx);
+      return index.count(m) != 0UL;
+    }
 
     std::vector<Module *> find(std::string const& name) const {
+      dyncompat::shared_lock<dyncompat::shared_mutex> l(mtx);
       std::vector<Module *> mods;
       std::copy_if(index.begin(), index.end(), std::back_inserter(mods),
                    [&name](Module *m) { return m->fileName() == name; });
@@ -72,6 +94,7 @@ namespace Dyninst { namespace SymtabAPI {
     }
 
     Module *find(Dyninst::Offset offset) const {
+      dyncompat::shared_lock<dyncompat::shared_mutex> l(mtx);
       for (auto *m : index) {
         if (m->addr() == offset)
           return m;
@@ -79,15 +102,20 @@ namespace Dyninst { namespace SymtabAPI {
       return nullptr;
     }
 
-    bool empty() const { return index.empty(); }
+    bool empty() const {
+      dyncompat::shared_lock<dyncompat::shared_mutex> l(mtx);
+      return index.empty();
+    }
 
-    decltype(index)::iterator begin() { return index.begin(); }
+    // NOTE: iteration is not internally locked. Callers iterate after the
+    // parallel parsing/insertion phase has completed (see class comment).
+    set_type::iterator begin() { return index.begin(); }
 
-    decltype(index)::iterator end() { return index.end(); }
+    set_type::iterator end() { return index.end(); }
 
-    decltype(index)::const_iterator cbegin() const { return index.cbegin(); }
+    set_type::const_iterator cbegin() const { return index.cbegin(); }
 
-    decltype(index)::const_iterator cend() const { return index.cend(); }
+    set_type::const_iterator cend() const { return index.cend(); }
   };
 }}
 

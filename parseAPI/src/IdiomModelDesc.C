@@ -7,6 +7,7 @@
 #include "registers/x86_regs.h"
 #include "registers/x86_64_regs.h"
 
+#include <algorithm>
 #include <map>
 #include <string>
 

@@ -34,6 +34,7 @@
 #include "Object.h"
 #include "debug.h"
 #include "Elf_X.h"
+#include <climits>
 #include <iostream>
 
 #include <map>
