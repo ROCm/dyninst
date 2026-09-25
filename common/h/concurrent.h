@@ -32,6 +32,7 @@
 #define _CONCURRENT_H_
 
 #include "util.h"
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -337,6 +338,14 @@ class dyn_c_hash_map {
     // and restarting. Element locks are held for a few instructions, so a handful
     // of pauses resolves ordinary contention without stalling shard writers.
     static constexpr int max_lock_attempts = 8;
+    // Overall bound on the pause-and-restart loop in acquire()/do_insert(). Ordinary
+    // contention clears in microseconds, so this is sized to be unmistakably above
+    // that. It exists only to convert a lock-order violation -- e.g. two threads each
+    // already holding an accessor into the other's target key -- from an infinite
+    // spin into a fast, loud failure: no amount of restarting can free a lock that a
+    // caller is deliberately still holding, so once this fires waiting longer cannot
+    // help.
+    static constexpr auto acquire_timeout = std::chrono::milliseconds(500);
 
     std::unique_ptr<shard[]> shards_{new shard[num_shards]};
 
@@ -598,10 +607,18 @@ private:
     // acquisition is a bounded try; on failure the shard lock is dropped and the
     // lookup restarts. The node pointer must not be touched after the shard lock
     // is released, since an erase may free it at that point.
+    //
+    // The restart loop itself is bounded by acquire_timeout: if a caller holds an
+    // accessor into k' and calls this to acquire k while another thread holds an
+    // accessor into k and wants k', neither side's restart can ever succeed (each
+    // is waiting on a lock the other is deliberately still holding), so retrying
+    // longer cannot help. That case throws rather than spinning forever; ordinary
+    // contention clears in far less than acquire_timeout and never reaches it.
     template<typename LockT>
     node* acquire(const K& k, LockT& out) const {
         const hash_type h = hash_of(k);
         const shard& s = shard_for(h);
+        const auto deadline = std::chrono::steady_clock::now() + acquire_timeout;
         for(;;) {
             {
                 read_lock slock(s.mtx);
@@ -617,6 +634,12 @@ private:
                     concurrent::detail::spin_relax();
                 }
             }
+            if(std::chrono::steady_clock::now() >= deadline)
+                throw std::runtime_error(
+                    "dyn_c_hash_map: timed out acquiring an element lock; this "
+                    "usually means two threads hold accessors into each other's "
+                    "target keys (a lock-order violation) rather than ordinary "
+                    "contention");
             std::this_thread::yield();
         }
     }
@@ -634,6 +657,7 @@ private:
         acc.release();
         const hash_type h = hash_of(k);
         shard& s = shard_for(h);
+        const auto deadline = std::chrono::steady_clock::now() + acquire_timeout;
         for(;;) {
             {
                 write_lock slock(s.mtx);
@@ -654,6 +678,14 @@ private:
                     concurrent::detail::spin_relax();
                 }
             }
+            // See acquire()'s comment: this bound exists only to convert a genuine
+            // lock-order violation into a fast failure, not to resolve one.
+            if(std::chrono::steady_clock::now() >= deadline)
+                throw std::runtime_error(
+                    "dyn_c_hash_map: timed out acquiring an element lock; this "
+                    "usually means two threads hold accessors into each other's "
+                    "target keys (a lock-order violation) rather than ordinary "
+                    "contention");
             std::this_thread::yield();
         }
     }

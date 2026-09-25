@@ -175,3 +175,7 @@ if(DYNINST_OS_Windows)
     target_link_libraries(${t} PRIVATE Psapi WS2_32 dbghelp)
   endforeach()
 endif()
+
+if(DYNINST_BUILD_TESTING)
+  add_subdirectory(test)
+endif()
