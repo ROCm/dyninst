@@ -214,6 +214,31 @@ Parser::parse_at(
         return;
     }
 
+    // Nothing has consumed hint_funcs yet, so the clear below would strand every
+    // unparsed function and the COMPLETE downgrade would lock parse() out for good.
+    // Park the seeds and put them back once this targeted parse has finalized its
+    // own batch; re-queuing them here instead would double-finalize them.
+    struct parked_seeds {
+        Parser &parser;
+        const bool active;
+        dyn_c_vector<Function *> hints;
+        dyn_c_vector<Function *> discovered;
+
+        parked_seeds(Parser &p, bool a) : parser(p), active(a) {
+            if (active) {
+                hints.swap(parser.hint_funcs);
+                discovered.swap(parser.discover_funcs);
+            }
+        }
+        ~parked_seeds() {
+            if (active) {
+                parser.hint_funcs.swap(hints);
+                parser.discover_funcs.swap(discovered);
+                parser._parse_state = UNPARSED;
+            }
+        }
+    } seeds(*this, _parse_state == UNPARSED);
+
     // Reset parser status 
     _parse_state = PARTIAL;
     hint_funcs.clear();
@@ -245,7 +270,7 @@ Parser::parse_at(
     finalize();
 
     // downgrade state if necessary
-    if(_parse_state > COMPLETE)
+    if(!seeds.active && _parse_state > COMPLETE)
         _parse_state = COMPLETE;
 
 }

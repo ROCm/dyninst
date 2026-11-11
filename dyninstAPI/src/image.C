@@ -1071,7 +1071,6 @@ image::getAllFunctions()
 
 const std::vector<image_variable*> &image::getAllVariables()
 {
-    analyzeIfNeeded();
     return everyUniqueVariable;
 }
 
@@ -1079,7 +1078,6 @@ const std::vector<image_variable*> &image::getExportedVariables() const { return
 
 const std::vector<image_variable*> &image::getCreatedVariables()
 {
-  analyzeIfNeeded();
   return createdVariables;
 }
 
@@ -1152,7 +1150,8 @@ unsigned int int_addrHash(const Address& addr) {
 
 image *image::parseImage(fileDescriptor &desc, 
                          BPatch_hybridMode mode, 
-                         bool parseGaps)
+                         bool parseGaps,
+                         bool delayedParse)
 {
   /*
    * Check to see if we have parsed this image before. We will
@@ -1186,7 +1185,7 @@ image *image::parseImage(fileDescriptor &desc,
 #endif
 
   startup_printf("%s[%d]:  about to create image\n", FILE__, __LINE__);
-  image *ret = new image(desc, err, mode, parseGaps); 
+  image *ret = new image(desc, err, mode, parseGaps, delayedParse); 
   startup_printf("%s[%d]:  created image\n", FILE__, __LINE__);
 
   if (ret->isSharedObject()) 
@@ -1290,6 +1289,11 @@ void image::analyzeIfNeeded() {
   }
 }
 
+void image::analyzeIfDeferred() {
+  if (deferredParse_)
+      analyzeIfNeeded();
+}
+
 static bool CheckForPowerPreamble(parse_block* entryBlock, Address &tocBase) {
     ParseAPI::Block::Insns insns;
     entryBlock->getInsns(insns);
@@ -1390,7 +1394,8 @@ void image::analyzeImage() {
 image::image(fileDescriptor &desc, 
              bool &err, 
              BPatch_hybridMode mode, 
-             bool parseGaps) :
+             bool parseGaps,
+             bool delayedParse) :
    desc_(desc),
    imageOffset_(0),
    imageLen_(0),
@@ -1413,9 +1418,11 @@ image::image(fileDescriptor &desc,
    trackNewBlocks_(false),
    refCount(1),
    parseState_(unparsed),
+   deferredParse_(false),
    parseGaps_(parseGaps),
    mode_(mode),
-   arch(Dyninst::Arch_none)
+   arch(Dyninst::Arch_none),
+   pltStubAddrsInitialized_(false)
 {
 #if defined(os_linux) || defined(os_freebsd)
    string file = desc_.file().c_str();
@@ -1523,7 +1530,13 @@ image::image(fileDescriptor &desc,
 //   fprintf(stderr, "#### create CodeObject for %s\n", desc.file().c_str());
    img_fact_ = new DynCFGFactory(this);
    parse_cb_ = new DynParseCallback(this);
-   obj_ = new CodeObject(cs_,img_fact_,parse_cb_,BPatch_defensiveMode == mode);
+
+   // Only normal mode defers CFG when delayedParsing is enabled.
+   // ppc64 is excluded because the code below walks functions and their entry
+   // blocks, which requires a parsed CFG.
+   const bool is_ppc64 = (cs_->getArch() == Arch_ppc64);
+   deferredParse_ = delayedParse && (mode == BPatch_normalMode) && !is_ppc64;
+   obj_ = new CodeObject(cs_,img_fact_,parse_cb_,BPatch_defensiveMode == mode, deferredParse_);
 
      if (obj_->cs()->getArch() == Arch_ppc64) {
         // The PowerPC new ABI typically generate two entries per function.
@@ -1878,6 +1891,28 @@ const std::vector<parse_func *> *image::findFuncVectorByPretty(const std::string
     }
 }
 
+// A PLT stub has no symbol of its own, so only parsing creates its parse_func
+bool image::parsePltStubs(const std::string &name)
+{
+    // linkage() is address -> name; we need name -> addresses. Build it once
+    if (!pltStubAddrsInitialized_) {
+        pltStubAddrsInitialized_ = true;
+        for (auto const &entry : cs_->linkage()) {
+            pltStubAddrs_[entry.second].push_back(entry.first);
+        }
+    }
+
+    // The parser names stubs from this same table, so absent means none exists
+    auto iter = pltStubAddrs_.find(name);
+    if (iter == pltStubAddrs_.end())
+        return false;
+
+    for (Address stub : iter->second) {
+        codeObject()->parse(stub, false);
+    }
+    return true;
+}
+
 // Return the vector of functions associated with a mangled name
 // Very well might be more than one! -- multiple static functions in different .o files
 
@@ -1900,6 +1935,15 @@ const std::vector <parse_func *> *image::findFuncVectorByMangled(const std::stri
     if (res->empty()) {
         // Lookup PLT stubs
         auto it = plt_parse_funcs.find(name);
+
+        // A miss here can be a false negative: only parsing fills
+        // plt_parse_funcs, and the image may not have been parsed yet.
+        // Parse just the stubs rather than the whole image.
+        if (it == plt_parse_funcs.end() && deferredParse_ && !isParsed()) {
+            if (parsePltStubs(name))
+                it = plt_parse_funcs.find(name);
+        }
+
         if (it != plt_parse_funcs.end()) {
             res->push_back(it->second);
         }
