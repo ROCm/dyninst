@@ -308,6 +308,33 @@ void PCProcess::redirectFds(int stdin_fd, int stdout_fd, int stderr_fd,
     if( stderr_fd != 2 ) fds.insert(std::make_pair(stderr_fd, 2));
 }
 
+// Use DYNINSTAPI_RT_LIB when it names a readable shared library, so the
+// runtime library does not have to be called libdyninstAPI_RT.so.
+// Otherwise return false, and the caller searches for libdyninstAPI_RT.so
+// as before. A static archive (.a) is rejected because LD_PRELOAD cannot
+// load it. Callers skip this for 32-bit targets, which need
+// libdyninstAPI_RT_m32.so.
+static bool
+usableDyninstRTLibFromEnv(std::string& rt_lib_name)
+{
+    const char* env_rt = getenv("DYNINSTAPI_RT_LIB");
+    if(env_rt == NULL || env_rt[0] == '\0')
+        return false;
+    std::string env_name(env_rt);
+    std::string file_name = env_name.substr(env_name.find_last_of('/') + 1);
+    bool is_shared_object =
+        (file_name.size() >= 3 &&
+         file_name.compare(file_name.size() - 3, 3, ".so") == 0) ||
+        file_name.find(".so.") != std::string::npos;
+    if(!is_shared_object)
+        return false;
+    if(access(env_rt, R_OK) != 0)
+        return false;
+    rt_lib_name = env_name;
+    startup_printf("%s[%d]: Using DYNINSTAPI_RT_LIB=%s\n", FILE__, __LINE__, env_rt);
+    return true;
+}
+
 bool PCProcess::getDyninstRTLibName()
 {
     startup_printf("Begin getDyninstRTLibName\n");
@@ -315,6 +342,16 @@ bool PCProcess::getDyninstRTLibName()
 #if defined(arch_64bit)
     use_abi_rt = (getAddressWidth() == 4);
 #endif
+
+    if(!use_abi_rt)
+    {
+        std::string env_rt_lib;
+        if(usableDyninstRTLibFromEnv(env_rt_lib))
+        {
+            dyninstRT_name = env_rt_lib;
+            return true;
+        }
+    }
 
     std::vector<std::string> rt_paths;
     std::string rt_base = "libdyninstAPI_RT";
@@ -347,22 +384,27 @@ bool PCProcess::setEnvPreload(std::vector<std::string> &envp, std::string fileNa
     use_abi_rt = (symt_obj->getAddressWidth() == 4);
 #endif
 
-    std::vector<std::string> rt_paths;
-    std::string rt_base = "libdyninstAPI_RT";
-    if(use_abi_rt) rt_base += "_m32";
-    rt_base += ".so";
-    if(!BinaryEdit::getResolvedLibraryPath(rt_base, rt_paths) || rt_paths.empty())
+    std::string rt_lib_name;
+    if(use_abi_rt || !usableDyninstRTLibFromEnv(rt_lib_name))
     {
-	startup_printf("%s[%d]: Could not find libdyninstAPI_RT.so in search path\n", FILE__, __LINE__);
-      return false;
+        std::vector<std::string> rt_paths;
+        std::string              rt_base = "libdyninstAPI_RT";
+        if(use_abi_rt)
+            rt_base += "_m32";
+        rt_base += ".so";
+        if(!BinaryEdit::getResolvedLibraryPath(rt_base, rt_paths) || rt_paths.empty())
+        {
+            startup_printf("%s[%d]: Could not find libdyninstAPI_RT.so in search path\n",
+                           FILE__, __LINE__);
+            return false;
+        }
+        for(auto i = rt_paths.begin(); i != rt_paths.end(); ++i)
+        {
+            startup_printf("%s[%d]: Candidate RTLib is %s\n", FILE__, __LINE__,
+                           i->c_str());
+        }
+        rt_lib_name = rt_paths[0];
     }
-    for(auto i = rt_paths.begin();
-	i != rt_paths.end();
-	++i)
-    {
-	startup_printf("%s[%d]: Candidate RTLib is %s\n", FILE__, __LINE__, i->c_str());
-    }
-    std::string rt_lib_name = rt_paths[0];
 
     // Check to see if the library given exists.
     if (access(rt_lib_name.c_str(), R_OK)) {
