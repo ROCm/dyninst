@@ -328,10 +328,15 @@ usableDyninstRTLibFromEnv(std::string& rt_lib_name)
         file_name.find(".so.") != std::string::npos;
     if(!is_shared_object)
         return false;
-    if(access(env_rt, R_OK) != 0)
+    // A bare name like librocprof-sys-rt.so would only be looked up in the
+    // loader's library paths, not the current directory, so use the full path.
+    // dynProcess.C also compares dyninstRT_name against the loader's full path.
+    std::string resolved = resolve_file_path(env_name);
+    if(resolved.empty() || access(resolved.c_str(), R_OK) != 0)
         return false;
-    rt_lib_name = env_name;
-    startup_printf("%s[%d]: Using DYNINSTAPI_RT_LIB=%s\n", FILE__, __LINE__, env_rt);
+    rt_lib_name = resolved;
+    startup_printf("%s[%d]: Using DYNINSTAPI_RT_LIB=%s\n", FILE__, __LINE__,
+                   resolved.c_str());
     return true;
 }
 
